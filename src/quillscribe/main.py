@@ -608,29 +608,20 @@ class QuillScribeMainWindow(QMainWindow):
             # Use standard window with system titlebar
             self.setWindowFlags(Qt.WindowType.Window)
         
-        # Set window icon (use PNG app logo)
+        # Set window icon (ICO format only - guaranteed to be present)
         try:
             from pathlib import Path
             # Handle both development and frozen executable environments
             if getattr(sys, 'frozen', False):
                 # Running as frozen executable - use PyInstaller's temporary directory
-                base_path = Path(sys._MEIPASS)
-                logo_path = base_path / "app_logo.png"
-                fallback_path = base_path / "logo.png"
+                ico_path = Path(sys._MEIPASS) / "app_logo.ico"
             else:
                 # Running from source
-                logo_path = Path(__file__).parent / "app_logo.png"
-                fallback_path = Path(__file__).parent / "logo.png"
-                
-            if logo_path.exists():
-                self.setWindowIcon(QIcon(str(logo_path)))
-            elif fallback_path.exists():
-                self.setWindowIcon(QIcon(str(fallback_path)))
-            else:
-                # Final fallback to SVG icon
-                self.setWindowIcon(get_icon('app', 32))
+                ico_path = Path(__file__).parent / "app_logo.ico"
+            
+            self.setWindowIcon(QIcon(str(ico_path)))
         except Exception as e:
-            print(f"Warning: Could not load window icon: {e}")
+            print(f"Error: Could not load window icon: {e}")
         
         # Central widget
         central_widget = QWidget()
@@ -778,22 +769,15 @@ class QuillScribeMainWindow(QMainWindow):
         titlebar_layout.setSpacing(8)
         titlebar_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)  # Vertical center alignment
         
-        # Window icon
+        # Window icon (ICO format only - guaranteed to be present)
         icon_label = QLabel()
         try:
             from pathlib import Path
-            logo_path = Path(__file__).parent / "app_logo.png"
-            if logo_path.exists():
-                pixmap = QPixmap(str(logo_path)).scaled(16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                icon_label.setPixmap(pixmap)
-            else:
-                # Fallback to logo.png if app_logo.png doesn't exist
-                fallback_path = Path(__file__).parent / "logo.png"
-                if fallback_path.exists():
-                    pixmap = QPixmap(str(fallback_path)).scaled(16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                    icon_label.setPixmap(pixmap)
-        except Exception:
-            pass
+            ico_path = Path(__file__).parent / "app_logo.ico"
+            pixmap = QPixmap(str(ico_path)).scaled(16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            icon_label.setPixmap(pixmap)
+        except Exception as e:
+            print(f"Error: Could not load titlebar icon: {e}")
         
         icon_label.setFixedSize(16, 16)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1473,30 +1457,29 @@ def main():
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("QuillScribe")
     
-    # Set application icon (use PNG app logo for taskbar and system icons)
+    # Windows-specific taskbar configuration
+    if sys.platform == "win32" and ctypes is not None:
+        try:
+            # Set Windows App Model ID for proper taskbar grouping and icon display
+            from ctypes import windll
+            windll.shell32.SetCurrentProcessExplicitAppUserModelID("QuillScribe.VoiceTranscription.1.0")
+        except Exception as e:
+            print(f"Warning: Could not set Windows App Model ID: {e}")
+    
+    # Set application icon (ICO format only - guaranteed to be present)
     try:
         from pathlib import Path
         # Handle both development and frozen executable environments
         if getattr(sys, 'frozen', False):
             # Running as frozen executable - use PyInstaller's temporary directory
-            base_path = Path(sys._MEIPASS)
-            logo_path = base_path / "app_logo.png"
-            fallback_path = base_path / "logo.png"
+            ico_path = Path(sys._MEIPASS) / "app_logo.ico"
         else:
             # Running from source
-            logo_path = Path(__file__).parent / "app_logo.png"
-            fallback_path = Path(__file__).parent / "logo.png"
-            
-        if logo_path.exists():
-            app.setWindowIcon(QIcon(str(logo_path)))
-        elif fallback_path.exists():
-            app.setWindowIcon(QIcon(str(fallback_path)))
-        else:
-            # Final fallback to SVG icon
-            from .icon_manager import get_icon
-            app.setWindowIcon(get_icon('app', 48))
+            ico_path = Path(__file__).parent / "app_logo.ico"
+        
+        app.setWindowIcon(QIcon(str(ico_path)))
     except Exception as e:
-        print(f"Warning: Could not load application icon: {e}")
+        print(f"Error: Could not load application icon: {e}")
     
     # Create and show main window
     window = QuillScribeMainWindow()

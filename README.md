@@ -162,16 +162,16 @@ To build a standalone executable using PyInstaller:
    pyinstaller --windowed --onefile \
      --add-data "src/quillscribe/icons;icons" \
      --add-data "src/sounds;sounds" \
-     --add-data "src/quillscribe/app_logo.png;." \
+     --add-data "src/quillscribe/app_logo.ico;." \
      --add-data "src/quillscribe/logo.png;." \
-     --icon="src/quillscribe/app_logo.png" \
+     --icon="src/quillscribe/app_logo.ico" \
      --name "QuillScribe" \
      run.py
    ```
 
    **On Windows (single line):**
    ```cmd
-   pyinstaller --windowed --onefile --add-data "src/quillscribe/icons;icons" --add-data "src/sounds;sounds" --add-data "src/quillscribe/app_logo.png;." --add-data "src/quillscribe/logo.png;." --icon="src/quillscribe/app_logo.png" --name "QuillScribe" run.py
+   pyinstaller --windowed --onefile --add-data "src/quillscribe/icons;icons" --add-data "src/sounds;sounds" --add-data "src/quillscribe/app_logo.ico;." --add-data "src/quillscribe/logo.png;." --icon="src/quillscribe/app_logo.ico" --name "QuillScribe" run.py
    ```
 
 3. **Find your executable:**
@@ -180,8 +180,8 @@ To build a standalone executable using PyInstaller:
 **Required Data Files:**
 - `src/quillscribe/icons/` - SVG icons for the UI
 - `src/sounds/` - WAV files for recording notifications
-- `src/quillscribe/app_logo.png` - Application icon and logo
-- `src/quillscribe/logo.png` - Working on it
+- `src/quillscribe/app_logo.ico` - Application icon (ICO format for best compatibility)
+- `src/quillscribe/logo.png` - Alternative logo file
 
 ## Contributing
 

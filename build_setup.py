@@ -50,8 +50,7 @@ build_options = {
         ('src/quillscribe/icons/', 'icons/'),
         # Include sounds
         ('src/sounds/', 'sounds/'),
-        # Include app logo
-        ('src/quillscribe/app_logo.png', 'app_logo.png'),
+        ('src/quillscribe/app_logo.ico', 'app_logo.ico'),
         ('src/quillscribe/logo.png', 'logo.png'),
         # Include any additional assets
     ],
@@ -70,7 +69,7 @@ executable = Executable(
     script='run.py',
     base=base,
     target_name='QuillScribe.exe',
-    icon='src/quillscribe/app_logo.png',  # Will be converted to .ico if needed
+    icon='src/quillscribe/app_logo.ico',  # Use ICO format for Windows
     shortcut_name='QuillScribe',
     shortcut_dir='DesktopFolder'
 )
