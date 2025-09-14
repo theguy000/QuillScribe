@@ -2,39 +2,43 @@
 
 **Beautiful Voice-to-Text Transcription App**
 
-A minimal, elegant voice-to-text transcription application with a stunning breathing microphone interface. Convert your speech to text with just 2 buttons and a beautiful, modern UI.
+A minimal, elegant voice-to-text transcription application with a stunning breathing microphone interface. Convert your speech to text with a beautiful, modern UI.
 
 ![QuillScribe Demo](https://via.placeholder.com/600x400/4A90E2/FFFFFF?text=QuillScribe+Demo)
 
 ## ✨ Features
 
-- **Beautiful Minimal UI** - Just 2 buttons: Record/Stop and Settings
-- **Breathing Animation** - Dynamic microphone visualization with audio-responsive animation  
-- **Dual AI Modes** - Choose between OpenAI Whisper API or local Whisper.cpp
-- **Smart Output** - Copy to clipboard, auto-paste, or display only
-- **Easy Settings** - Modern tabbed settings for audio, transcription, and output
-- **Silent Mode** - Hidden transcription for privacy
-- **Real-time Processing** - Low latency speech recognition
+- **Beautiful Minimal UI** - A clean and focused interface.
+- **Stunning Animations** - Dynamic microphone visualization with a breathing animation and an audio-responsive waveform.
+- **Dual AI Modes** - Choose between the powerful OpenAI Whisper API or a private, offline local model using `faster-whisper`.
+- **Global Hotkeys** - Start and stop recording from anywhere on your desktop (Windows only, `Win+F` by default).
+- **Theming** - Customize the look and feel with multiple light and dark themes.
+- **Compact Mode** - Switch to a super-compact, always-on-top style UI.
+- **Custom Title Bar** - A sleek, custom title bar for a more integrated look (can be disabled).
+- **Smart Output** - Copy to clipboard, auto-paste to your active application, or just display the text.
+- **Easy Settings** - Modern tabbed settings for audio, transcription, UI, and output.
+- **Microphone Control** - Auto-detects active microphone, with options to manually select and test.
+- **Silent Mode** - Hide transcription text for privacy.
 
 ## Quick Start
 
 ### Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/quillscribe/quillscribe.git
-   cd quillscribe
-   ```
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/quillscribe/quillscribe.git
+    cd quillscribe
+    ```
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+2.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-3. **Run the application:**
-   ```bash
-   python run.py
-   ```
+3.  **Run the application:**
+    ```bash
+    python run.py
+    ```
 
 ### Alternative: Package Installation
 
@@ -47,96 +51,67 @@ quillscribe
 
 ### Option 1: OpenAI Whisper API (Recommended)
 
-1. Get your API key from [OpenAI Platform](https://platform.openai.com/api-keys)
-2. Open QuillScribe → Click **Settings**
-3. Select **OpenAI Whisper API** 
-4. Enter your API key
-5. Click **Save Settings**
+1.  Get your API key from [OpenAI Platform](https://platform.openai.com/api-keys).
+2.  Open QuillScribe → Click **Settings**.
+3.  In the **Whisper** tab, select **OpenAI Whisper API**.
+4.  Enter your API key.
+5.  Click **Save Settings**.
 
-**Pros:** Fast, high-quality, works immediately  
-**Cons:** Requires internet, usage costs
+**Pros:** Fast, high-quality, works immediately.
+**Cons:** Requires internet, may have usage costs.
 
-### Option 2: Local Whisper.cpp
+### Option 2: Local `faster-whisper` Model
 
-1. Download Whisper models from HuggingFace
-2. Open QuillScribe → Click **Settings**
-3. Select **Local Whisper.cpp**
-4. Choose your model (tiny/base/small/medium/large)
-5. Click **Load Model**
+1.  Open QuillScribe → Click **Settings**.
+2.  In the **Whisper** tab, select **Local Whisper.cpp (Private, works offline)**.
+3.  Use the dropdowns to select a model category and a specific model. Smaller models are faster but less accurate.
+4.  The application will handle downloading the model if it's not already present.
+5.  Click **Save Settings**.
 
-**Pros:** Private, offline, no costs  
-**Cons:** Requires model download, slower processing
+**Pros:** Private, works offline, no ongoing costs.
+**Cons:** Requires model download, can be slower and less accurate than the API depending on the model and your hardware.
 
 ## Usage
 
-1. **Start Recording:** Click the microphone or use the configured shortcut
-2. **Watch the Magic:** The microphone shows audio waveform animation
-3. **Stop Recording:** Click the microphone again or use the shortcut
-4. **Get Results:** Text is automatically copied/pasted based on your settings
+1.  **Start Recording:** Click the microphone or use the global hotkey (`Win+F` by default on Windows).
+2.  **Watch the Magic:** The microphone animates with a live audio waveform.
+3.  **Stop Recording:** Click the microphone again or use the hotkey.
+4.  **Get Results:** Text is automatically copied/pasted based on your settings.
 
 ### Output Modes
 
-- **Copy Only** - Copies transcription to clipboard
-- **Paste Only** - Pastes directly to active application  
-- **Copy & Paste** - Both copy and paste
-- **Display Only** - Shows text without copying
-
-## UI Overview
-
-```
-┌─────────────────────────────────────┐
-│            QuillScribe              │
-│                                     │
-│              ●◐◑◒                  │
-│           (Animated Mic)            │
-│                                     │
-│   [Click to Record]   [Settings]    │
-│                                     │
-│         Ready to transcribe         │
-└─────────────────────────────────────┘
-```
+-   **Copy Only** - Copies transcription to the clipboard.
+-   **Paste Only** - Pastes directly to the active application.
+-   **Copy & Paste** - Does both.
+-   **Display Only** - Shows text in the app without copying or pasting.
 
 ## Requirements
 
-- **Python 3.9+**
-- **Windows 10/11** (Primary target)
-- **Microphone** (Built-in or external)
-- **Internet connection** (For API mode)
+-   **Python 3.9+**
+-   **Windows 10/11** (Primary target, with global hotkeys)
+-   **Microphone** (Built-in or external)
+-   **Internet connection** (For API mode and initial model downloads)
 
 ### Dependencies
 
-- `PySide6` - Modern Qt6 UI framework
-- `sounddevice` - Real-time audio capture
-- `numpy` - Audio processing
-- `openai` - Whisper API integration
-- `whispercpp` - Local Whisper.cpp support
-- `pyperclip` - Clipboard operations
+-   `PySide6` - Modern Qt6 UI framework.
+-   `sounddevice` - Real-time audio capture.
+-   `numpy` - Audio processing.
+-   `openai` - Whisper API integration.
+-   `faster-whisper` - Efficient local Whisper model implementation.
+-   `pyperclip` - Clipboard operations.
 
 ## Troubleshooting
 
 ### Audio Issues
 
-**No microphone detected:**
-1. Check Windows microphone permissions
-2. Ensure microphone is connected and enabled
-3. Try selecting a different device in Settings
-
-**Poor audio quality:**
-1. Test microphone with **Test Microphone** button
-2. Reduce background noise
-3. Speak closer to microphone
+-   **No microphone detected:** Check Windows microphone permissions. Ensure the microphone is connected and enabled. Use the "Refresh" and "Test" buttons in the Audio settings. Try the "Auto-select active microphone" feature.
+-   **Poor audio quality:** Use the **Test** button in settings to check your audio levels. Reduce background noise and speak closer to the microphone.
 
 ### Transcription Issues
 
-**API errors:**
-1. Verify API key is correct
-2. Check internet connection
-3. Ensure sufficient API credits
-
-**Local model issues:**
-1. Download the correct model format
-2. Ensure sufficient disk space
-3. Try a smaller model (tiny/base)
+-   **API errors:** Verify your API key is correct and that you have a working internet connection.
+-   **Local model issues:** Ensure you have enough disk space for the model download. If transcription is slow, try a smaller model (e.g., `tiny` or `base`).
 
 ## Project Structure
 
@@ -146,9 +121,10 @@ quillscribe/
 │   ├── __init__.py
 │   ├── main.py              # Main application & UI
 │   ├── audio_manager.py     # Audio capture & processing
-│   ├── whisper_manager.py   # Whisper integration
+│   ├── whisper_manager.py   # Whisper integration (API & local)
 │   ├── settings_dialog.py   # Settings panel
-│   └── config_manager.py    # Configuration handling
+│   ├── config_manager.py    # Configuration handling
+│   └── ...
 ├── requirements.txt
 ├── setup.py
 ├── run.py                   # Application launcher
@@ -177,30 +153,11 @@ python setup.py build
 
 ## Contributing
 
-We welcome contributions! Please see our contributing guidelines:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+We welcome contributions! Please fork the repository, create a feature branch, and submit a pull request.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Links
-
-- **Bug Reports:** [GitHub Issues](https://github.com/quillscribe/quillscribe/issues)
-- **Documentation:** [GitHub Wiki](https://github.com/quillscribe/quillscribe/wiki)
-- **Discussions:** [GitHub Discussions](https://github.com/quillscribe/quillscribe/discussions)
-
-## Acknowledgments
-
-- **OpenAI** for the Whisper model and API
-- **Whisper.cpp** community for the efficient C++ implementation
-- **Qt/PySide6** for the beautiful UI framework
-- All contributors and users of QuillScribe
+This project is licensed under the MIT License.
 
 ---
 
