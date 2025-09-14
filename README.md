@@ -24,6 +24,15 @@ A minimal, elegant voice-to-text transcription application with a stunning breat
 
 ### Installation
 
+#### Option 1: Install as Package (Recommended for Python Users)
+
+```bash
+pip install git+https://github.com/quillscribe/quillscribe.git
+quillscribe
+```
+
+#### Option 2: Run from Source
+
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/quillscribe/quillscribe.git
@@ -40,12 +49,7 @@ A minimal, elegant voice-to-text transcription application with a stunning breat
     python run.py
     ```
 
-### Alternative: Package Installation
 
-```bash
-pip install quillscribe
-quillscribe
-```
 
 ## Setup Guide
 
@@ -146,10 +150,38 @@ python run.py
 
 ### Building Executable
 
-```bash
-pip install cx-freeze
-python setup.py build
-```
+To build a standalone executable using PyInstaller:
+
+1. **Install PyInstaller:**
+   ```bash
+   pip install pyinstaller
+   ```
+
+2. **Build the executable:**
+   ```bash
+   pyinstaller --windowed --onefile \
+     --add-data "src/quillscribe/icons;icons" \
+     --add-data "src/sounds;sounds" \
+     --add-data "src/quillscribe/app_logo.png;." \
+     --add-data "src/quillscribe/logo.png;." \
+     --icon="src/quillscribe/app_logo.png" \
+     --name "QuillScribe" \
+     run.py
+   ```
+
+   **On Windows (single line):**
+   ```cmd
+   pyinstaller --windowed --onefile --add-data "src/quillscribe/icons;icons" --add-data "src/sounds;sounds" --add-data "src/quillscribe/app_logo.png;." --add-data "src/quillscribe/logo.png;." --icon="src/quillscribe/app_logo.png" --name "QuillScribe" run.py
+   ```
+
+3. **Find your executable:**
+   The executable will be located in `dist/QuillScribe.exe`
+
+**Required Data Files:**
+- `src/quillscribe/icons/` - SVG icons for the UI
+- `src/sounds/` - WAV files for recording notifications
+- `src/quillscribe/app_logo.png` - Application icon and logo
+- `src/quillscribe/logo.png` - Working on it
 
 ## Contributing
 

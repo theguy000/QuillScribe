@@ -4,6 +4,7 @@ Handles playback of notification sounds using Qt's native audio capabilities
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 from PySide6.QtCore import QObject, QUrl
@@ -17,7 +18,15 @@ class SoundManager(QObject):
         super().__init__()
         self.initialized = False
         self.sounds_enabled = True  # Default to enabled
-        self.sounds_path = Path(__file__).parent.parent / "sounds"
+        
+        # Handle both development and frozen executable environments
+        if getattr(sys, 'frozen', False):
+            # Running as frozen executable - use PyInstaller's temporary directory
+            base_path = Path(sys._MEIPASS)
+            self.sounds_path = base_path / "sounds"
+        else:
+            # Running from source
+            self.sounds_path = Path(__file__).parent.parent / "sounds"
         
         # Load sounds using Qt's QSoundEffect
         self.start_sound: Optional[QSoundEffect] = None

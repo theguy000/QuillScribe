@@ -4,6 +4,7 @@ Utility class for loading and managing SVG icons consistently throughout the app
 """
 
 import os
+import sys
 from typing import Optional, Dict
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt, QSize, QRect
@@ -63,7 +64,14 @@ class IconManager:
     
     def __init__(self):
         self._icon_cache: Dict[str, QIcon] = {}
-        self._icons_dir = os.path.join(os.path.dirname(__file__), 'icons')
+        # Handle both development and frozen executable environments
+        if getattr(sys, 'frozen', False):
+            # Running as frozen executable - use PyInstaller's temporary directory
+            base_path = sys._MEIPASS
+            self._icons_dir = os.path.join(base_path, 'icons')
+        else:
+            # Running from source
+            self._icons_dir = os.path.join(os.path.dirname(__file__), 'icons')
         
     def get_icon_path(self, icon_name: str) -> Optional[str]:
         """Get the full path to an icon file"""

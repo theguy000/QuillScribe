@@ -50,7 +50,8 @@ setup(
             "flake8>=6.0.0",
         ],
         "build": [
-            "cx-freeze>=6.15.0",
+            "pyinstaller>=6.0.0",
+            # Note: Pillow only needed if using custom icons with PyInstaller
         ],
     },
     entry_points={

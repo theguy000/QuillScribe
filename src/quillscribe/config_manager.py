@@ -191,13 +191,6 @@ class ConfigManager:
             len(api_key) > 20
         )
     
-    def get_model_cache_dir(self) -> Path:
-        """Get the model cache directory"""
-        # Use ./models relative to project root instead of user config
-        cache_dir = Path("./models")
-        cache_dir.mkdir(exist_ok=True)
-        return cache_dir
-    
     def get_log_file(self) -> Path:
         """Get the log file path"""
         return self.config_dir / "quillscribe.log"

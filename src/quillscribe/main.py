@@ -611,17 +611,24 @@ class QuillScribeMainWindow(QMainWindow):
         # Set window icon (use PNG app logo)
         try:
             from pathlib import Path
-            logo_path = Path(__file__).parent / "app_logo.png"
+            # Handle both development and frozen executable environments
+            if getattr(sys, 'frozen', False):
+                # Running as frozen executable - use PyInstaller's temporary directory
+                base_path = Path(sys._MEIPASS)
+                logo_path = base_path / "app_logo.png"
+                fallback_path = base_path / "logo.png"
+            else:
+                # Running from source
+                logo_path = Path(__file__).parent / "app_logo.png"
+                fallback_path = Path(__file__).parent / "logo.png"
+                
             if logo_path.exists():
                 self.setWindowIcon(QIcon(str(logo_path)))
+            elif fallback_path.exists():
+                self.setWindowIcon(QIcon(str(fallback_path)))
             else:
-                # Fallback to logo.png if app_logo.png doesn't exist
-                fallback_path = Path(__file__).parent / "logo.png"
-                if fallback_path.exists():
-                    self.setWindowIcon(QIcon(str(fallback_path)))
-                else:
-                    # Final fallback to SVG icon
-                    self.setWindowIcon(get_icon('app', 32))
+                # Final fallback to SVG icon
+                self.setWindowIcon(get_icon('app', 32))
         except Exception as e:
             print(f"Warning: Could not load window icon: {e}")
         
@@ -1469,18 +1476,25 @@ def main():
     # Set application icon (use PNG app logo for taskbar and system icons)
     try:
         from pathlib import Path
-        logo_path = Path(__file__).parent / "app_logo.png"
+        # Handle both development and frozen executable environments
+        if getattr(sys, 'frozen', False):
+            # Running as frozen executable - use PyInstaller's temporary directory
+            base_path = Path(sys._MEIPASS)
+            logo_path = base_path / "app_logo.png"
+            fallback_path = base_path / "logo.png"
+        else:
+            # Running from source
+            logo_path = Path(__file__).parent / "app_logo.png"
+            fallback_path = Path(__file__).parent / "logo.png"
+            
         if logo_path.exists():
             app.setWindowIcon(QIcon(str(logo_path)))
+        elif fallback_path.exists():
+            app.setWindowIcon(QIcon(str(fallback_path)))
         else:
-            # Fallback to logo.png if app_logo.png doesn't exist
-            fallback_path = Path(__file__).parent / "logo.png"
-            if fallback_path.exists():
-                app.setWindowIcon(QIcon(str(fallback_path)))
-            else:
-                # Final fallback to SVG icon
-                from .icon_manager import get_icon
-                app.setWindowIcon(get_icon('app', 48))
+            # Final fallback to SVG icon
+            from .icon_manager import get_icon
+            app.setWindowIcon(get_icon('app', 48))
     except Exception as e:
         print(f"Warning: Could not load application icon: {e}")
     

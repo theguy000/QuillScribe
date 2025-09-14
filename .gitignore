@@ -76,14 +76,12 @@ logs/
 config/
 .config/
 
-# Audio files
-*.wav
-*.mp3
-*.m4a
-*.flac
-*.ogg
+
 
 # Temporary files
 temp/
 tmp/
 *.tmp
+
+# Executables
+*.exe
