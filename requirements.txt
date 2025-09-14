@@ -1,0 +1,21 @@
+# Core UI Framework
+PySide6>=6.5.0
+
+# SVG Support for Icons
+PySide6-Addons>=6.5.0
+
+# Audio Processing
+sounddevice>=0.4.6
+numpy>=1.21.0
+
+# Whisper Support
+openai>=1.3.0
+faster-whisper>=0.10.0
+
+# System Integration
+pyperclip>=1.8.2
+requests>=2.31.0
+pywin32>=306; sys_platform == "win32"
+
+# Build Tools (pinned to avoid pkg_resources deprecation warnings)
+setuptools<81
