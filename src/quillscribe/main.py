@@ -481,12 +481,12 @@ class ModernButton(QPushButton):
             # Secondary button (Settings)
             if compact:
                 font_size = "11px"
-                border_radius = "14px"
+                border_radius = "8px"
                 padding = "6px 10px"
                 min_width = "60px"
             else:
                 font_size = "16px"
-                border_radius = "25px"
+                border_radius = "12px"
                 padding = "12px 24px"
                 min_width = "120px"
 
@@ -501,6 +501,7 @@ class ModernButton(QPushButton):
                         font-weight: 500;
                         padding: {padding};
                         min-width: {min_width};
+                        text-align: center;
                     }}
                     QPushButton:hover {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4c4c4c, stop:1 #3c3c3c); border-color: #777777; }}
                     QPushButton:pressed {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2c2c2c, stop:1 #1c1c1c); }}
@@ -516,8 +517,9 @@ class ModernButton(QPushButton):
                         font-weight: 500;
                         padding: {padding};
                         min-width: {min_width};
+                        text-align: center;
                     }}
-                    QPushButton:hover {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #f1f3f4); border-color: #adb5bd; }}
+                    QPushButton:hover {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ffffff, stop:1 #f1f3f4); border-color: #adb5bd; color: #495057; }}
                     QPushButton:pressed {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #e9ecef, stop:1 #dee2e6); }}
                 """
         self.setStyleSheet(stylesheet)
@@ -718,14 +720,7 @@ class QuillScribeMainWindow(QMainWindow):
         self.settings_button = ModernButton("Settings", primary=False)
         self.settings_button.setIcon(get_button_icon('settings', 16))
         self.settings_button.setIconSize(QSize(16, 16))
-        # Center the icon and text together
-        current_style = self.settings_button.styleSheet()
-        self.settings_button.setStyleSheet(current_style + """
-            QPushButton {
-                text-align: center;
-                padding: 12px 24px;
-            }
-        """)
+        
         
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -1204,14 +1199,7 @@ class QuillScribeMainWindow(QMainWindow):
         else:
             self.settings_button.setIcon(get_button_icon('settings', 16))
 
-        if not self.compact_mode:
-            current_style = self.settings_button.styleSheet()
-            self.settings_button.setStyleSheet(current_style + """
-                QPushButton {
-                    text-align: center;
-                    padding: 12px 24px;
-                }
-            """)
+        
 
         # Update text colors for existing widgets
         if hasattr(self, 'title_label'):
@@ -1227,7 +1215,7 @@ class QuillScribeMainWindow(QMainWindow):
             """)
         
         # Update custom titlebar colors
-        if hasattr(self, 'custom_titlebar'):
+        if hasattr(self, 'custom_titlebar') and self.custom_titlebar is not None:
             # Determine titlebar colors based on theme
             if is_dark:
                 titlebar_bg = "#3c3c3c"

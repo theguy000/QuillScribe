@@ -144,6 +144,8 @@ class ModernComboBox(QComboBox):
             }}
             QComboBox QAbstractItemView::item:hover {{
                 background-color: {hover_bg};
+                color: {text_color};
+                outline: none;
             }}
             QScrollBar:vertical {{
                 background: transparent; width: 10px; margin: 4px 2px;
