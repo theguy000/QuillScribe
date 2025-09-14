@@ -112,7 +112,8 @@ class ModernComboBox(QComboBox):
                 background-color: {hover_bg};
             }}
             QComboBox:focus {{
-                border: 2px solid {accent};
+                outline: none;
+                border: 1.5px solid {border};
             }}
             QComboBox::drop-down {{
                 subcontrol-origin: padding;
@@ -143,18 +144,29 @@ class ModernComboBox(QComboBox):
                 padding: 4px 8px;
             }}
             QComboBox QAbstractItemView::item:hover {{
-                background-color: {hover_bg};
-                color: {text_color};
+                background-color: {accent};
+                color: white;
                 outline: none;
+                border: none;
+            }}
+            QListView {{
+                outline: none;
+                border: none;
+            }}
+            QListView::item {{
+                outline: none !important;
+                border: none !important;
+            }}
+            QListView::item:focus {{
+                outline: none !important;
+                border: none !important;
+            }}
+            QListView::item:selected {{
+                outline: none !important;
+                border: none !important;
             }}
             QScrollBar:vertical {{
-                background: transparent; width: 10px; margin: 4px 2px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {'#555555' if is_dark else '#ced4da'}; border-radius: 4px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {'#6b6b6b' if is_dark else '#adb5bd'};
+                width: 0px;
             }}
             QComboBox:disabled {{
                 color: {'#9aa0a6' if is_dark else '#adb5bd'};
