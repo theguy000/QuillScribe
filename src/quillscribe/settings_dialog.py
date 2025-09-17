@@ -1661,20 +1661,11 @@ class SettingsDialog(QDialog):
     def save_and_close(self):
         """Save all settings and close dialog"""
         try:
-            # Check if custom title bar setting changed before saving
-            old_custom_titlebar = bool(self.config_manager.get_setting("ui/custom_titlebar", True))
-            new_custom_titlebar = self.ui_tab.custom_titlebar_checkbox.isChecked()
-            titlebar_changed = old_custom_titlebar != new_custom_titlebar
-            
             self.audio_tab.save_settings()
             self.whisper_tab.save_settings()
             self.output_tab.save_settings()
             self.ui_tab.save_settings()
             self.config_manager.save_settings()
-            
-            # Show restart popup immediately if title bar setting changed
-            if titlebar_changed:
-                self.show_restart_popup_for_titlebar(new_custom_titlebar)
             
             # Emit signal to notify main window that settings were saved
             self.settings_saved.emit()
@@ -1683,63 +1674,6 @@ class SettingsDialog(QDialog):
         except Exception as e:
             # Could show an error dialog here
             print(f"Error saving settings: {e}")
-    
-    def show_restart_popup_for_titlebar(self, enabled: bool):
-        """Show a popup dialog informing user that restart is required for title bar changes"""
-        action = "enabled" if enabled else "disabled"
-        
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Restart Required")
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.setText("Title Bar Setting Changed")
-        msg_box.setInformativeText(f"The custom title bar has been {action}. Please restart QuillScribe for the changes to take effect.")
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        
-        # Apply current theme styling to the message box
-        colors = self._get_theme_colors(self.config_manager.get_setting("ui/theme", "white"))
-        is_dark = self._is_dark_color(colors["primary"])
-        
-        if is_dark:
-            msg_box.setStyleSheet("""
-                QMessageBox {
-                    background-color: #2c2c2c;
-                    color: #ffffff;
-                }
-                QMessageBox QLabel {
-                    color: #ffffff;
-                }
-                QPushButton {
-                    background-color: #4A90E2;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 8px 16px;
-                    font-size: 13px;
-                }
-                QPushButton:hover {
-                    background-color: #5BA0F2;
-                }
-            """)
-        else:
-            msg_box.setStyleSheet("""
-                QMessageBox {
-                    background-color: #ffffff;
-                    color: #2c3e50;
-                }
-                QPushButton {
-                    background-color: #4A90E2;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    padding: 8px 16px;
-                    font-size: 13px;
-                }
-                QPushButton:hover {
-                    background-color: #357ABD;
-                }
-            """)
-        
-        msg_box.exec()
     
     def apply_theme(self, theme_name):
         """Apply the selected theme to the dialog background and all group boxes"""
@@ -1885,7 +1819,7 @@ class SettingsDialog(QDialog):
                 background-color: {colors["primary"]};
             }}
             QTabWidget::tab-bar {{
-                alignment: center;
+                
             }}
             QTabBar::tab {{
                 background: {colors["secondary"]};

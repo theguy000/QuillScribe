@@ -665,30 +665,18 @@ class QuillScribeMainWindow(QMainWindow):
         
         # Topbar with right-aligned close button (visible only in compact mode)
         self.topbar = QHBoxLayout()
+        self.topbar.setContentsMargins(0, 8, 8, 0)  # Add right margin
         self.topbar.addStretch()
-        self.close_button = QPushButton()
-        self.close_button.setIcon(get_button_icon('close', 12))
-        self.close_button.setIconSize(QSize(12, 12))
-        self.close_button.setFixedSize(22, 22)
+        self.close_button = QPushButton("×")
+        self.close_button.setFixedSize(24, 24)
         self.close_button.setVisible(False)
-        self.close_button.setStyleSheet(
-            """
-            QPushButton {
-                background: rgba(0,0,0,0.08);
-                color: #2c3e50;
-                border: 1px solid #ced4da;
-                border-radius: 11px;
-                font-size: 12px;
-                font-weight: bold;
-                padding: 0px;
-            }
-            QPushButton:hover { background: rgba(0,0,0,0.2); }
-            """
-        )
-        # Set icon size for close button
-        self.close_button.setIconSize(QSize(12, 12))
         self.close_button.clicked.connect(self.close)
+        # Ensure the text is perfectly centered
+        self.close_button.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         self.topbar.addWidget(self.close_button)
+        
+        # Apply initial close button styling
+        self.apply_close_button_theme(False)
         layout.addLayout(self.topbar)
         
         # Title - properly centered
@@ -720,13 +708,15 @@ class QuillScribeMainWindow(QMainWindow):
         self.settings_button = ModernButton("Settings", primary=False)
         self.settings_button.setIcon(get_button_icon('settings', 16))
         self.settings_button.setIconSize(QSize(16, 16))
+        # Ensure button doesn't expand horizontally beyond its content
+        self.settings_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         
         
         button_layout = QHBoxLayout()
         button_layout.addStretch()
-        button_layout.addWidget(self.settings_button)
+        button_layout.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignCenter)
         button_layout.addStretch()
-        layout.addLayout(button_layout)
+        layout.addLayout(button_layout, 0)
         
         # Status label
         self.status_label = QLabel("Click microphone or press shortcut to start recording")
@@ -776,6 +766,16 @@ class QuillScribeMainWindow(QMainWindow):
         
         icon_label.setFixedSize(16, 16)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Remove any text decoration that might cause white understrike
+        icon_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+                text-decoration: none;
+            }
+        """)
         titlebar_layout.addWidget(icon_label)
         
         # Left spacer
@@ -1156,6 +1156,51 @@ class QuillScribeMainWindow(QMainWindow):
             except Exception as e:
                 print(f"Failed to set app shortcut '{qt_seq_text}': {e}")
     
+    def apply_close_button_theme(self, is_dark: bool):
+        """Apply theme-appropriate styling to the close button for compact mode"""
+        if is_dark:
+            style = """
+                QPushButton {
+                    background: rgba(255, 255, 255, 0.1);
+                    color: #ffffff;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 12px;
+                    text-align: center;
+                    padding: 0px;
+                    margin: 0px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: rgba(255, 255, 255, 0.2);
+                    border-color: rgba(255, 255, 255, 0.4);
+                }
+                QPushButton:pressed {
+                    background: rgba(255, 255, 255, 0.3);
+                }
+            """
+        else:
+            style = """
+                QPushButton {
+                    background: rgba(0, 0, 0, 0.05);
+                    color: #495057;
+                    border: 1px solid rgba(0, 0, 0, 0.1);
+                    border-radius: 12px;
+                    text-align: center;
+                    padding: 0px;
+                    margin: 0px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background: rgba(0, 0, 0, 0.1);
+                    border-color: rgba(0, 0, 0, 0.2);
+                    color: #212529;
+                }
+                QPushButton:pressed {
+                    background: rgba(0, 0, 0, 0.15);
+                }
+            """
+        self.close_button.setStyleSheet(style)
+    
     def apply_theme(self, theme_name):
         """Apply the selected theme to the main window background and text colors"""
         theme = self.THEMES.get(theme_name, self.THEMES["white"])
@@ -1198,6 +1243,9 @@ class QuillScribeMainWindow(QMainWindow):
             self.settings_button.setIcon(get_white_button_icon('settings', 16))
         else:
             self.settings_button.setIcon(get_button_icon('settings', 16))
+        
+        # Apply theme to close button
+        self.apply_close_button_theme(self.is_dark)
 
         
 
@@ -1234,6 +1282,13 @@ class QuillScribeMainWindow(QMainWindow):
                 QWidget {{
                     background: {titlebar_bg};
                     border-bottom: 1px solid {titlebar_border};
+                }}
+                QLabel {{
+                    background: transparent;
+                    border: none;
+                    padding: 0px;
+                    margin: 0px;
+                    text-decoration: none;
                 }}
             """)
             
@@ -1322,8 +1377,9 @@ class QuillScribeMainWindow(QMainWindow):
             self.status_label.setStyleSheet("QLabel { color: #6c757d; font-size: 11px; margin-top: 4px; }")
             # Shrink settings button
             self.settings_button.apply_theme(self.is_dark, True)
-            # Show centered close button
+            # Show centered close button with proper theme
             self.close_button.setVisible(True)
+            self.apply_close_button_theme(self.is_dark)
             # Re-show to apply window flag changes
             self.show()
         else:
