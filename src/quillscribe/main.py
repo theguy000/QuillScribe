@@ -739,7 +739,7 @@ class QuillScribeMainWindow(QMainWindow):
         """)
     
     def create_custom_titlebar(self):
-        """Create a custom titlebar with centered title"""
+        """Create a custom titlebar with perfectly centered title"""
         self.custom_titlebar = QWidget()
         self.custom_titlebar.setFixedHeight(32)
         self.custom_titlebar.setStyleSheet("""
@@ -750,9 +750,16 @@ class QuillScribeMainWindow(QMainWindow):
         """)
         
         titlebar_layout = QHBoxLayout(self.custom_titlebar)
-        titlebar_layout.setContentsMargins(8, 0, 0, 0)  # No right margin for buttons
-        titlebar_layout.setSpacing(8)
-        titlebar_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)  # Vertical center alignment
+        titlebar_layout.setContentsMargins(0, 0, 0, 0)
+        titlebar_layout.setSpacing(0)
+        titlebar_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        
+        # Left section: icon + spacer (fixed width to balance right section)
+        left_section = QWidget()
+        left_section.setFixedWidth(100)  # Fixed width to match right section
+        left_layout = QHBoxLayout(left_section)
+        left_layout.setContentsMargins(8, 0, 0, 0)
+        left_layout.setSpacing(8)
         
         # Window icon (ICO format only - guaranteed to be present)
         icon_label = QLabel()
@@ -766,7 +773,6 @@ class QuillScribeMainWindow(QMainWindow):
         
         icon_label.setFixedSize(16, 16)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Remove any text decoration that might cause white understrike
         icon_label.setStyleSheet("""
             QLabel {
                 background: transparent;
@@ -776,12 +782,16 @@ class QuillScribeMainWindow(QMainWindow):
                 text-decoration: none;
             }
         """)
-        titlebar_layout.addWidget(icon_label)
+        left_layout.addWidget(icon_label)
+        left_layout.addStretch()
+        titlebar_layout.addWidget(left_section)
         
-        # Left spacer
-        titlebar_layout.addStretch()
+        # Center section: title (expandable)
+        center_section = QWidget()
+        center_layout = QHBoxLayout(center_section)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
         
-        # Centered title
         self.titlebar_title = QLabel("QuillScribe")
         self.titlebar_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.titlebar_title.setStyleSheet("""
@@ -793,13 +803,17 @@ class QuillScribeMainWindow(QMainWindow):
                 background: transparent;
             }
         """)
-        self.titlebar_title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        titlebar_layout.addWidget(self.titlebar_title)
+        center_layout.addWidget(self.titlebar_title)
+        titlebar_layout.addWidget(center_section)
         
-        # Right spacer
-        titlebar_layout.addStretch()
+        # Right section: window controls (fixed width to balance left section)
+        right_section = QWidget()
+        right_section.setFixedWidth(100)  # Fixed width to match left section
+        right_layout = QHBoxLayout(right_section)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        right_layout.addStretch()
         
-        # Window controls - create as separate widgets for proper sizing
         # Minimize button
         self.minimize_btn = QPushButton("−")
         self.minimize_btn.setFixedSize(46, 32)  # Match titlebar height exactly
@@ -822,7 +836,7 @@ class QuillScribeMainWindow(QMainWindow):
             }
         """)
         self.minimize_btn.clicked.connect(self.showMinimized)
-        titlebar_layout.addWidget(self.minimize_btn)
+        right_layout.addWidget(self.minimize_btn)
         
         # Close button
         self.titlebar_close_btn = QPushButton("×")
@@ -848,7 +862,9 @@ class QuillScribeMainWindow(QMainWindow):
             }
         """)
         self.titlebar_close_btn.clicked.connect(self.close)
-        titlebar_layout.addWidget(self.titlebar_close_btn)
+        right_layout.addWidget(self.titlebar_close_btn)
+        
+        titlebar_layout.addWidget(right_section)
         
         # Make titlebar draggable
         self.custom_titlebar.mousePressEvent = self.titlebar_mouse_press
