@@ -92,8 +92,6 @@ class ModernComboBox(QComboBox):
         text_color = "#f0f0f0" if is_dark else "#495057"
         bg = "#2c2c2c" if is_dark else "white"
         hover_bg = "#333333" if is_dark else "#f8f9fa"
-        drop_bg = "#3c3c3c" if is_dark else "#f8f9fa"
-        arrow_color = "#b0b0b0" if is_dark else "#6c757d"
         alt_bg = "#252525" if is_dark else "#f7f7f7"
 
         stylesheet = f"""
@@ -116,19 +114,18 @@ class ModernComboBox(QComboBox):
                 border: 1.5px solid {accent};
             }}
             QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
+                border: none;
+                background: transparent;
                 width: 20px;
-                border-left: 1px solid {border};
-                border-top-right-radius: 8px;
-                border-bottom-right-radius: 8px;
-                background-color: {drop_bg};
             }}
             QComboBox::down-arrow {{
                 image: none;
-                border-left: 6px solid transparent;
-                border-right: 6px solid transparent;
-                border-top: 6px solid {arrow_color};
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 4px solid {text_color};
+                width: 0px;
+                height: 0px;
+                margin: 6px;
             }}
             QComboBox QAbstractItemView {{
                 border: 1.5px solid {border};
