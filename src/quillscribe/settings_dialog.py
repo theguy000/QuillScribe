@@ -495,7 +495,7 @@ class AudioTab(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(30)  # Increased spacing for better vertical distribution
+        layout.setSpacing(20)  # Reduced spacing for compact scroll layout
         
         # Microphone selection
         mic_group = ModernGroupBox("Microphone Settings")
@@ -718,10 +718,8 @@ class AudioTab(QWidget):
         self.device_monitor_timer.start(2000)  # Check every 2 seconds
         self.last_device_list = []
         
-        # Add some additional space for better content distribution
-        spacer = QWidget()
-        spacer.setMinimumHeight(50)
-        layout.addWidget(spacer)
+        # Add minimal space for scroll layout
+        layout.addStretch()
     
     def on_device_changed(self, index):
         """Handle microphone device selection change"""
@@ -1036,7 +1034,7 @@ class WhisperTab(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(30)  # Increased spacing for better vertical distribution
+        layout.setSpacing(20)  # Reduced spacing for compact scroll layout
         
         # Mode selection
         mode_group = ModernGroupBox("Transcription Mode")
@@ -1196,10 +1194,8 @@ class WhisperTab(QWidget):
         
         layout.addWidget(self.local_group)
         
-        # Add some additional space for better content distribution
-        spacer = QWidget()
-        spacer.setMinimumHeight(50)
-        layout.addWidget(spacer)
+        # Add minimal space for scroll layout
+        layout.addStretch()
     
     def refresh_models_display(self):
         """Download UI removed; nothing to refresh here"""
@@ -1378,7 +1374,7 @@ class OutputTab(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(30)  # Increased spacing for better vertical distribution
+        layout.setSpacing(20)  # Reduced spacing for compact scroll layout
         
         # Output behavior
         output_group = ModernGroupBox("Output Behavior")
@@ -1480,10 +1476,8 @@ class OutputTab(QWidget):
         
         layout.addWidget(options_group)
         
-        # Add some additional space for better content distribution
-        spacer = QWidget()
-        spacer.setMinimumHeight(50)
-        layout.addWidget(spacer)
+        # Add minimal space for scroll layout
+        layout.addStretch()
     
     def _update_auto_clear_delay_state(self, checked: bool):
         """Enable/disable auto-clear delay input based on checkbox state"""
@@ -1559,32 +1553,30 @@ class SettingsDialog(QDialog):
         
     def setup_ui(self):
         self.setWindowTitle("QuillScribe Settings")
-        self.setMinimumSize(600, 700)  # Wider and taller for better content display
-        self.resize(600, 750)  # Set initial size but allow resizing
+        self.setFixedSize(600, 500)  # Fixed compact size - much shorter vertically
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
         
         layout = QVBoxLayout(self)
-        layout.setSpacing(25)  # Increased spacing for better vertical distribution
-        layout.setContentsMargins(25, 20, 25, 20)  # Increased margins for better proportions
-        # Remove fixed size constraint to allow better content layout
+        layout.setSpacing(15)  # Reduced spacing for compact layout
+        layout.setContentsMargins(15, 15, 15, 15)  # Reduced margins for compact layout
         
-        # Title
+        # Title - smaller for compact layout
         title = QLabel("Settings")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("""
             QLabel {
                 color: #2c3e50;
-                font-size: 22px;
-                font-weight: 300;
-                margin-bottom: 10px;
+                font-size: 18px;
+                font-weight: 400;
+                margin-bottom: 5px;
             }
         """)
         layout.addWidget(title)
         
-        # Tab widget
+        # Tab widget - compact size
         self.tabs = QTabWidget()
         self.tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.tabs.setMinimumHeight(550)  # Ensure tabs have adequate height
+        self.tabs.setMaximumHeight(350)  # Reduced height for compact layout
         # Tab styling will be set by apply_tab_theme method
         self.apply_tab_theme("white")
         
@@ -1595,20 +1587,26 @@ class SettingsDialog(QDialog):
         self.output_tab = OutputTab(self.config_manager)
         self.ui_tab = UITab(self.config_manager)
         
-        self.tabs.addTab(self.audio_tab, "Audio")
-        self.tabs.setTabIcon(self.tabs.indexOf(self.audio_tab), get_icon('audio', 16))
-        self.tabs.addTab(self.whisper_tab, "Whisper")
-        self.tabs.setTabIcon(self.tabs.indexOf(self.whisper_tab), get_icon('brain', 16))
-        self.tabs.addTab(self.output_tab, "Output")
-        self.tabs.setTabIcon(self.tabs.indexOf(self.output_tab), get_icon('clipboard', 16))
-        self.tabs.addTab(self.ui_tab, "UI Settings")
-        self.tabs.setTabIcon(self.tabs.indexOf(self.ui_tab), get_icon('settings', 16))
+        # Wrap each tab in a scroll area for compact layout
+        self.audio_scroll = self._create_scroll_area(self.audio_tab)
+        self.whisper_scroll = self._create_scroll_area(self.whisper_tab)
+        self.output_scroll = self._create_scroll_area(self.output_tab)
+        self.ui_scroll = self._create_scroll_area(self.ui_tab)
+        
+        self.tabs.addTab(self.audio_scroll, "Audio")
+        self.tabs.setTabIcon(self.tabs.indexOf(self.audio_scroll), get_icon('audio', 16))
+        self.tabs.addTab(self.whisper_scroll, "Whisper")
+        self.tabs.setTabIcon(self.tabs.indexOf(self.whisper_scroll), get_icon('brain', 16))
+        self.tabs.addTab(self.output_scroll, "Output")
+        self.tabs.setTabIcon(self.tabs.indexOf(self.output_scroll), get_icon('clipboard', 16))
+        self.tabs.addTab(self.ui_scroll, "UI Settings")
+        self.tabs.setTabIcon(self.tabs.indexOf(self.ui_scroll), get_icon('settings', 16))
         
         layout.addWidget(self.tabs)
         
-        # Buttons with better spacing
+        # Buttons with compact spacing
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(15)  # Increased button spacing
+        button_layout.setSpacing(10)  # Reduced button spacing for compact layout
         button_layout.addStretch()
         
         self.cancel_button = QPushButton("Cancel")
@@ -1657,6 +1655,71 @@ class SettingsDialog(QDialog):
         # Connect buttons
         self.cancel_button.clicked.connect(self.reject)
         self.save_button.clicked.connect(self.save_and_close)
+    
+    def _create_scroll_area(self, widget):
+        """Create a scroll area with custom themed scrollbars for the given widget"""
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Apply custom scrollbar styling (will be updated by theme)
+        self._apply_scrollbar_theme(scroll_area, "white")
+        
+        return scroll_area
+    
+    def _apply_scrollbar_theme(self, scroll_area, theme_name):
+        """Apply themed styling to scrollbar"""
+        colors = self._get_theme_colors(theme_name)
+        is_dark = self._is_dark_color(colors["primary"])
+        
+        if is_dark:
+            # Dark theme scrollbar
+            scrollbar_bg = "#3c3c3c"
+            scrollbar_handle = "#666666"
+            scrollbar_handle_hover = "#777777"
+            scrollbar_handle_pressed = "#555555"
+        else:
+            # Light theme scrollbar
+            scrollbar_bg = "#f8f9fa"
+            scrollbar_handle = "#ced4da"
+            scrollbar_handle_hover = "#adb5bd"
+            scrollbar_handle_pressed = "#6c757d"
+        
+        scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+            QScrollBar:vertical {{
+                background: {scrollbar_bg};
+                width: 12px;
+                border: none;
+                border-radius: 6px;
+                margin: 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {scrollbar_handle};
+                min-height: 20px;
+                border-radius: 6px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {scrollbar_handle_hover};
+            }}
+            QScrollBar::handle:vertical:pressed {{
+                background: {scrollbar_handle_pressed};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                border: none;
+                background: none;
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+        """)
     
     def save_and_close(self):
         """Save all settings and close dialog"""
@@ -1708,6 +1771,16 @@ class SettingsDialog(QDialog):
         
         # Apply theme to tabs
         self.apply_tab_theme(theme_name)
+        
+        # Apply theme to scrollbars
+        if hasattr(self, 'audio_scroll'):
+            self._apply_scrollbar_theme(self.audio_scroll, theme_name)
+        if hasattr(self, 'whisper_scroll'):
+            self._apply_scrollbar_theme(self.whisper_scroll, theme_name)
+        if hasattr(self, 'output_scroll'):
+            self._apply_scrollbar_theme(self.output_scroll, theme_name)
+        if hasattr(self, 'ui_scroll'):
+            self._apply_scrollbar_theme(self.ui_scroll, theme_name)
     
     def _apply_theme_to_group_boxes(self, colors):
         """Apply theme to all ModernGroupBox instances"""
