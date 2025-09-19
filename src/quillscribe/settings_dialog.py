@@ -113,7 +113,7 @@ class ModernComboBox(QComboBox):
             }}
             QComboBox:focus {{
                 outline: none;
-                border: 1.5px solid {border};
+                border: 1.5px solid {accent};
             }}
             QComboBox::drop-down {{
                 subcontrol-origin: padding;
@@ -1065,17 +1065,46 @@ class WhisperTab(QWidget):
         self.api_group = ModernGroupBox("API Settings")
         api_layout = QFormLayout(self.api_group)
         api_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        api_layout.setFormAlignment(Qt.AlignmentFlag.AlignVCenter)
         # API group will use ModernGroupBox theming
         
+        # API key input with icon
+        api_key_widget = QWidget()
+        api_key_layout = QHBoxLayout(api_key_widget)
+        api_key_layout.setContentsMargins(0, 0, 0, 0)
+        api_key_layout.setSpacing(6)
+
+        api_key_icon = QLabel()
+        api_key_icon.setPixmap(get_button_icon('key', 16).pixmap(16, 16))
+        api_key_layout.addWidget(api_key_icon)
+
         self.api_key_edit = ModernLineEdit("sk-...")
         self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        api_layout.addRow("OpenAI API Key:", self.api_key_edit)
+        api_key_layout.addWidget(self.api_key_edit)
+        api_key_layout.addStretch()
+
+        # Create properly aligned label for API key
+        api_key_label = QLabel("OpenAI API Key:")
+        api_key_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        api_key_label.setMinimumHeight(36)  # Match input box height
+        api_key_label.setStyleSheet("""
+            QLabel {
+                color: #495057;
+                font-size: 13px;
+                font-weight: 500;
+                background-color: transparent;
+            }
+        """)
         
+        api_layout.addRow(api_key_label, api_key_widget)
+
+        # Helper text for API key
         api_help = QLabel("Get your API key from: https://platform.openai.com/api-keys")
         api_help.setStyleSheet("""
-            color: #6c757d; 
+            color: #6c757d;
             font-size: 11px;
             background-color: transparent;
+            margin-left: 22px;
         """)
         api_help.setWordWrap(True)
         api_layout.addRow("", api_help)
@@ -1128,7 +1157,7 @@ class WhisperTab(QWidget):
             category_label.setMinimumHeight(36)  # Match combo box height
             category_label.setStyleSheet("""
                 QLabel {
-                    color: #343a40;
+                    color: #495057;
                     font-size: 13px;
                     font-weight: 500;
                     background-color: transparent;
@@ -1170,7 +1199,7 @@ class WhisperTab(QWidget):
             model_label.setMinimumHeight(36)  # Match combo box height
             model_label.setStyleSheet("""
                 QLabel {
-                    color: #343a40;
+                    color: #495057;
                     font-size: 13px;
                     font-weight: 500;
                     background-color: transparent;
