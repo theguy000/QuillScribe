@@ -83,9 +83,7 @@ class WhisperManager(QObject):
             "large-v3",
             "large-v3-turbo",
             "turbo",
-            # Distilled models (community variants)
-            "distil-tiny.en",
-            "distil-base.en",
+            # Distilled models (only these are supported by faster-whisper)
             "distil-small.en",
             "distil-medium.en",
             "distil-large-v2",
@@ -346,9 +344,7 @@ class WhisperManager(QObject):
             "large-v3": {"size": "2.3 GB", "memory": "~5.2 GB RAM", "speed": "Very Slow", "quality": "Highest"},
             "large-v3-turbo": {"size": "2.3 GB", "memory": "~5.0 GB RAM", "speed": "Fast", "quality": "Highest"},
             "turbo": {"size": "2.3 GB", "memory": "~5.0 GB RAM", "speed": "Very Fast", "quality": "Highest"},
-            # Distilled models
-            "distil-tiny.en": {"size": "25 MB", "memory": "~150 MB RAM", "speed": "Very Fast", "quality": "Low (English only)"},
-            "distil-base.en": {"size": "75 MB", "memory": "~350 MB RAM", "speed": "Fast", "quality": "Medium (English only)"},
+            # Distilled models (only supported ones)
             "distil-small.en": {"size": "240 MB", "memory": "~900 MB RAM", "speed": "Medium", "quality": "Good (English only)"},
             "distil-medium.en": {"size": "800 MB", "memory": "~2.5 GB RAM", "speed": "Medium", "quality": "High (English only)"},
             "distil-large-v2": {"size": "1.5 GB", "memory": "~3.5 GB RAM", "speed": "Medium", "quality": "Highest"},
