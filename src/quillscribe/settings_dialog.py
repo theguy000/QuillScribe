@@ -93,6 +93,8 @@ class ModernComboBox(QComboBox):
         bg = "#2c2c2c" if is_dark else "white"
         hover_bg = "#333333" if is_dark else "#f8f9fa"
         alt_bg = "#252525" if is_dark else "#f7f7f7"
+        # Fix selection text color - use white for dark accent backgrounds, dark for light backgrounds
+        selection_text_color = "white"  # Accent color is always dark enough to need white text
 
         stylesheet = f"""
             QComboBox {{
@@ -133,18 +135,25 @@ class ModernComboBox(QComboBox):
                 background-color: {bg};
                 color: {text_color};
                 selection-background-color: {accent};
-                selection-color: white;
+                selection-color: {selection_text_color};
                 alternate-background-color: {alt_bg};
             }}
             QComboBox QAbstractItemView::item {{
                 height: 24px;
                 padding: 4px 8px;
+                color: {text_color};
             }}
             QComboBox QAbstractItemView::item:hover {{
                 background-color: {accent};
-                color: white;
+                color: {selection_text_color};
                 outline: none;
                 border: none;
+            }}
+            QComboBox QAbstractItemView::item:selected {{
+                background-color: {accent};
+                color: {selection_text_color};
+                outline: none !important;
+                border: none !important;
             }}
             QListView {{
                 outline: none;
