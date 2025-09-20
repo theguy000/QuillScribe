@@ -89,7 +89,7 @@ class ModernComboBox(QComboBox):
 
     def apply_theme(self, is_dark: bool, accent: str = "#4A90E2", border: str | None = None):
         border = border or ("#555555" if is_dark else "#dee2e6")
-        text_color = "#f0f0f0" if is_dark else "#495057"
+        text_color = "#ffffff" if is_dark else "#212529"
         bg = "#2c2c2c" if is_dark else "white"
         hover_bg = "#333333" if is_dark else "#f8f9fa"
         alt_bg = "#252525" if is_dark else "#f7f7f7"
@@ -166,8 +166,10 @@ class ModernComboBox(QComboBox):
                 width: 0px;
             }}
             QComboBox:disabled {{
-                color: {'#9aa0a6' if is_dark else '#adb5bd'};
+                color: {'#6c757d' if is_dark else '#868e96'};
+                background-color: {'#1a1a1a' if is_dark else '#f1f3f4'};
                 border-style: dashed;
+                border-color: {'#404040' if is_dark else '#ced4da'};
             }}
         """
         self.setStyleSheet(stylesheet)
@@ -196,7 +198,7 @@ class ModernLineEdit(QLineEdit):
                     padding: 8px;
                     font-size: 13px;
                     background-color: #2c2c2c;
-                    color: #f0f0f0;
+                    color: #ffffff;
                     min-height: 20px;
                     outline: none;
                 }
@@ -205,6 +207,12 @@ class ModernLineEdit(QLineEdit):
                 }
                 QLineEdit:focus {
                     border-color: #4A90E2;
+                }
+                QLineEdit:disabled {
+                    color: #6c757d;
+                    background-color: #1a1a1a;
+                    border-style: dashed;
+                    border-color: #404040;
                 }
             """
         else:
@@ -215,7 +223,7 @@ class ModernLineEdit(QLineEdit):
                     padding: 8px;
                     font-size: 13px;
                     background-color: white;
-                    color: black;
+                    color: #212529;
                     min-height: 20px;
                     outline: none;
                 }
@@ -224,6 +232,12 @@ class ModernLineEdit(QLineEdit):
                 }
                 QLineEdit:focus {
                     border-color: #4A90E2;
+                }
+                QLineEdit:disabled {
+                    color: #868e96;
+                    background-color: #f1f3f4;
+                    border-style: dashed;
+                    border-color: #ced4da;
                 }
             """
         self.setStyleSheet(stylesheet)
