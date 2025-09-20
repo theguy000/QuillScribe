@@ -1815,6 +1815,9 @@ class SettingsDialog(QDialog):
         if hasattr(self, 'ui_scroll'):
             self._apply_scrollbar_theme(self.ui_scroll, theme_name)
 
+        # Apply theme to icons
+        self._apply_icon_theme(is_dark)
+
         # Explicitly set background for tab content widgets to match theme
         # This ensures areas not covered by group boxes don't appear dark
         try:
@@ -1870,6 +1873,191 @@ class SettingsDialog(QDialog):
         
         # Convert back to hex
         return f"#{r:02x}{g:02x}{b:02x}"
+    
+    def _apply_icon_theme(self, is_dark: bool):
+        """Apply appropriate icon colors based on dark/light theme"""
+        # Update tab icons
+        if hasattr(self, 'tabs'):
+            # Audio tab
+            audio_index = None
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i) == "Audio":
+                    audio_index = i
+                    break
+            if audio_index is not None:
+                if is_dark:
+                    self.tabs.setTabIcon(audio_index, get_icon('audio', 16, QColor(255, 255, 255)))
+                else:
+                    self.tabs.setTabIcon(audio_index, get_icon('audio', 16))
+            
+            # Whisper tab
+            whisper_index = None
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i) == "Whisper":
+                    whisper_index = i
+                    break
+            if whisper_index is not None:
+                if is_dark:
+                    self.tabs.setTabIcon(whisper_index, get_icon('brain', 16, QColor(255, 255, 255)))
+                else:
+                    self.tabs.setTabIcon(whisper_index, get_icon('brain', 16))
+            
+            # Output tab
+            output_index = None
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i) == "Output":
+                    output_index = i
+                    break
+            if output_index is not None:
+                if is_dark:
+                    self.tabs.setTabIcon(output_index, get_icon('clipboard', 16, QColor(255, 255, 255)))
+                else:
+                    self.tabs.setTabIcon(output_index, get_icon('clipboard', 16))
+            
+            # UI Settings tab
+            ui_index = None
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i) == "UI Settings":
+                    ui_index = i
+                    break
+            if ui_index is not None:
+                if is_dark:
+                    self.tabs.setTabIcon(ui_index, get_icon('settings', 16, QColor(255, 255, 255)))
+                else:
+                    self.tabs.setTabIcon(ui_index, get_icon('settings', 16))
+        
+        # Update button icons (these are already using get_white_button_icon for dark backgrounds)
+        # The cancel and save buttons already use white icons on their dark backgrounds, so no change needed
+        
+        # Update icons in tab content - these need to be updated based on theme
+        try:
+            # Audio tab icons
+            if hasattr(self, 'audio_tab'):
+                # Find and update refresh button
+                for button in self.audio_tab.findChildren(QPushButton):
+                    if hasattr(button, 'objectName') and 'refresh' in str(button.objectName()).lower():
+                        if is_dark:
+                            button.setIcon(get_white_button_icon('refresh', 16))
+                        else:
+                            button.setIcon(get_button_icon('refresh', 16))
+                    elif 'detect' in button.text().lower():
+                        if is_dark:
+                            button.setIcon(get_white_button_icon('refresh', 14))
+                        else:
+                            button.setIcon(get_button_icon('refresh', 14))
+                
+                # Find and update checkbox icons
+                for checkbox in self.audio_tab.findChildren(ModernCheckBox):
+                    if 'auto' in checkbox.text().lower():
+                        if is_dark:
+                            checkbox.setIcon(get_white_button_icon('sound', 16))
+                        else:
+                            checkbox.setIcon(get_button_icon('sound', 16))
+            
+            # Whisper tab icons
+            if hasattr(self, 'whisper_tab'):
+                # Find and update test buttons
+                for button in self.whisper_tab.findChildren(QPushButton):
+                    if 'test' in button.text().lower():
+                        if is_dark:
+                            button.setIcon(get_white_button_icon('test', 16))
+                        else:
+                            button.setIcon(get_button_icon('test', 16))
+                
+                # Find and update radio button icons
+                for radio in self.whisper_tab.findChildren(ModernRadioButton):
+                    if 'api' in radio.text().lower():
+                        if is_dark:
+                            radio.setIcon(get_white_button_icon('api', 16))
+                        else:
+                            radio.setIcon(get_button_icon('api', 16))
+                    elif 'local' in radio.text().lower():
+                        if is_dark:
+                            radio.setIcon(get_white_button_icon('local', 16))
+                        else:
+                            radio.setIcon(get_button_icon('local', 16))
+            
+            # Output tab icons
+            if hasattr(self, 'output_tab'):
+                # Find and update radio button icons
+                for radio in self.output_tab.findChildren(ModernRadioButton):
+                    text = radio.text().lower()
+                    if 'copy' in text and 'paste' not in text:
+                        if is_dark:
+                            radio.setIcon(get_white_button_icon('clipboard', 16))
+                        else:
+                            radio.setIcon(get_button_icon('clipboard', 16))
+                    elif 'paste' in text and 'copy' not in text:
+                        if is_dark:
+                            radio.setIcon(get_white_button_icon('paste', 16))
+                        else:
+                            radio.setIcon(get_button_icon('paste', 16))
+                    elif 'copy' in text and 'paste' in text:
+                        if is_dark:
+                            radio.setIcon(get_white_button_icon('clipboard', 16))
+                        else:
+                            radio.setIcon(get_button_icon('clipboard', 16))
+                    elif 'display' in text:
+                        if is_dark:
+                            radio.setIcon(get_white_button_icon('eye', 16))
+                        else:
+                            radio.setIcon(get_button_icon('eye', 16))
+                
+                # Find and update checkbox icons
+                for checkbox in self.output_tab.findChildren(ModernCheckBox):
+                    text = checkbox.text().lower()
+                    if 'silent' in text:
+                        if is_dark:
+                            checkbox.setIcon(get_white_button_icon('silent', 16))
+                        else:
+                            checkbox.setIcon(get_button_icon('silent', 16))
+                    elif 'auto clear' in text or 'clear' in text:
+                        if is_dark:
+                            checkbox.setIcon(get_white_button_icon('trash', 16))
+                        else:
+                            checkbox.setIcon(get_button_icon('trash', 16))
+            
+            # UI tab icons
+            if hasattr(self, 'ui_tab'):
+                # Find and update checkbox icons
+                for checkbox in self.ui_tab.findChildren(ModernCheckBox):
+                    text = checkbox.text().lower()
+                    if 'compact' in text:
+                        if is_dark:
+                            checkbox.setIcon(get_white_button_icon('compact', 16))
+                        else:
+                            checkbox.setIcon(get_button_icon('compact', 16))
+                    elif 'title' in text or 'titlebar' in text:
+                        if is_dark:
+                            checkbox.setIcon(get_white_button_icon('window', 16))
+                        else:
+                            checkbox.setIcon(get_button_icon('window', 16))
+                    elif 'waveform' in text:
+                        if is_dark:
+                            checkbox.setIcon(get_white_button_icon('zap', 16))
+                        else:
+                            checkbox.setIcon(get_button_icon('zap', 16))
+                    elif 'minimize' in text:
+                        if is_dark:
+                            checkbox.setIcon(get_white_button_icon('window', 16))
+                        else:
+                            checkbox.setIcon(get_button_icon('window', 16))
+                
+                # Update theme icon in the UI tab
+                if hasattr(self.ui_tab, 'findChildren'):
+                    for label in self.ui_tab.findChildren(QLabel):
+                        # Look for the theme icon label
+                        if hasattr(label, 'pixmap') and label.pixmap() is not None:
+                            # Check if this is likely the theme icon (has a pixmap and is near theme-related text)
+                            parent = label.parent()
+                            if parent and any('theme' in str(child.text()).lower() for child in parent.findChildren(QLabel) if hasattr(child, 'text')):
+                                if is_dark:
+                                    label.setPixmap(get_icon('settings', 16, QColor(255, 255, 255)).pixmap(16, 16))
+                                else:
+                                    label.setPixmap(get_icon('settings', 16).pixmap(16, 16))
+                                break
+        except Exception as e:
+            print(f"Error updating icon theme: {e}")
     
     def _is_dark_color(self, hex_color):
         """Determine if a color is dark based on its luminance"""
