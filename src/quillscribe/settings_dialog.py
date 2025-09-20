@@ -1714,9 +1714,16 @@ class SettingsDialog(QDialog):
             scrollbar_handle_pressed = "#6c757d"
         
         scroll_area.setStyleSheet(f"""
+            /* Ensure the scroll area and its viewport use the theme background */
             QScrollArea {{
                 border: none;
-                background-color: transparent;
+                background-color: {colors["primary"]};
+            }}
+            QScrollArea > QWidget#qt_scrollarea_viewport {{
+                background-color: {colors["primary"]};
+            }}
+            QWidget#qt_scrollarea_viewport {{
+                background-color: {colors["primary"]};
             }}
             QScrollBar:vertical {{
                 background: {scrollbar_bg};
@@ -1807,6 +1814,20 @@ class SettingsDialog(QDialog):
             self._apply_scrollbar_theme(self.output_scroll, theme_name)
         if hasattr(self, 'ui_scroll'):
             self._apply_scrollbar_theme(self.ui_scroll, theme_name)
+
+        # Explicitly set background for tab content widgets to match theme
+        # This ensures areas not covered by group boxes don't appear dark
+        try:
+            if hasattr(self, 'audio_tab'):
+                self.audio_tab.setStyleSheet(f"background-color: {colors['primary']};")
+            if hasattr(self, 'whisper_tab'):
+                self.whisper_tab.setStyleSheet(f"background-color: {colors['primary']};")
+            if hasattr(self, 'output_tab'):
+                self.output_tab.setStyleSheet(f"background-color: {colors['primary']};")
+            if hasattr(self, 'ui_tab'):
+                self.ui_tab.setStyleSheet(f"background-color: {colors['primary']};")
+        except Exception:
+            pass
     
     def _apply_theme_to_group_boxes(self, colors):
         """Apply theme to all ModernGroupBox instances"""
