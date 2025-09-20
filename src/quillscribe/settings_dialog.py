@@ -2389,6 +2389,7 @@ class UITab(QWidget):
         theme_widget_layout.addStretch()
         
         self.theme_dropdown = ModernComboBox()
+        self.theme_dropdown.setMaximumWidth(200)
         self.theme_dropdown.addItem("Classic White", "white")
         self.theme_dropdown.addItem("Warm Gray", "warm_gray")
         self.theme_dropdown.addItem("Soft Beige", "soft_beige")
