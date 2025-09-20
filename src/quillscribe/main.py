@@ -1025,6 +1025,35 @@ class QuillScribeMainWindow(QMainWindow):
                 api_key = self.config_manager.get_setting("whisper/api_key", "")
                 if api_key:
                     self.whisper_manager.set_api_key(api_key)
+                # Load API model setting
+                api_model = self.config_manager.get_setting("whisper/api_model")
+                if api_model:
+                    try:
+                        self.whisper_manager.set_api_model(api_model)
+                    except ValueError as e:
+                        # Show user-friendly error dialog
+                        QMessageBox.warning(
+                            self,
+                            "Invalid API Model",
+                            f"The configured API model '{api_model}' is not available.\n\n"
+                            f"Error: {e}\n\n"
+                            f"Falling back to default model 'whisper-1'.\n"
+                            f"Please check your settings to select a valid model.",
+                            QMessageBox.StandardButton.Ok
+                        )
+                        
+                        # Fallback to default model and clear invalid config
+                        try:
+                            self.whisper_manager.set_api_model("whisper-1")
+                            self.config_manager.set_setting("whisper/api_model", "whisper-1")
+                        except Exception as fallback_error:
+                            QMessageBox.critical(
+                                self,
+                                "Critical Error",
+                                f"Failed to set fallback API model: {fallback_error}\n\n"
+                                f"Please check your OpenAI API configuration.",
+                                QMessageBox.StandardButton.Ok
+                            )
             else:
                 # Local model will be set below in the local model section
                 pass

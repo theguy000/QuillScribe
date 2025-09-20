@@ -1123,6 +1123,58 @@ class WhisperTab(QWidget):
         api_help.setWordWrap(True)
         api_layout.addRow("", api_help)
         
+        # API pricing information
+        self.api_pricing_info = QLabel("Pricing: ~$0.006 per minute of audio (~$0.36/hour)")
+        self.api_pricing_info.setStyleSheet("""
+            color: #28a745;
+            font-size: 12px;
+            font-weight: 600;
+            background-color: #f8fff9;
+            border: 1px solid #d4edda;
+            border-radius: 4px;
+            padding: 4px 6px;
+            margin-left: 22px;
+            max-width: 280px;
+        """)
+        self.api_pricing_info.setWordWrap(True)
+        api_layout.addRow("", self.api_pricing_info)
+
+        # API model selection with icon
+        api_model_widget = QWidget()
+        api_model_layout = QHBoxLayout(api_model_widget)
+        api_model_layout.setContentsMargins(0, 0, 0, 0)
+        api_model_layout.setSpacing(6)
+
+        api_model_icon = QLabel()
+        api_model_icon.setPixmap(get_button_icon('brain', 16).pixmap(16, 16))
+        api_model_icon.setObjectName("icon_api_model")
+        api_model_layout.addWidget(api_model_icon)
+
+        self.api_model_combo = ModernComboBox()
+        self.populate_api_model_combo()
+        self.api_model_combo.currentIndexChanged.connect(self.on_api_model_changed)
+        api_model_layout.addWidget(self.api_model_combo)
+        api_model_layout.addStretch()
+
+        # Create properly aligned label for API model
+        api_model_label = QLabel("API Model:")
+        api_model_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        api_model_label.setMinimumHeight(36)  # Match combo box height
+        api_model_label.setObjectName("form_label")
+        
+        api_layout.addRow(api_model_label, api_model_widget)
+
+        # Helper text for API model
+        api_model_help = QLabel("Select the OpenAI Whisper model to use for transcription")
+        api_model_help.setStyleSheet("""
+            color: #6c757d;
+            font-size: 11px;
+            background-color: transparent;
+            margin-left: 22px;
+        """)
+        api_model_help.setWordWrap(True)
+        api_layout.addRow("", api_model_help)
+        
         layout.addWidget(self.api_group)
         
         # Local model settings (only show if Faster-Whisper is available)
@@ -1294,6 +1346,56 @@ class WhisperTab(QWidget):
             self.config_manager.set_setting("whisper/local_model", model_name)
             self.whisper_manager.set_local_model(model_name)
     
+    def populate_api_model_combo(self):
+        """Fill the API model dropdown with available API models"""
+        self.api_model_combo.clear()
+        # Get available API models from whisper manager
+        api_models = self.whisper_manager.available_api_models
+        
+        for model in api_models:
+            # Get model info to show additional details
+            model_info = self.whisper_manager.get_model_info(model)
+            size = model_info.get('size', 'Unknown')
+            quality = model_info.get('quality', 'Unknown')
+            # Display format: "model_name (size, quality)"
+            display_text = f"{model} ({size}, {quality})"
+            # Store actual model name as item data
+            self.api_model_combo.addItem(display_text, model)
+    
+    def on_api_model_changed(self, index: int):
+        """Handle API model dropdown selection change"""
+        # Get actual model name from item data
+        model_name = self.api_model_combo.itemData(index)
+        if model_name:
+            # Persist immediately and update whisper manager
+            self.config_manager.set_setting("whisper/api_model", model_name)
+            try:
+                self.whisper_manager.set_api_model(model_name)
+            except ValueError as e:
+                print(f"Error setting API model: {e}")
+            
+            # Update pricing display based on selected model
+            self.update_pricing_display(model_name)
+    
+    def update_pricing_display(self, model_name: str):
+        """Update pricing display based on selected model"""
+        # Get model-specific pricing
+        pricing_info = self.get_model_pricing(model_name)
+        self.api_pricing_info.setText(pricing_info)
+    
+    def get_model_pricing(self, model_name: str) -> str:
+        """Get pricing information for a specific model"""
+        if model_name == "gpt-4o-mini-transcribe":
+            # GPT-4o Transcribe Mini is half the price of regular GPT-4o Transcribe
+            return "Pricing: ~$0.003 per minute of audio (~$0.18/hour)"
+        elif model_name == "gpt-4o-transcribe":
+            return "Pricing: ~$0.006 per minute of audio (~$0.36/hour)"
+        elif model_name == "whisper-1":
+            return "Pricing: ~$0.006 per minute of audio (~$0.36/hour)"
+        else:
+            # Default pricing for unknown models
+            return "Pricing: ~$0.006 per minute of audio (~$0.36/hour)"
+    
     def process_ui_events(self):
         """Process UI events to keep interface responsive"""
         from PySide6.QtWidgets import QApplication
@@ -1330,6 +1432,9 @@ class WhisperTab(QWidget):
                 self.api_group.setEnabled(True)
                 self.local_group.setEnabled(False)
                 self.whisper_manager.set_mode("api")
+                # Refresh API model combo when switching to API mode
+                if hasattr(self, 'api_model_combo'):
+                    self.populate_api_model_combo()
             else:
                 self.api_group.setEnabled(False)
                 self.local_group.setEnabled(True)
@@ -1346,6 +1451,18 @@ class WhisperTab(QWidget):
         
         api_key = self.config_manager.get_setting("whisper/api_key", "")
         self.api_key_edit.setText(api_key)
+        
+        # Load selected API model
+        selected_api_model = self.config_manager.get_setting("whisper/api_model", "gpt-4o-transcribe")
+        if hasattr(self, 'api_model_combo'):
+            # Find the matching model in the combo box
+            for i in range(self.api_model_combo.count()):
+                if self.api_model_combo.itemData(i) == selected_api_model:
+                    self.api_model_combo.setCurrentIndex(i)
+                    break
+            
+            # Update pricing display for the selected model
+            self.update_pricing_display(selected_api_model)
         
         # Load selected model for local mode
         selected_model = self.config_manager.get_setting("whisper/local_model", "base")
@@ -1374,6 +1491,17 @@ class WhisperTab(QWidget):
         mode = "api" if self.api_radio.isChecked() else "local"
         self.config_manager.set_setting("whisper/mode", mode)
         self.config_manager.set_setting("whisper/api_key", self.api_key_edit.text())
+        
+        # Save selected API model from dropdown
+        if hasattr(self, 'api_model_combo') and self.api_model_combo.currentIndex() >= 0:
+            api_model_name = self.api_model_combo.currentData()  # Get actual model name from item data
+            if api_model_name:
+                self.config_manager.set_setting("whisper/api_model", api_model_name)
+                if mode == "api":
+                    try:
+                        self.whisper_manager.set_api_model(api_model_name)
+                    except ValueError as e:
+                        print(f"Error setting API model: {e}")
         
         # Save selected local model from dropdown
         if hasattr(self, 'model_combo') and self.model_combo.currentIndex() >= 0:
@@ -1996,6 +2124,8 @@ class SettingsDialog(QDialog):
                     name = lbl.objectName()
                     if name == 'icon_api_key':
                         lbl.setPixmap((get_icon('key', 16, QColor(255, 255, 255)) if is_dark else get_icon('key', 16)).pixmap(16, 16))
+                    elif name == 'icon_api_model':
+                        lbl.setPixmap((get_icon('brain', 16, QColor(255, 255, 255)) if is_dark else get_icon('brain', 16)).pixmap(16, 16))
                     elif name == 'icon_category':
                         lbl.setPixmap((get_icon('category', 16, QColor(255, 255, 255)) if is_dark else get_icon('category', 16)).pixmap(16, 16))
                     elif name == 'icon_model':

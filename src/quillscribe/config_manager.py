@@ -39,6 +39,7 @@ class ConfigManager:
             "whisper": {
                 "mode": "api",  # "api" or "local"
                 "api_key": "",
+                "api_model": "gpt-4o-transcribe",  # Default API model (latest/best)
                 # Use a valid faster-whisper model name by default
                 "local_model": "base",
                 "local_model_path": ""

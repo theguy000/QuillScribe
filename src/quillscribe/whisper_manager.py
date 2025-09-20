@@ -64,9 +64,17 @@ class WhisperManager(QObject):
         super().__init__()
         self.mode = "api"  # "api" or "local"
         self.api_key = ""
+        self.api_model = "gpt-4o-transcribe"  # Selected API model (default to latest/best)
         self.local_model = None
         self.local_model_path = ""
         self.is_loading = False
+        
+        # Available models for API mode
+        self.available_api_models = [
+            "whisper-1",  # Original Whisper model (2022)
+            "gpt-4o-transcribe",  # Latest model with improved accuracy (March 2025)
+            "gpt-4o-mini-transcribe"  # Efficient version of gpt-4o-transcribe (March 2025)
+        ]
         
         # Available models for local mode (faster-whisper format)
         self.available_local_models = [
@@ -105,6 +113,13 @@ class WhisperManager(QObject):
         self.api_key = api_key
         if OPENAI_AVAILABLE:
             openai.api_key = api_key
+    
+    def set_api_model(self, model_name: str):
+        """Set API model for transcription"""
+        if model_name in self.available_api_models:
+            self.api_model = model_name
+        else:
+            raise ValueError(f"Model {model_name} is not available for API mode")
     
     def set_local_model(self, model_name: str):
         """Set local faster-whisper model name"""
@@ -238,7 +253,7 @@ class WhisperManager(QObject):
             
             with open(temp_path, "rb") as audio_file:
                 transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
+                    model=self.api_model,
                     file=audio_file,
                     response_format="text"
                 )
@@ -296,7 +311,7 @@ class WhisperManager(QObject):
     def get_available_models(self):
         """Get list of available models"""
         if self.mode == "api":
-            return ["whisper-1"]  # OpenAI API model
+            return self.available_api_models.copy()
         else:
             # For faster-whisper, all models are available on-demand
             return self.available_local_models
@@ -330,7 +345,9 @@ class WhisperManager(QObject):
     def get_model_info(self, model_name: str) -> dict:
         """Get information about a specific model"""
         model_info = {
-            "whisper-1": {"size": "API", "memory": "N/A", "speed": "Fast", "quality": "High"},
+            "whisper-1": {"size": "API", "memory": "Cloud-based", "speed": "Fast", "quality": "High"},
+            "gpt-4o-transcribe": {"size": "API", "memory": "Cloud-based", "speed": "Fast", "quality": "Very High"},
+            "gpt-4o-mini-transcribe": {"size": "API", "memory": "Cloud-based", "speed": "Very Fast", "quality": "High"},
             "tiny": {"size": "37 MB", "memory": "~200 MB RAM", "speed": "Very Fast", "quality": "Low"},
             "tiny.en": {"size": "37 MB", "memory": "~200 MB RAM", "speed": "Very Fast", "quality": "Low (English only)"},
             "base": {"size": "113 MB", "memory": "~500 MB RAM", "speed": "Fast", "quality": "Medium"},
