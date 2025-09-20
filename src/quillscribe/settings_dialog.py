@@ -368,12 +368,12 @@ class ModernRadioButton(QRadioButton):
             stylesheet = """
                 QRadioButton {
                     font-size: 13px;
-                    color: #f0f0f0;
+                    color: #b0b0b0; 
                     spacing: 8px;
                     outline: none;
                 }
                 QRadioButton:checked {
-                    color: #ffffff;
+                    color: #ffffff; /* selected text stronger */
                     font-weight: 500;
                 }
                 QRadioButton::indicator {
@@ -381,7 +381,7 @@ class ModernRadioButton(QRadioButton):
                     height: 16px;
                 }
                 QRadioButton::indicator:unchecked {
-                    border: 2px solid #555555;
+                    border: 2px solid #555555; /* greyed out */
                     border-radius: 8px;
                     background-color: #2c2c2c;
                 }
@@ -1087,6 +1087,7 @@ class WhisperTab(QWidget):
 
         api_key_icon = QLabel()
         api_key_icon.setPixmap(get_button_icon('key', 16).pixmap(16, 16))
+        api_key_icon.setObjectName("icon_api_key")
         api_key_layout.addWidget(api_key_icon)
 
         self.api_key_edit = ModernLineEdit("sk-...")
@@ -1098,14 +1099,7 @@ class WhisperTab(QWidget):
         api_key_label = QLabel("OpenAI API Key:")
         api_key_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         api_key_label.setMinimumHeight(36)  # Match input box height
-        api_key_label.setStyleSheet("""
-            QLabel {
-                color: #495057;
-                font-size: 13px;
-                font-weight: 500;
-                background-color: transparent;
-            }
-        """)
+        api_key_label.setObjectName("form_label")
         
         api_layout.addRow(api_key_label, api_key_widget)
 
@@ -1154,6 +1148,7 @@ class WhisperTab(QWidget):
 
             category_icon = QLabel()
             category_icon.setPixmap(get_button_icon('category', 16).pixmap(16, 16))
+            category_icon.setObjectName("icon_category")
             category_layout.addWidget(category_icon)
 
             self.category_combo = ModernComboBox()
@@ -1166,14 +1161,7 @@ class WhisperTab(QWidget):
             category_label = QLabel("Model Category:")
             category_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             category_label.setMinimumHeight(36)  # Match combo box height
-            category_label.setStyleSheet("""
-                QLabel {
-                    color: #495057;
-                    font-size: 13px;
-                    font-weight: 500;
-                    background-color: transparent;
-                }
-            """)
+            category_label.setObjectName("form_label")
             
             local_layout.addRow(category_label, category_widget)
 
@@ -1196,6 +1184,7 @@ class WhisperTab(QWidget):
 
             model_icon = QLabel()
             model_icon.setPixmap(get_button_icon('brain', 16).pixmap(16, 16))
+            model_icon.setObjectName("icon_model")
             model_layout.addWidget(model_icon)
 
             self.model_combo = ModernComboBox()
@@ -1208,14 +1197,7 @@ class WhisperTab(QWidget):
             model_label = QLabel("Select Model:")
             model_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             model_label.setMinimumHeight(36)  # Match combo box height
-            model_label.setStyleSheet("""
-                QLabel {
-                    color: #495057;
-                    font-size: 13px;
-                    font-weight: 500;
-                    background-color: transparent;
-                }
-            """)
+            model_label.setObjectName("form_label")
             
             local_layout.addRow(model_label, model_widget)
 
@@ -1816,6 +1798,15 @@ class SettingsDialog(QDialog):
         for widget in self.findChildren(ModernCheckBox):
             widget.apply_theme(is_dark)
         
+        # Update important form labels for dark/light
+        is_dark = self._is_dark_color(colors["primary"])
+        label_primary = "#ffffff" if is_dark else "#495057"
+        muted = "#e0e0e0" if is_dark else "#6c757d"
+        for lbl in self.findChildren(QLabel):
+            name = lbl.objectName()
+            if name in {"form_label", "theme_label", "shortcut_label"}:
+                lbl.setStyleSheet(f"QLabel {{ color: {label_primary}; font-size: 13px; font-weight: 500; background-color: transparent; }}")
+
         # Apply theme to tabs
         self.apply_tab_theme(theme_name)
         
@@ -1990,6 +1981,16 @@ class SettingsDialog(QDialog):
                             radio.setIcon(get_white_button_icon('local', 16))
                         else:
                             radio.setIcon(get_button_icon('local', 16))
+
+                # Also recolor form-related icons
+                for lbl in self.whisper_tab.findChildren(QLabel):
+                    name = lbl.objectName()
+                    if name == 'icon_api_key':
+                        lbl.setPixmap((get_icon('key', 16, QColor(255, 255, 255)) if is_dark else get_icon('key', 16)).pixmap(16, 16))
+                    elif name == 'icon_category':
+                        lbl.setPixmap((get_icon('category', 16, QColor(255, 255, 255)) if is_dark else get_icon('category', 16)).pixmap(16, 16))
+                    elif name == 'icon_model':
+                        lbl.setPixmap((get_icon('brain', 16, QColor(255, 255, 255)) if is_dark else get_icon('brain', 16)).pixmap(16, 16))
             
             # Output tab icons
             if hasattr(self, 'output_tab'):
@@ -2057,19 +2058,17 @@ class SettingsDialog(QDialog):
                         else:
                             checkbox.setIcon(get_button_icon('window', 16))
                 
-                # Update theme icon in the UI tab
+                # Update theme icon and shortcut icon in the UI tab
                 if hasattr(self.ui_tab, 'findChildren'):
                     for label in self.ui_tab.findChildren(QLabel):
                         # Look for the theme icon label
                         if hasattr(label, 'pixmap') and label.pixmap() is not None:
                             # Check if this is likely the theme icon (has a pixmap and is near theme-related text)
                             parent = label.parent()
-                            if parent and any('theme' in str(child.text()).lower() for child in parent.findChildren(QLabel) if hasattr(child, 'text')):
-                                if is_dark:
-                                    label.setPixmap(get_icon('settings', 16, QColor(255, 255, 255)).pixmap(16, 16))
-                                else:
-                                    label.setPixmap(get_icon('settings', 16).pixmap(16, 16))
-                                break
+                            if getattr(label, 'objectName', lambda: '')() == 'icon_theme':
+                                label.setPixmap((get_icon('settings', 16, QColor(255, 255, 255)) if is_dark else get_icon('settings', 16)).pixmap(16, 16))
+                            if getattr(label, 'objectName', lambda: '')() == 'icon_shortcut':
+                                label.setPixmap((get_icon('keyboard', 16, QColor(255, 255, 255)) if is_dark else get_icon('keyboard', 16)).pixmap(16, 16))
         except Exception as e:
             print(f"Error updating icon theme: {e}")
     
@@ -2242,10 +2241,11 @@ class UITab(QWidget):
         
         theme_icon = QLabel()
         theme_icon.setPixmap(get_icon('settings', 16).pixmap(16, 16))
+        theme_icon.setObjectName("icon_theme")
         theme_widget_layout.addWidget(theme_icon)
         
         self.theme_label = QLabel("Background theme:")
-        self.theme_label.setStyleSheet("QLabel { color: #495057; font-size: 13px; }")
+        self.theme_label.setObjectName("theme_label")
         theme_widget_layout.addWidget(self.theme_label)
         theme_widget_layout.addStretch()
         
@@ -2332,10 +2332,11 @@ class UITab(QWidget):
         
         shortcut_icon = QLabel()
         shortcut_icon.setPixmap(get_icon('keyboard', 16).pixmap(16, 16))
+        shortcut_icon.setObjectName("icon_shortcut")
         shortcut_layout.addWidget(shortcut_icon)
         
         self.shortcut_label = QLabel("Recording shortcut:")
-        self.shortcut_label.setStyleSheet("QLabel { color: #495057; font-size: 13px; }")
+        self.shortcut_label.setObjectName("shortcut_label")
         shortcut_layout.addWidget(self.shortcut_label)
         shortcut_layout.addStretch()
         
