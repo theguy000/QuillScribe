@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
-    pub device_id: Option<u32>,
+    pub device_id: Option<String>,
     pub sample_rate: u32,
     pub channels: u16,
     pub sounds_enabled: bool,
@@ -235,6 +235,11 @@ impl ConfigManager {
 
     // ── Audio getters ────────────────────────────────────────────────────
 
+    pub fn get_audio_device_id(&self) -> Option<String> {
+        self.settings.lock().unwrap().audio.device_id.clone()
+    }
+
+    #[allow(dead_code)]
     pub fn get_sample_rate(&self) -> u32 {
         self.settings.lock().unwrap().audio.sample_rate
     }

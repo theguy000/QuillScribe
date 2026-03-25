@@ -51,6 +51,15 @@ pub fn run() {
 
                 // Initialize sound enabled state from config
                 state.sound.set_sounds_enabled(config.get_sounds_enabled());
+
+                // Apply persisted audio device to the AudioManager
+                let device_id = config.get_audio_device_id();
+                drop(config);
+                if let Ok(mut audio) = state.audio.lock() {
+                    if let Err(e) = audio.set_input_device(device_id) {
+                        log::warn!("Failed to set audio device from config: {}", e);
+                    }
+                }
             }
 
             // Record session start for statistics

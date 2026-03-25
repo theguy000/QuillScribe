@@ -42,9 +42,19 @@ pub fn save_settings(
     state: tauri::State<AppState>,
     settings: Settings,
 ) -> Result<(), String> {
+    // Extract the device_id before moving settings into config.
+    let device_id = settings.audio.device_id.clone();
+
     let config = state.config.lock().map_err(|e| e.to_string())?;
     config.set_settings(settings);
-    config.save_settings().map_err(|e| e.to_string())
+    config.save_settings().map_err(|e| e.to_string())?;
+    drop(config);
+
+    // Apply the audio device to the AudioManager so it takes effect immediately.
+    let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.set_input_device(device_id).map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -97,13 +107,8 @@ pub async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<Option<
         let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
         let data = audio.stop_recording().map_err(|e| e.to_string())?;
 
-        let sr = {
-            let config = state.config.lock().map_err(|e| e.to_string())?;
-            config.get_sample_rate()
-        };
-
         match data {
-            Some(d) => (d, sr),
+            Some((d, sr)) => (d, sr),
             None => return Ok(None),
         }
     };

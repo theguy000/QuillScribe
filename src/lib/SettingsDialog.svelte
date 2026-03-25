@@ -157,9 +157,15 @@
   async function testMicrophone() {
     testingMic = true
     try {
-      await invoke('test_microphone')
+      const result = await invoke('test_microphone', { device_id: localSettings.audio.device_id ?? null })
+      if (result) {
+        alert('Microphone is working! Audio was detected.')
+      } else {
+        alert('No audio detected. Please check your microphone.')
+      }
     } catch (e) {
       console.error('Microphone test failed:', e)
+      alert(`Microphone test failed: ${e}`)
     } finally {
       testingMic = false
     }
@@ -226,7 +232,7 @@
                 <select
                   class="field-select"
                   value={localSettings.audio.device_id}
-                  onchange={(e) => localSettings.audio.device_id = e.target.value ? Number(e.target.value) : null}
+                  onchange={(e) => localSettings.audio.device_id = e.target.value || null}
                 >
                   <option value="">Default</option>
                   {#each audioDevices as device}

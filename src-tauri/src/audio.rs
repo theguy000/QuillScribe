@@ -21,6 +21,8 @@ struct AudioState {
     is_recording: bool,
     is_monitoring: bool,
     record_buffer: Vec<f32>,
+    /// The actual sample rate of the active audio stream (set when stream starts).
+    device_sample_rate: u32,
 }
 
 impl AudioState {
@@ -30,6 +32,7 @@ impl AudioState {
             is_recording: false,
             is_monitoring: false,
             record_buffer: Vec::new(),
+            device_sample_rate: 16_000, // default, updated when stream starts
         }
     }
 }
@@ -199,16 +202,19 @@ impl AudioManager {
         Ok(())
     }
 
-    /// Stop recording and return the captured audio buffer (mono, f32 samples).
+    /// Stop recording and return the captured audio buffer (mono, f32 samples)
+    /// together with the actual device sample rate.
     /// Returns `None` if no recording was in progress.
-    pub fn stop_recording(&mut self) -> Result<Option<Vec<f32>>> {
-        let buffer = {
+    pub fn stop_recording(&mut self) -> Result<Option<(Vec<f32>, u32)>> {
+        let (buffer, device_sr) = {
             let mut state = self.state.lock().unwrap();
             if !state.is_recording {
                 return Ok(None);
             }
             state.is_recording = false;
-            std::mem::take(&mut state.record_buffer)
+            let buf = std::mem::take(&mut state.record_buffer);
+            let sr = state.device_sample_rate;
+            (buf, sr)
         };
 
         // Stop the stream if we're not also monitoring.
@@ -224,7 +230,7 @@ impl AudioManager {
         if buffer.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(buffer))
+            Ok(Some((buffer, device_sr)))
         }
     }
 
@@ -312,6 +318,13 @@ fn audio_thread_fn(rx: mpsc::Receiver<AudioCommand>, state: Arc<Mutex<AudioState
                         continue;
                     }
                 };
+
+                // Store the actual device sample rate so the recorded audio
+                // is later encoded / resampled with the correct rate.
+                if let Ok(supported) = device.default_input_config() {
+                    let mut s = state.lock().unwrap();
+                    s.device_sample_rate = supported.sample_rate().0;
+                }
 
                 match build_input_stream(&device, Arc::clone(&state)) {
                     Ok(stream) => {
