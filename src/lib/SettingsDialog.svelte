@@ -20,6 +20,7 @@
     { id: 'ui', label: 'UI' },
     { id: 'output', label: 'Output' },
     { id: 'keyboard', label: 'Keyboard' },
+    { id: 'statistics', label: 'Statistics' },
   ]
 
   const themes = [
@@ -225,6 +226,14 @@
                 />
                 <span>Enable sounds</span>
               </label>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Microphone Blocklist</label>
+              <button class="action-btn" onclick={() => alert('Microphone blocklist management coming soon!')}>
+                Manage Blocklist
+              </button>
+              <p class="field-hint">Manage ignored microphone devices.</p>
             </div>
           </div>
         {/if}
@@ -442,6 +451,25 @@
                 <span>Minimize to tray</span>
               </label>
             </div>
+
+            <div class="field">
+              <label class="checkbox-label">
+                <input type="checkbox" checked={localSettings.ui.snap_to_edges ?? true}
+                  onchange={(e) => localSettings.ui.snap_to_edges = e.target.checked} />
+                <span>Snap to edges</span>
+              </label>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Animation Strength</label>
+              <div class="slider-row">
+                <input type="range" class="field-range" min="1" max="10"
+                  value={localSettings.ui.animation_strength ?? 3}
+                  oninput={(e) => localSettings.ui.animation_strength = Number(e.target.value)} />
+                <span class="slider-value">{localSettings.ui.animation_strength ?? 3}x</span>
+              </div>
+              <p class="field-hint">Higher values make the waveform more responsive to quiet voices.</p>
+            </div>
           </div>
         {/if}
 
@@ -517,6 +545,106 @@
                 placeholder="e.g. Meta+Shift+`"
               />
               <p class="field-hint">Current shortcut: <code>{localSettings.shortcuts.record_toggle}</code></p>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Statistics Tab -->
+        {#if activeTab === 'statistics'}
+          <div class="tab-panel">
+            <div class="stats-section">
+              <h3 class="section-title">Usage Statistics</h3>
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <span class="stat-label">Total Sessions</span>
+                  <span class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Total Recordings</span>
+                  <span class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Total Duration</span>
+                  <span class="stat-value">0h 0m</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Success Rate</span>
+                  <span class="stat-value">0.0%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stats-section">
+              <h3 class="section-title">Performance Metrics</h3>
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <span class="stat-label">Avg Transcription Time</span>
+                  <span class="stat-value">0.00s</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Fastest</span>
+                  <span class="stat-value">N/A</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Slowest</span>
+                  <span class="stat-value">0.00s</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Avg Audio Duration</span>
+                  <span class="stat-value">0.00s</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stats-section">
+              <h3 class="section-title">Mode Usage</h3>
+              <div class="stats-grid three-col">
+                <div class="stat-card">
+                  <span class="stat-label">API Mode</span>
+                  <span class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Local Mode</span>
+                  <span class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Total Characters</span>
+                  <span class="stat-value">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stats-section">
+              <h3 class="section-title">Current Session</h3>
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <span class="stat-label">Duration</span>
+                  <span class="stat-value">0h 0m</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Recordings</span>
+                  <span class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Successful</span>
+                  <span class="stat-value">0</span>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-label">Failed</span>
+                  <span class="stat-value">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stats-section">
+              <h3 class="section-title">Recent History</h3>
+              <textarea class="history-area" readonly>No recent transcriptions</textarea>
+            </div>
+
+            <div class="stats-actions">
+              <button class="action-btn" onclick={() => {}}>Refresh</button>
+              <button class="action-btn" onclick={() => {}}>Export Statistics</button>
+              <button class="action-btn btn-danger" onclick={() => {}}>Reset Statistics</button>
             </div>
           </div>
         {/if}
@@ -854,5 +982,107 @@
 
   .spinning {
     animation: spin 0.8s linear infinite;
+  }
+
+  /* Statistics tab */
+  .stats-section {
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin: 0 0 10px 0;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .stats-grid.three-col {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+
+  .history-area {
+    width: 100%;
+    min-height: 100px;
+    max-height: 140px;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    resize: none;
+    outline: none;
+  }
+
+  .stats-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .btn-danger {
+    color: #fff;
+    background: #dc3545;
+    border: 1px solid #dc3545;
+  }
+
+  .btn-danger:hover {
+    background: #c82333;
+  }
+
+  /* Slider row */
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .field-range {
+    flex: 1;
+    height: 6px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .slider-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 30px;
+    text-align: center;
   }
 </style>

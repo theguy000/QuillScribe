@@ -2,19 +2,25 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount, onDestroy } from 'svelte';
   import TitleBar from './lib/TitleBar.svelte';
+  import SettingsDialog from './lib/SettingsDialog.svelte';
 
   // App state
   let isRecording = $state(false);
   let transcriptionText = $state('');
   let statusMessage = $state('Ready');
   let showSettings = $state(false);
-  let currentTheme = $state('light');
+  let currentTheme = $state('white');
   let compactMode = $state(false);
   let audioLevel = $state(0);
+  let settings = $state(null);
 
   let audioLevelInterval = null;
 
-  let isDark = $derived(currentTheme === 'dark');
+  let isDark = $derived(
+    currentTheme === 'dark' || 
+    currentTheme.startsWith('dark_') || 
+    currentTheme === 'obsidian'
+  );
 
   // Apply theme to document
   $effect(() => {
@@ -53,10 +59,11 @@
 
   onMount(async () => {
     try {
-      const settings = await invoke('get_settings');
-      if (settings) {
-        currentTheme = settings.theme || 'light';
-        compactMode = settings.compact_mode || false;
+      const loadedSettings = await invoke('get_settings');
+      if (loadedSettings) {
+        settings = loadedSettings;
+        currentTheme = loadedSettings.ui?.theme || 'white';
+        compactMode = loadedSettings.ui?.compact_mode || false;
       }
     } catch (err) {
       console.warn('Failed to load settings:', err);
@@ -94,6 +101,19 @@
 
   function closeSettings() {
     showSettings = false;
+  }
+
+  async function handleSaveSettings(newSettings) {
+    try {
+      await invoke('save_settings', { settings: newSettings });
+      settings = newSettings;
+      currentTheme = newSettings.ui?.theme || 'white';
+      compactMode = newSettings.ui?.compact_mode || false;
+      showSettings = false;
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      statusMessage = `Failed to save settings: ${err}`;
+    }
   }
 </script>
 
@@ -188,6 +208,13 @@
     </button>
   </div>
 </main>
+
+<SettingsDialog 
+  show={showSettings} 
+  onclose={closeSettings} 
+  settings={settings} 
+  onsave={handleSaveSettings} 
+/>
 
 <style>
   .app-container {
