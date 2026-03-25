@@ -38,6 +38,9 @@ arboard = "3"
 # Audio encoding
 hound = "3.5"
 
+# Local Whisper transcription (whisper.cpp via Rust bindings)
+whisper-rs = "0.16"
+
 # Audio playback (notification sounds)
 rodio = "0.19"
 

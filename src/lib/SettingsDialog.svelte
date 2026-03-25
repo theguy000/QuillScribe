@@ -13,6 +13,10 @@
   let modelCategory = $state('All')
   let testingMic = $state(false)
   let loadingDevices = $state(false)
+  let downloadingModel = $state(false)
+  let downloadError = $state(null)
+  let downloadedModels = $state([])
+  let deletingModel = $state(false)
 
   const tabs = [
     { id: 'audio', label: 'Audio' },
@@ -70,6 +74,7 @@
       loadAudioDevices(),
       loadLanguages(),
       loadLocalModels(),
+      loadDownloadedModels(),
     ])
   }
 
@@ -109,6 +114,43 @@
     } catch (e) {
       console.error('Failed to load model info:', e)
       modelInfo = null
+    }
+  }
+
+  async function loadDownloadedModels() {
+    try {
+      downloadedModels = await invoke('get_downloaded_models')
+    } catch (e) {
+      console.error('Failed to load downloaded models:', e)
+      downloadedModels = []
+    }
+  }
+
+  async function handleDownloadModel() {
+    const model = localSettings.whisper.local_model
+    downloadingModel = true
+    downloadError = null
+    try {
+      await invoke('download_model', { modelName: model })
+      await loadDownloadedModels()
+    } catch (e) {
+      console.error('Failed to download model:', e)
+      downloadError = String(e)
+    } finally {
+      downloadingModel = false
+    }
+  }
+
+  async function handleDeleteModel() {
+    const model = localSettings.whisper.local_model
+    deletingModel = true
+    try {
+      await invoke('delete_model', { modelName: model })
+      await loadDownloadedModels()
+    } catch (e) {
+      console.error('Failed to delete model:', e)
+    } finally {
+      deletingModel = false
     }
   }
 
@@ -342,6 +384,55 @@
                 >
                   {#each filteredModels as model}
                     <option value={model.id || model}>{model.name || model}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="field">
+                <div class="model-status-row">
+                  {#if downloadedModels.includes(localSettings.whisper.local_model)}
+                    <span class="badge badge-success">Downloaded</span>
+                    <button
+                      class="action-btn btn-danger-outline btn-sm"
+                      onclick={handleDeleteModel}
+                      disabled={deletingModel}
+                    >
+                      {deletingModel ? 'Deleting...' : 'Delete Model'}
+                    </button>
+                  {:else}
+                    <span class="badge badge-warning">Not Downloaded</span>
+                    <button
+                      class="action-btn btn-sm"
+                      onclick={handleDownloadModel}
+                      disabled={downloadingModel}
+                    >
+                      {downloadingModel ? 'Downloading...' : 'Download Model'}
+                    </button>
+                  {/if}
+                </div>
+                {#if downloadingModel}
+                  <div class="download-progress">
+                    <div class="progress-bar">
+                      <div class="progress-bar-indeterminate"></div>
+                    </div>
+                    <p class="field-hint">Downloading model — this may take a while for larger models.</p>
+                  </div>
+                {/if}
+                {#if downloadError}
+                  <p class="field-error">{downloadError}</p>
+                {/if}
+              </div>
+
+              <div class="field">
+                <label class="field-label">Language</label>
+                <select
+                  class="field-select"
+                  value={localSettings.whisper.api_language}
+                  onchange={(e) => localSettings.whisper.api_language = e.target.value}
+                >
+                  <option value="auto">Auto-detect</option>
+                  {#each languages as lang}
+                    <option value={lang.code || lang[0]}>{lang.name || lang[1]}</option>
                   {/each}
                 </select>
               </div>
@@ -1084,5 +1175,85 @@
     color: var(--text-primary);
     min-width: 30px;
     text-align: center;
+  }
+
+  /* Model download status */
+  .model-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-success {
+    background: rgba(40, 167, 69, 0.15);
+    color: #28a745;
+    border: 1px solid rgba(40, 167, 69, 0.3);
+  }
+
+  .badge-warning {
+    background: rgba(255, 193, 7, 0.15);
+    color: #d39e00;
+    border: 1px solid rgba(255, 193, 7, 0.3);
+  }
+
+  .btn-sm {
+    padding: 4px 12px;
+    font-size: 12px;
+  }
+
+  .btn-danger-outline {
+    color: #dc3545;
+    border-color: #dc3545;
+  }
+
+  .btn-danger-outline:hover {
+    background: #dc3545;
+    color: #fff;
+  }
+
+  .download-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-indeterminate {
+    width: 40%;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    animation: indeterminate 1.4s ease-in-out infinite;
+  }
+
+  @keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    50% { transform: translateX(150%); }
+    100% { transform: translateX(400%); }
+  }
+
+  .field-error {
+    font-size: 11.5px;
+    color: #dc3545;
+    margin: 0;
   }
 </style>

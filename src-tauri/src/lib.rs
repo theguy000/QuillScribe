@@ -10,13 +10,14 @@ mod whisper;
 mod window;
 
 use commands::{
-    app_state, copy_to_clipboard, export_statistics, get_accuracy_rate, get_all_time_stats,
-    get_always_on_top, get_audio_devices, get_audio_level, get_available_languages,
-    get_available_local_models, get_available_models, get_daily_usage, get_model_info,
-    get_recent_history, get_session_stats, get_settings, get_sounds_enabled, play_start_sound,
-    play_stop_sound, process_transcription, reset_statistics, save_settings, set_always_on_top,
-    set_audio_device, set_sounds_enabled, start_monitoring, start_recording, stop_monitoring,
-    stop_recording, test_clipboard, test_microphone, validate_api_key,
+    app_state, copy_to_clipboard, delete_model, download_model, export_statistics,
+    get_accuracy_rate, get_all_time_stats, get_always_on_top, get_audio_devices, get_audio_level,
+    get_available_languages, get_available_local_models, get_available_models, get_daily_usage,
+    get_downloaded_models, get_model_info, get_recent_history, get_session_stats, get_settings,
+    get_sounds_enabled, is_model_downloaded, play_start_sound, play_stop_sound,
+    process_transcription, reset_statistics, save_settings, set_always_on_top, set_audio_device,
+    set_sounds_enabled, start_monitoring, start_recording, stop_monitoring, stop_recording,
+    test_clipboard, test_microphone, validate_api_key,
 };
 use tauri::Manager;
 
@@ -114,6 +115,10 @@ pub fn run() {
             get_available_local_models,
             get_model_info,
             get_available_languages,
+            download_model,
+            is_model_downloaded,
+            delete_model,
+            get_downloaded_models,
             // Output
             process_transcription,
             copy_to_clipboard,

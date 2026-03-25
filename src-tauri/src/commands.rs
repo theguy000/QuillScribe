@@ -122,6 +122,15 @@ pub async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<Option<
         whisper
             .set_api_language(&whisper_cfg.api_language)
             .map_err(|e| e.to_string())?;
+
+        // Apply local mode settings.
+        whisper
+            .set_local_model(&whisper_cfg.local_model)
+            .map_err(|e| e.to_string())?;
+        whisper.set_local_model_path(&whisper_cfg.local_model_path);
+        whisper
+            .set_local_language(&whisper_cfg.api_language)
+            .map_err(|e| e.to_string())?;
     }
 
     // 3. Transcribe (async) — clone the whisper manager so we can drop the lock before await.
@@ -234,6 +243,28 @@ pub fn get_model_info(model_name: String) -> ModelInfo {
 #[tauri::command]
 pub fn get_available_languages() -> Vec<(String, String)> {
     WhisperManager::get_available_languages()
+}
+
+#[tauri::command]
+pub async fn download_model(model_name: String) -> Result<String, String> {
+    WhisperManager::download_model(&model_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn is_model_downloaded(model_name: String) -> bool {
+    WhisperManager::is_model_downloaded(&model_name)
+}
+
+#[tauri::command]
+pub fn delete_model(model_name: String) -> Result<(), String> {
+    WhisperManager::delete_model(&model_name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_downloaded_models() -> Vec<String> {
+    WhisperManager::get_downloaded_models()
 }
 
 // ── Output commands ──────────────────────────────────────────────────────────
