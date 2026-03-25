@@ -41,13 +41,15 @@
 
 <style>
   .titlebar {
-    height: 32px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: var(--titlebar-bg);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--titlebar-bg) 96%, #ffffff 4%), var(--titlebar-bg));
     color: var(--titlebar-text);
-    padding-left: 10px;
+    padding-left: 14px;
+    border-bottom: 1px solid var(--border-light);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border-light) 75%, transparent);
     flex-shrink: 0;
     -webkit-user-select: none;
     user-select: none;
@@ -56,7 +58,7 @@
   .titlebar-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex: 1;
     height: 100%;
   }
@@ -66,12 +68,17 @@
     align-items: center;
     justify-content: center;
     color: var(--accent);
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
 
   .titlebar-title {
     font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   .titlebar-controls {
@@ -83,7 +90,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 46px;
+    width: 44px;
     height: 100%;
     border: none;
     background: transparent;
@@ -94,7 +101,7 @@
   }
 
   .titlebar-btn:hover {
-    background: rgba(128, 128, 128, 0.2);
+    background: color-mix(in srgb, var(--bg-tertiary) 78%, transparent);
   }
 
   .close-btn:hover {

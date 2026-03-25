@@ -9,30 +9,29 @@
 
 :root {
   /* Light theme (default) */
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f5f7;
-  --bg-tertiary: #e8e8ed;
-  --text-primary: #1d1d1f;
-  --text-secondary: #6e6e73;
-  --text-muted: #aeaeb2;
-  --accent: #6c5ce7;
-  --accent-hover: #5a4bd1;
-  --accent-glow: rgba(108, 92, 231, 0.3);
-  --border: #d2d2d7;
-  --border-light: #e5e5ea;
-  --shadow: rgba(0, 0, 0, 0.08);
-  --shadow-lg: rgba(0, 0, 0, 0.12);
+  --bg-primary: #f6f8fb;
+  --bg-secondary: #eef2f7;
+  --bg-tertiary: #e4eaf2;
+  --text-primary: #162033;
+  --text-secondary: #5a667c;
+  --text-muted: #8c97aa;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-glow: rgba(37, 99, 235, 0.2);
+  --border: #ccd6e3;
+  --border-light: #dde5ef;
+  --shadow: rgba(15, 23, 42, 0.08);
+  --shadow-lg: rgba(15, 23, 42, 0.14);
   --danger: #e81123;
   --success: #34c759;
   --recording-glow: rgba(231, 76, 60, 0.4);
-  --scrollbar-track: #f0f0f0;
-  --scrollbar-thumb: #c1c1c1;
-  --scrollbar-thumb-hover: #a8a8a8;
-  --titlebar-bg: #f0f0f0;
-  --titlebar-text: #333333;
+  --scrollbar-track: #e8edf5;
+  --scrollbar-thumb: #b4c0d0;
+  --scrollbar-thumb-hover: #93a3b7;
+  --titlebar-bg: #f7f9fc;
+  --titlebar-text: #22304a;
 
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: 'Aptos', 'Segoe UI Variable Text', 'Segoe UI', 'Inter', sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
@@ -45,24 +44,24 @@
 
 /* Dark theme */
 .dark {
-  --bg-primary: #1c1c1e;
-  --bg-secondary: #2c2c2e;
-  --bg-tertiary: #3a3a3c;
-  --text-primary: #f5f5f7;
-  --text-secondary: #a1a1a6;
-  --text-muted: #636366;
-  --accent: #7c6cf0;
-  --accent-hover: #8d7ff5;
-  --accent-glow: rgba(124, 108, 240, 0.35);
-  --border: #3a3a3c;
-  --border-light: #48484a;
-  --shadow: rgba(0, 0, 0, 0.3);
-  --shadow-lg: rgba(0, 0, 0, 0.5);
-  --scrollbar-track: #2c2c2e;
-  --scrollbar-thumb: #4a4a4e;
-  --scrollbar-thumb-hover: #636366;
-  --titlebar-bg: #2c2c2e;
-  --titlebar-text: #e5e5e5;
+  --bg-primary: #111827;
+  --bg-secondary: #182132;
+  --bg-tertiary: #23304a;
+  --text-primary: #edf3ff;
+  --text-secondary: #a4b1c7;
+  --text-muted: #72809a;
+  --accent: #60a5fa;
+  --accent-hover: #93c5fd;
+  --accent-glow: rgba(96, 165, 250, 0.28);
+  --border: #2b3a57;
+  --border-light: #364867;
+  --shadow: rgba(2, 6, 23, 0.42);
+  --shadow-lg: rgba(2, 6, 23, 0.6);
+  --scrollbar-track: #182132;
+  --scrollbar-thumb: #3d516f;
+  --scrollbar-thumb-hover: #557097;
+  --titlebar-bg: #152033;
+  --titlebar-text: #e5edfb;
 }
 
 /* Smooth transitions on theme change */

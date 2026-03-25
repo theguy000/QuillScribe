@@ -1,7 +1,7 @@
 <script>
   import { invoke } from '@tauri-apps/api/core'
 
-  let { show, onclose, settings, onsave } = $props()
+  let { show, onclose, settings, onsave, embedded = false } = $props()
 
   let activeTab = $state('audio')
   let localSettings = $state(null)
@@ -180,7 +180,7 @@
   }
 
   function handleOverlayClick(e) {
-    if (e.target === e.currentTarget) {
+    if (!embedded && e.target === e.currentTarget) {
       onclose()
     }
   }
@@ -195,19 +195,29 @@
     localSettings.whisper.local_model = value
     loadModelInfo(value)
   }
+
+  function getFieldValue(event) {
+    return /** @type {HTMLInputElement | HTMLSelectElement} */ (event.currentTarget).value
+  }
+
+  function getCheckedValue(event) {
+    return /** @type {HTMLInputElement} */ (event.currentTarget).checked
+  }
 </script>
 
 {#if show && localSettings}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="settings-overlay" onclick={handleOverlayClick} onkeydown={handleKeydown}>
-    <div class="settings-card">
+  <div class="settings-overlay" class:embedded onclick={handleOverlayClick} onkeydown={handleKeydown}>
+    <div class="settings-card" class:embedded>
       <div class="settings-header">
         <h2>Settings</h2>
-        <button class="close-btn" onclick={onclose} aria-label="Close">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-        </button>
+        {#if !embedded}
+          <button class="close-btn" onclick={onclose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M1 1L13 13M1 13L13 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        {/if}
       </div>
 
       <nav class="tabs">
@@ -232,7 +242,7 @@
                 <select
                   class="field-select"
                   value={localSettings.audio.device_id}
-                  onchange={(e) => localSettings.audio.device_id = e.target.value || null}
+                  onchange={(e) => localSettings.audio.device_id = getFieldValue(e) || null}
                 >
                   <option value="">Default</option>
                   {#each audioDevices as device}
@@ -259,7 +269,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.audio.auto_select_mic}
-                  onchange={(e) => localSettings.audio.auto_select_mic = e.target.checked}
+                  onchange={(e) => localSettings.audio.auto_select_mic = getCheckedValue(e)}
                 />
                 <span>Auto-select microphone</span>
               </label>
@@ -270,7 +280,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.audio.sounds_enabled}
-                  onchange={(e) => localSettings.audio.sounds_enabled = e.target.checked}
+                  onchange={(e) => localSettings.audio.sounds_enabled = getCheckedValue(e)}
                 />
                 <span>Enable sounds</span>
               </label>
@@ -323,7 +333,7 @@
                     class="field-input"
                     type={showApiKey ? 'text' : 'password'}
                     value={localSettings.whisper.api_key}
-                    oninput={(e) => localSettings.whisper.api_key = e.target.value}
+                    oninput={(e) => localSettings.whisper.api_key = getFieldValue(e)}
                     placeholder="sk-..."
                   />
                   <button class="icon-btn" onclick={() => showApiKey = !showApiKey} title={showApiKey ? 'Hide' : 'Show'}>
@@ -347,7 +357,7 @@
                 <select
                   class="field-select"
                   value={localSettings.whisper.api_model}
-                  onchange={(e) => localSettings.whisper.api_model = e.target.value}
+                  onchange={(e) => localSettings.whisper.api_model = getFieldValue(e)}
                 >
                   {#each apiModels as model}
                     <option value={model}>{model}</option>
@@ -360,7 +370,7 @@
                 <select
                   class="field-select"
                   value={localSettings.whisper.api_language}
-                  onchange={(e) => localSettings.whisper.api_language = e.target.value}
+                  onchange={(e) => localSettings.whisper.api_language = getFieldValue(e)}
                 >
                   {#each languages as lang}
                     <option value={lang.code || lang}>{lang.name || lang}</option>
@@ -373,7 +383,7 @@
                 <select
                   class="field-select"
                   value={modelCategory}
-                  onchange={(e) => modelCategory = e.target.value}
+                  onchange={(e) => modelCategory = getFieldValue(e)}
                 >
                   {#each modelCategories as cat}
                     <option value={cat}>{cat}</option>
@@ -386,7 +396,7 @@
                 <select
                   class="field-select"
                   value={localSettings.whisper.local_model}
-                  onchange={(e) => handleLocalModelChange(e.target.value)}
+                  onchange={(e) => handleLocalModelChange(getFieldValue(e))}
                 >
                   {#each filteredModels as model}
                     <option value={model.id || model}>{model.name || model}</option>
@@ -434,7 +444,7 @@
                 <select
                   class="field-select"
                   value={localSettings.whisper.api_language}
-                  onchange={(e) => localSettings.whisper.api_language = e.target.value}
+                  onchange={(e) => localSettings.whisper.api_language = getFieldValue(e)}
                 >
                   <option value="auto">Auto-detect</option>
                   {#each languages as lang}
@@ -475,7 +485,7 @@
               <select
                 class="field-select"
                 value={localSettings.ui.theme}
-                onchange={(e) => localSettings.ui.theme = e.target.value}
+                onchange={(e) => localSettings.ui.theme = getFieldValue(e)}
               >
                 {#each themes as theme}
                   <option value={theme.value}>{theme.label}</option>
@@ -488,7 +498,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.ui.show_waveform}
-                  onchange={(e) => localSettings.ui.show_waveform = e.target.checked}
+                  onchange={(e) => localSettings.ui.show_waveform = getCheckedValue(e)}
                 />
                 <span>Show waveform</span>
               </label>
@@ -499,7 +509,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.ui.compact_mode}
-                  onchange={(e) => localSettings.ui.compact_mode = e.target.checked}
+                  onchange={(e) => localSettings.ui.compact_mode = getCheckedValue(e)}
                 />
                 <span>Compact mode</span>
               </label>
@@ -510,7 +520,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.ui.custom_titlebar}
-                  onchange={(e) => localSettings.ui.custom_titlebar = e.target.checked}
+                  onchange={(e) => localSettings.ui.custom_titlebar = getCheckedValue(e)}
                 />
                 <span>Custom titlebar</span>
               </label>
@@ -521,7 +531,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.ui.always_on_top}
-                  onchange={(e) => localSettings.ui.always_on_top = e.target.checked}
+                  onchange={(e) => localSettings.ui.always_on_top = getCheckedValue(e)}
                 />
                 <span>Always on top</span>
               </label>
@@ -532,7 +542,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.ui.minimize_on_close}
-                  onchange={(e) => localSettings.ui.minimize_on_close = e.target.checked}
+                  onchange={(e) => localSettings.ui.minimize_on_close = getCheckedValue(e)}
                 />
                 <span>Minimize on close</span>
               </label>
@@ -543,7 +553,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.ui.minimize_to_tray}
-                  onchange={(e) => localSettings.ui.minimize_to_tray = e.target.checked}
+                  onchange={(e) => localSettings.ui.minimize_to_tray = getCheckedValue(e)}
                 />
                 <span>Minimize to tray</span>
               </label>
@@ -552,7 +562,7 @@
             <div class="field">
               <label class="checkbox-label">
                 <input type="checkbox" checked={localSettings.ui.snap_to_edges ?? true}
-                  onchange={(e) => localSettings.ui.snap_to_edges = e.target.checked} />
+                  onchange={(e) => localSettings.ui.snap_to_edges = getCheckedValue(e)} />
                 <span>Snap to edges</span>
               </label>
             </div>
@@ -562,7 +572,7 @@
               <div class="slider-row">
                 <input type="range" class="field-range" min="1" max="10"
                   value={localSettings.ui.animation_strength ?? 3}
-                  oninput={(e) => localSettings.ui.animation_strength = Number(e.target.value)} />
+                  oninput={(e) => localSettings.ui.animation_strength = Number(getFieldValue(e))} />
                 <span class="slider-value">{localSettings.ui.animation_strength ?? 3}x</span>
               </div>
               <p class="field-hint">Higher values make the waveform more responsive to quiet voices.</p>
@@ -596,7 +606,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.output.silent_mode}
-                  onchange={(e) => localSettings.output.silent_mode = e.target.checked}
+                  onchange={(e) => localSettings.output.silent_mode = getCheckedValue(e)}
                 />
                 <span>Silent mode</span>
               </label>
@@ -607,7 +617,7 @@
                 <input
                   type="checkbox"
                   checked={localSettings.output.auto_clear}
-                  onchange={(e) => localSettings.output.auto_clear = e.target.checked}
+                  onchange={(e) => localSettings.output.auto_clear = getCheckedValue(e)}
                 />
                 <span>Auto-clear clipboard</span>
               </label>
@@ -622,7 +632,7 @@
                   min="1"
                   max="300"
                   value={localSettings.output.auto_clear_delay}
-                  oninput={(e) => localSettings.output.auto_clear_delay = Number(e.target.value)}
+                  oninput={(e) => localSettings.output.auto_clear_delay = Number(getFieldValue(e))}
                 />
               </div>
             {/if}
@@ -638,7 +648,7 @@
                 class="field-input"
                 type="text"
                 value={localSettings.shortcuts.record_toggle}
-                oninput={(e) => localSettings.shortcuts.record_toggle = e.target.value}
+                oninput={(e) => localSettings.shortcuts.record_toggle = getFieldValue(e)}
                 placeholder="e.g. Meta+Shift+`"
               />
               <p class="field-hint">Current shortcut: <code>{localSettings.shortcuts.record_toggle}</code></p>
@@ -767,6 +777,17 @@
     backdrop-filter: blur(4px);
   }
 
+  .settings-overlay.embedded {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    height: 100%;
+    align-items: stretch;
+    justify-content: stretch;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
   .settings-card {
     width: 92%;
     max-width: 480px;
@@ -780,6 +801,17 @@
     overflow: hidden;
   }
 
+  .settings-card.embedded {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    border-radius: 22px;
+    border: 1px solid color-mix(in srgb, var(--border-light) 92%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 98%, transparent), color-mix(in srgb, var(--bg-secondary) 60%, transparent));
+    box-shadow: 0 24px 60px color-mix(in srgb, var(--shadow-lg) 62%, transparent);
+  }
+
   .settings-header {
     display: flex;
     align-items: center;
@@ -788,11 +820,21 @@
     border-bottom: 1px solid var(--border-light);
   }
 
+  .settings-card.embedded .settings-header {
+    padding: 24px 26px 18px;
+  }
+
   .settings-header h2 {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
+  }
+
+  .settings-card.embedded .settings-header h2 {
+    font-size: 30px;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
   }
 
   .close-btn {
@@ -819,6 +861,10 @@
     padding: 0 16px;
     border-bottom: 1px solid var(--border-light);
     overflow-x: auto;
+  }
+
+  .settings-card.embedded .tabs {
+    padding: 0 26px;
   }
 
   .tab {
@@ -848,11 +894,20 @@
     min-height: 0;
   }
 
+  .settings-card.embedded .tab-content {
+    padding-bottom: 8px;
+  }
+
   .tab-panel {
     padding: 16px 20px;
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+
+  .settings-card.embedded .tab-panel {
+    padding: 22px 26px;
+    gap: 16px;
   }
 
   /* Fields */
@@ -1038,6 +1093,10 @@
     gap: 8px;
     padding: 12px 20px;
     border-top: 1px solid var(--border-light);
+  }
+
+  .settings-card.embedded .settings-footer {
+    padding: 18px 26px 22px;
   }
 
   .btn {
@@ -1261,5 +1320,28 @@
     font-size: 11.5px;
     color: #dc3545;
     margin: 0;
+  }
+
+  @media (max-width: 840px) {
+    .settings-card.embedded {
+      border-radius: 18px;
+    }
+
+    .settings-card.embedded .settings-header,
+    .settings-card.embedded .tab-panel,
+    .settings-card.embedded .tabs,
+    .settings-card.embedded .settings-footer {
+      padding-left: 18px;
+      padding-right: 18px;
+    }
+
+    .settings-card.embedded .settings-header {
+      padding-top: 18px;
+      padding-bottom: 14px;
+    }
+
+    .settings-card.embedded .settings-header h2 {
+      font-size: 24px;
+    }
   }
 </style>
