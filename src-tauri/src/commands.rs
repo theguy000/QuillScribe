@@ -1,0 +1,355 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use crate::audio::{AudioDevice, AudioManager};
+use crate::config::{ConfigManager, Settings};
+use crate::output::{OutputManager, OutputMode};
+use crate::sound::SoundManager;
+use crate::statistics::{AllTimeStats, HistoryEntry, SessionStats, StatisticsManager};
+use crate::whisper::{ModelInfo, WhisperManager};
+
+pub struct AppState {
+    pub config: Mutex<ConfigManager>,
+    pub audio: Mutex<AudioManager>,
+    pub whisper: Mutex<WhisperManager>,
+    pub output: Mutex<OutputManager>,
+    pub sound: SoundManager,
+    pub statistics: StatisticsManager,
+}
+
+/// Creates the initial `AppState` with default managers.
+pub fn app_state() -> AppState {
+    AppState {
+        config: Mutex::new(ConfigManager::new().expect("Failed to initialize ConfigManager")),
+        audio: Mutex::new(AudioManager::new()),
+        whisper: Mutex::new(WhisperManager::new()),
+        output: Mutex::new(OutputManager::new()),
+        sound: SoundManager::new(),
+        statistics: StatisticsManager::new(),
+    }
+}
+
+// ── Config commands ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_settings(state: tauri::State<AppState>) -> Result<Settings, String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    Ok(config.get_settings())
+}
+
+#[tauri::command]
+pub fn save_settings(
+    state: tauri::State<AppState>,
+    settings: Settings,
+) -> Result<(), String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    config.set_settings(settings);
+    config.save_settings().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn validate_api_key(key: String) -> bool {
+    ConfigManager::validate_api_key(&key)
+}
+
+// ── Audio commands ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_audio_devices(state: tauri::State<AppState>) -> Result<Vec<AudioDevice>, String> {
+    let audio = state.audio.lock().map_err(|e| e.to_string())?;
+    Ok(audio.get_available_devices())
+}
+
+#[tauri::command]
+pub fn set_audio_device(
+    state: tauri::State<AppState>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.set_input_device(device_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn start_monitoring(state: tauri::State<AppState>) -> Result<(), String> {
+    let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.start_monitoring().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn stop_monitoring(state: tauri::State<AppState>) -> Result<(), String> {
+    let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.stop_monitoring();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn start_recording(state: tauri::State<AppState>) -> Result<(), String> {
+    state.sound.play_start_sound();
+    state.statistics.record_recording_start();
+    let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.start_recording().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+    // 1. Get audio data from the audio manager.
+    let (audio_data, sample_rate) = {
+        let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+        let data = audio.stop_recording().map_err(|e| e.to_string())?;
+
+        let sr = {
+            let config = state.config.lock().map_err(|e| e.to_string())?;
+            config.get_sample_rate()
+        };
+
+        match data {
+            Some(d) => (d, sr),
+            None => return Ok(None),
+        }
+    };
+
+    // 2. Apply whisper settings from config.
+    {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        let whisper_cfg = config.get_whisper();
+
+        let mut whisper = state.whisper.lock().map_err(|e| e.to_string())?;
+        whisper.set_mode(&whisper_cfg.mode).map_err(|e| e.to_string())?;
+        whisper.set_api_key(&whisper_cfg.api_key);
+        whisper
+            .set_api_model(&whisper_cfg.api_model)
+            .map_err(|e| e.to_string())?;
+        whisper
+            .set_api_language(&whisper_cfg.api_language)
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 3. Transcribe (async) — clone the whisper manager so we can drop the lock before await.
+    let whisper_mode = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        config.get_whisper_mode()
+    };
+    let whisper_clone = {
+        let whisper = state.whisper.lock().map_err(|e| e.to_string())?;
+        whisper.clone()
+    };
+
+    let start_time = std::time::Instant::now();
+    let audio_duration = audio_data.len() as f64 / sample_rate as f64;
+
+    let transcribe_result = whisper_clone
+        .transcribe_audio(audio_data, sample_rate)
+        .await;
+
+    let transcription_time = start_time.elapsed().as_secs_f64();
+
+    let transcribed_text = match transcribe_result {
+        Ok(text) => {
+            state.statistics.record_transcription_result(
+                true,
+                &whisper_mode,
+                audio_duration,
+                transcription_time,
+                &text,
+                1.0,
+            );
+            text
+        }
+        Err(e) => {
+            state.statistics.record_transcription_result(
+                false,
+                &whisper_mode,
+                audio_duration,
+                transcription_time,
+                "",
+                0.0,
+            );
+            return Err(e.to_string());
+        }
+    };
+
+    // 4. Play stop sound.
+    state.sound.play_stop_sound();
+
+    // 4. Process transcription through output manager.
+    {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        let output_cfg = config.get_output();
+
+        let output = state.output.lock().map_err(|e| e.to_string())?;
+        output
+            .process_transcription(
+                &transcribed_text,
+                OutputMode::from(output_cfg.mode),
+                output_cfg.silent_mode,
+            )
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 5. Return the transcribed text.
+    Ok(Some(transcribed_text))
+}
+
+#[tauri::command]
+pub fn get_audio_level(state: tauri::State<AppState>) -> Result<f32, String> {
+    let audio = state.audio.lock().map_err(|e| e.to_string())?;
+    Ok(audio.get_audio_level())
+}
+
+#[tauri::command]
+pub fn test_microphone(
+    state: tauri::State<AppState>,
+    device_id: Option<String>,
+) -> Result<bool, String> {
+    let audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.test_microphone(device_id).map_err(|e| e.to_string())
+}
+
+// ── Whisper commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_available_models(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    let mode = config.get_whisper_mode();
+
+    let models = match mode.as_str() {
+        "api" => WhisperManager::get_available_api_models(),
+        "local" => WhisperManager::get_available_local_models(),
+        _ => WhisperManager::get_available_api_models(),
+    };
+
+    Ok(models)
+}
+
+#[tauri::command]
+pub fn get_available_local_models() -> Vec<String> {
+    WhisperManager::get_available_local_models()
+}
+
+#[tauri::command]
+pub fn get_model_info(model_name: String) -> ModelInfo {
+    WhisperManager::get_model_info(&model_name)
+}
+
+#[tauri::command]
+pub fn get_available_languages() -> Vec<(String, String)> {
+    WhisperManager::get_available_languages()
+}
+
+// ── Output commands ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn process_transcription(
+    state: tauri::State<AppState>,
+    text: String,
+) -> Result<String, String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    let output_cfg = config.get_output();
+
+    let output = state.output.lock().map_err(|e| e.to_string())?;
+    output
+        .process_transcription(&text, OutputMode::from(output_cfg.mode), output_cfg.silent_mode)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn copy_to_clipboard(state: tauri::State<AppState>, text: String) -> Result<(), String> {
+    let output = state.output.lock().map_err(|e| e.to_string())?;
+    output.copy_to_clipboard(&text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn test_clipboard(state: tauri::State<AppState>) -> Result<bool, String> {
+    let output = state.output.lock().map_err(|e| e.to_string())?;
+    output.test_clipboard().map_err(|e| e.to_string())
+}
+
+// ── Sound commands ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn play_start_sound(state: tauri::State<AppState>) {
+    state.sound.play_start_sound();
+}
+
+#[tauri::command]
+pub fn play_stop_sound(state: tauri::State<AppState>) {
+    state.sound.play_stop_sound();
+}
+
+#[tauri::command]
+pub fn set_sounds_enabled(state: tauri::State<AppState>, enabled: bool) {
+    state.sound.set_sounds_enabled(enabled);
+}
+
+#[tauri::command]
+pub fn get_sounds_enabled(state: tauri::State<AppState>) -> bool {
+    state.sound.is_sounds_enabled()
+}
+
+// ── Statistics commands ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_all_time_stats(state: tauri::State<AppState>) -> AllTimeStats {
+    state.statistics.get_statistics()
+}
+
+#[tauri::command]
+pub fn get_session_stats(state: tauri::State<AppState>) -> SessionStats {
+    state.statistics.get_session_statistics()
+}
+
+#[tauri::command]
+pub fn get_recent_history(
+    state: tauri::State<AppState>,
+    days: Option<i64>,
+) -> Vec<HistoryEntry> {
+    state.statistics.get_recent_history(days.unwrap_or(7))
+}
+
+#[tauri::command]
+pub fn get_accuracy_rate(state: tauri::State<AppState>) -> f64 {
+    state.statistics.get_accuracy_rate()
+}
+
+#[tauri::command]
+pub fn get_daily_usage(
+    state: tauri::State<AppState>,
+    days: Option<i64>,
+) -> HashMap<String, u64> {
+    state.statistics.get_daily_usage_trend(days.unwrap_or(30))
+}
+
+#[tauri::command]
+pub fn reset_statistics(state: tauri::State<AppState>) {
+    state.statistics.reset_statistics();
+}
+
+#[tauri::command]
+pub fn export_statistics(
+    state: tauri::State<AppState>,
+    file_path: String,
+) -> Result<(), String> {
+    state
+        .statistics
+        .export_statistics(&file_path)
+        .map_err(|e| e.to_string())
+}
+
+// ── Window commands ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn set_always_on_top(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    on_top: bool,
+) -> Result<(), String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    crate::window::set_always_on_top(&app, &config, on_top);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_always_on_top(state: tauri::State<AppState>) -> Result<bool, String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    Ok(config.get_always_on_top())
+}
