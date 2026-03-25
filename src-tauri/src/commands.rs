@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use crate::audio::{AudioDevice, AudioManager};
 use crate::config::{ConfigManager, Settings};
+use crate::hotkey;
 use crate::output::{OutputManager, OutputMode};
 use crate::sound::SoundManager;
 use crate::statistics::{AllTimeStats, HistoryEntry, SessionStats, StatisticsManager};
@@ -39,6 +40,7 @@ pub fn get_settings(state: tauri::State<AppState>) -> Result<Settings, String> {
 
 #[tauri::command]
 pub fn save_settings(
+    app: tauri::AppHandle,
     state: tauri::State<AppState>,
     settings: Settings,
 ) -> Result<(), String> {
@@ -53,6 +55,10 @@ pub fn save_settings(
     // Apply the audio device to the AudioManager so it takes effect immediately.
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.set_input_device(device_id).map_err(|e| e.to_string())?;
+    drop(audio);
+
+    // Re-register the global hotkey so shortcut changes take effect immediately.
+    hotkey::register_record_toggle(&app);
 
     Ok(())
 }

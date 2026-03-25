@@ -1,5 +1,6 @@
 <script>
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
   import TitleBar from './lib/TitleBar.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
@@ -63,6 +64,16 @@
 
   onMount(async () => {
     await Promise.all([loadSettings(), loadHistory()]);
+
+    const unlisten = await listen('hotkey-record-toggle', () => {
+      if (activePanel === 'settings') return;
+      if (statusMessage === 'Transcribing...') return;
+      toggleRecording();
+    });
+
+    return () => {
+      unlisten();
+    };
   });
 
   async function loadSettings() {

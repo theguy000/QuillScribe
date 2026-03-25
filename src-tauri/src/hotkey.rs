@@ -1,6 +1,6 @@
 use log::{debug, error, info, warn};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::commands::AppState;
 
@@ -52,7 +52,10 @@ pub fn register_record_toggle(app: &AppHandle) {
 
     match app
         .global_shortcut()
-        .on_shortcut(parsed, move |app, _shortcut, _event| {
+        .on_shortcut(parsed, move |app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
             debug!("Global hotkey triggered: record toggle");
             let _ = app.emit("hotkey-record-toggle", ());
         }) {

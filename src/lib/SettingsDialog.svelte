@@ -17,6 +17,8 @@
   let downloadError = $state(null)
   let downloadedModels = $state([])
   let deletingModel = $state(false)
+  let recordingShortcut = $state(false)
+  let shortcutInputEl = $state(null)
 
   const tabs = [
     { id: 'audio', label: 'Audio' },
@@ -186,6 +188,7 @@
   }
 
   function handleKeydown(e) {
+    if (recordingShortcut) return
     if (e.key === 'Escape') {
       onclose()
     }
@@ -202,6 +205,55 @@
 
   function getCheckedValue(event) {
     return /** @type {HTMLInputElement} */ (event.currentTarget).checked
+  }
+
+  function startRecordingShortcut() {
+    recordingShortcut = true
+    // Focus the input on next tick so it receives key events
+    requestAnimationFrame(() => {
+      shortcutInputEl?.focus()
+    })
+  }
+
+  function stopRecordingShortcut() {
+    recordingShortcut = false
+  }
+
+  function handleShortcutKeydown(e) {
+    if (!recordingShortcut) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Escape cancels recording
+    if (e.key === 'Escape') {
+      recordingShortcut = false
+      return
+    }
+
+    // Ignore standalone modifier presses — wait for a non-modifier key
+    const modifierKeys = ['Control', 'Shift', 'Alt', 'Meta']
+    if (modifierKeys.includes(e.key)) return
+
+    const parts = []
+    if (e.ctrlKey) parts.push('Ctrl')
+    if (e.altKey) parts.push('Alt')
+    if (e.shiftKey) parts.push('Shift')
+    if (e.metaKey) parts.push('Meta')
+
+    // Require at least one modifier to avoid single-key global shortcuts
+    // that would conflict with normal typing across the OS.
+    if (parts.length === 0) return
+
+    // Normalise the key name
+    let key = e.key
+    if (key === ' ') key = 'Space'
+    else if (key.length === 1) key = key.toUpperCase()
+
+    parts.push(key)
+
+    localSettings.shortcuts.record_toggle = parts.join('+')
+    recordingShortcut = false
   }
 </script>
 
@@ -644,14 +696,28 @@
           <div class="tab-panel">
             <div class="field">
               <label class="field-label">Record Toggle Shortcut</label>
-              <input
-                class="field-input"
-                type="text"
-                value={localSettings.shortcuts.record_toggle}
-                oninput={(e) => localSettings.shortcuts.record_toggle = getFieldValue(e)}
-                placeholder="e.g. Meta+Shift+`"
-              />
-              <p class="field-hint">Current shortcut: <code>{localSettings.shortcuts.record_toggle}</code></p>
+              <div class="field-row">
+                <input
+                  bind:this={shortcutInputEl}
+                  class="field-input shortcut-input"
+                  class:recording-shortcut={recordingShortcut}
+                  type="text"
+                  value={recordingShortcut ? 'Press a key combination...' : localSettings.shortcuts.record_toggle}
+                  readonly
+                  onkeydown={handleShortcutKeydown}
+                  placeholder="e.g. Meta+Shift+`"
+                />
+                {#if recordingShortcut}
+                  <button class="action-btn shortcut-cancel-btn" onclick={stopRecordingShortcut}>
+                    Cancel
+                  </button>
+                {:else}
+                  <button class="action-btn" onclick={startRecordingShortcut}>
+                    Record
+                  </button>
+                {/if}
+              </div>
+              <p class="field-hint">Click <strong>Record</strong>, then press the key combination you want to use.</p>
             </div>
           </div>
         {/if}
@@ -965,6 +1031,29 @@
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 11px;
+  }
+
+  /* Shortcut recording */
+  .shortcut-input {
+    cursor: default;
+  }
+
+  .shortcut-input.recording-shortcut {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .shortcut-cancel-btn {
+    color: var(--text-secondary);
+    border-color: var(--border);
+  }
+
+  .shortcut-cancel-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border);
   }
 
   /* Checkbox */
