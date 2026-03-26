@@ -12,7 +12,6 @@ pub struct AudioConfig {
     pub sample_rate: u32,
     pub channels: u16,
     pub sounds_enabled: bool,
-    pub auto_select_mic: bool,
 }
 
 impl Default for AudioConfig {
@@ -22,7 +21,6 @@ impl Default for AudioConfig {
             sample_rate: 16_000,
             channels: 1,
             sounds_enabled: true,
-            auto_select_mic: false,
         }
     }
 }
@@ -74,9 +72,7 @@ impl Default for OutputConfig {
 pub struct UiConfig {
     pub theme: String,
     pub show_waveform: bool,
-    pub compact_mode: bool,
-    pub minimize_on_close: bool,
-    pub minimize_to_tray: bool,
+
     pub always_on_top: bool,
     pub custom_titlebar: bool,
     pub window_x: Option<i32>,
@@ -88,9 +84,7 @@ impl Default for UiConfig {
         Self {
             theme: "white".to_string(),
             show_waveform: true,
-            compact_mode: false,
-            minimize_on_close: true,
-            minimize_to_tray: false,
+
             always_on_top: false,
             custom_titlebar: true,
             window_x: None,
@@ -265,10 +259,6 @@ impl ConfigManager {
     }
 
     // ── UI getters / setters ─────────────────────────────────────────────
-
-    pub fn get_minimize_on_close(&self) -> bool {
-        self.settings.lock().unwrap().ui.minimize_on_close
-    }
 
     pub fn get_always_on_top(&self) -> bool {
         self.settings.lock().unwrap().ui.always_on_top

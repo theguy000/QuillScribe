@@ -349,16 +349,6 @@
               {/if}
             </div>
 
-            <div class="field">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={localSettings.audio.auto_select_mic}
-                  onchange={(e) => localSettings.audio.auto_select_mic = getCheckedValue(e)}
-                />
-                <span>Auto-select microphone</span>
-              </label>
-            </div>
 
             <div class="field">
               <label class="checkbox-label">
@@ -589,16 +579,6 @@
               </label>
             </div>
 
-            <div class="field">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={localSettings.ui.compact_mode}
-                  onchange={(e) => localSettings.ui.compact_mode = getCheckedValue(e)}
-                />
-                <span>Compact mode</span>
-              </label>
-            </div>
 
             <div class="field">
               <label class="checkbox-label">
@@ -622,46 +602,8 @@
               </label>
             </div>
 
-            <div class="field">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={localSettings.ui.minimize_on_close}
-                  onchange={(e) => localSettings.ui.minimize_on_close = getCheckedValue(e)}
-                />
-                <span>Minimize on close</span>
-              </label>
-            </div>
 
-            <div class="field">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={localSettings.ui.minimize_to_tray}
-                  onchange={(e) => localSettings.ui.minimize_to_tray = getCheckedValue(e)}
-                />
-                <span>Minimize to tray</span>
-              </label>
-            </div>
 
-            <div class="field">
-              <label class="checkbox-label">
-                <input type="checkbox" checked={localSettings.ui.snap_to_edges ?? true}
-                  onchange={(e) => localSettings.ui.snap_to_edges = getCheckedValue(e)} />
-                <span>Snap to edges</span>
-              </label>
-            </div>
-
-            <div class="field">
-              <span class="field-label">Animation Strength</span>
-              <div class="slider-row">
-                <input type="range" class="field-range" min="1" max="10"
-                  value={localSettings.ui.animation_strength ?? 3}
-                  oninput={(e) => localSettings.ui.animation_strength = Number(getFieldValue(e))} />
-                <span class="slider-value">{localSettings.ui.animation_strength ?? 3}x</span>
-              </div>
-              <p class="field-hint">Higher values make the waveform more responsive to quiet voices.</p>
-            </div>
           </div>
         {/if}
 
@@ -1333,28 +1275,6 @@
 
   .btn-danger:hover {
     background: var(--danger-hover);
-  }
-
-  /* Slider row */
-  .slider-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .field-range {
-    flex: 1;
-    height: 6px;
-    accent-color: var(--accent);
-    cursor: pointer;
-  }
-
-  .slider-value {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-    min-width: 30px;
-    text-align: center;
   }
 
   /* Model download status */

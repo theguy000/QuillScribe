@@ -11,7 +11,6 @@
   let isEditing = $state(false);
   let statusMessage = $state('Ready');
   let currentTheme = $state('white');
-  let compactMode = $state(false);
   let customTitlebar = $state(true);
   let audioLevel = $state(0);
   let settings = $state(null);
@@ -87,7 +86,6 @@
       if (loadedSettings) {
         settings = loadedSettings;
         currentTheme = loadedSettings.ui?.theme || 'white';
-        compactMode = loadedSettings.ui?.compact_mode || false;
         customTitlebar = loadedSettings.ui?.custom_titlebar ?? true;
       }
     } catch (err) {
@@ -159,7 +157,6 @@
       await invoke('save_settings', { settings: newSettings });
       settings = newSettings;
       currentTheme = newSettings.ui?.theme || 'white';
-      compactMode = newSettings.ui?.compact_mode || false;
       customTitlebar = newSettings.ui?.custom_titlebar ?? true;
     } catch (err) {
       console.error('Failed to save settings:', err);
@@ -218,7 +215,7 @@
   <TitleBar {isDark} />
 {/if}
 
-<main class="app-container" class:compact={compactMode}>
+<main class="app-container">
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>QuillScribe</h1>
@@ -450,12 +447,6 @@
     flex-shrink: 0;
   }
 
-  .compact .sidebar {
-    width: 200px;
-    padding: 16px 12px;
-    margin: 16px 0 16px 16px;
-    gap: 18px;
-  }
 
   .sidebar-header {
     padding: 0 4px 16px;
@@ -620,9 +611,6 @@
     overflow: hidden;
   }
 
-  .compact .workspace {
-    padding: 16px;
-  }
 
   .panel {
     height: 100%;
@@ -637,10 +625,6 @@
     overflow: hidden;
   }
 
-  .compact .panel {
-    padding: 18px;
-    gap: 16px;
-  }
 
   .panel-header {
     display: flex;
@@ -695,10 +679,6 @@
     box-shadow: inset 0 1px 0 var(--highlight);
   }
 
-  .compact .hero-card {
-    padding: 20px;
-    gap: 18px;
-  }
 
   .mic-section {
     display: flex;

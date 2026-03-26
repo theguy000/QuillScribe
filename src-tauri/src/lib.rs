@@ -85,11 +85,9 @@ pub fn run() {
                         if let Ok(config) = config {
                             window::save_window_position(app, &config);
 
-                            // If minimize_on_close is enabled, minimize instead of closing
-                            if config.get_minimize_on_close() {
-                                api.prevent_close();
-                                let _ = window.hide();
-                            }
+                            // Always minimize to tray on close
+                            api.prevent_close();
+                            let _ = window.hide();
                         }
                     };
 
