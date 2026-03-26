@@ -12,6 +12,8 @@
   let showApiKey = $state(false)
   let modelCategory = $state('All')
   let testingMic = $state(false)
+  let micTestLevel = $state(0)
+  let micTestInterval = $state(null)
   let loadingDevices = $state(false)
   let downloadingModel = $state(false)
   let downloadError = $state(null)
@@ -69,6 +71,9 @@
       localSettings = JSON.parse(JSON.stringify(settings))
       loadInitialData()
     }
+    return () => {
+      if (testingMic) stopMicTest()
+    }
   })
 
   async function loadInitialData() {
@@ -94,7 +99,11 @@
 
   async function loadLanguages() {
     try {
-      languages = await invoke('get_available_languages')
+      const raw = await invoke('get_available_languages')
+      // Normalize: backend returns [code, name] tuples; ensure we always have { code, name } objects.
+      languages = (raw || []).map(lang =>
+        Array.isArray(lang) ? { code: lang[0], name: lang[1] } : lang
+      )
     } catch (e) {
       console.error('Failed to load languages:', e)
       languages = []
@@ -156,33 +165,52 @@
     }
   }
 
-  async function testMicrophone() {
+  async function startMicTest() {
     testingMic = true
+    micTestLevel = 0
     try {
-      const result = await invoke('test_microphone', { device_id: localSettings.audio.device_id ?? null })
-      if (result) {
-        alert('Microphone is working! Audio was detected.')
-      } else {
-        alert('No audio detected. Please check your microphone.')
-      }
+      await invoke('start_mic_test', { device_id: localSettings.audio.device_id ?? null })
+      // Poll audio level every 50ms
+      micTestInterval = setInterval(async () => {
+        try {
+          micTestLevel = await invoke('get_audio_level')
+        } catch (e) {
+          console.error('Failed to get audio level:', e)
+        }
+      }, 100)
     } catch (e) {
-      console.error('Microphone test failed:', e)
-      alert(`Microphone test failed: ${e}`)
-    } finally {
+      console.error('Mic test failed:', e)
       testingMic = false
     }
   }
 
+  async function stopMicTest() {
+    if (micTestInterval) {
+      clearInterval(micTestInterval)
+      micTestInterval = null
+    }
+    try {
+      await invoke('stop_mic_test')
+    } catch (e) {
+      console.error('Failed to stop mic test:', e)
+    }
+    testingMic = false
+    micTestLevel = 0
+  }
+
   function handleSave() {
+    if (testingMic) stopMicTest()
     onsave(localSettings)
   }
 
   function handleCancel() {
+    if (testingMic) stopMicTest()
     onclose()
   }
 
   function handleOverlayClick(e) {
     if (!embedded && e.target === e.currentTarget) {
+      if (testingMic) stopMicTest()
       onclose()
     }
   }
@@ -190,6 +218,7 @@
   function handleKeydown(e) {
     if (recordingShortcut) return
     if (e.key === 'Escape') {
+      if (testingMic) stopMicTest()
       onclose()
     }
   }
@@ -311,9 +340,32 @@
             </div>
 
             <div class="field">
-              <button class="action-btn" onclick={testMicrophone} disabled={testingMic}>
-                {testingMic ? 'Testing...' : 'Test Microphone'}
-              </button>
+              <label class="field-label">Test Microphone</label>
+              <div class="mic-test-container">
+                <button
+                  class="mic-test-toggle"
+                  class:active={testingMic}
+                  onclick={() => testingMic ? stopMicTest() : startMicTest()}
+                >
+                  {testingMic ? 'Stop' : 'Test'}
+                </button>
+                <div class="mic-meter">
+                  {#each Array(16) as _, i}
+                    {@const threshold = (i + 1) / 16}
+                    {@const isActive = testingMic && micTestLevel >= threshold * 0.8}
+                    <div
+                      class="mic-bar"
+                      class:lit={isActive}
+                      style:--bar-color={i < 10 ? '#22c55e' : i < 13 ? '#eab308' : '#dc3545'}
+                      style:--bar-glow={i < 10 ? 'rgba(34, 197, 94, 0.25)' : i < 13 ? 'rgba(234, 179, 8, 0.25)' : 'rgba(220, 53, 69, 0.25)'}
+                      style:height="{50 + (i / 15) * 50}%"
+                    ></div>
+                  {/each}
+                </div>
+              </div>
+              {#if testingMic}
+                <p class="field-hint mic-hint">Speak into your mic — bars should move.</p>
+              {/if}
             </div>
 
             <div class="field">
@@ -425,7 +477,7 @@
                   onchange={(e) => localSettings.whisper.api_language = getFieldValue(e)}
                 >
                   {#each languages as lang}
-                    <option value={lang.code || lang}>{lang.name || lang}</option>
+                    <option value={lang.code}>{lang.name}</option>
                   {/each}
                 </select>
               </div>
@@ -500,7 +552,7 @@
                 >
                   <option value="auto">Auto-detect</option>
                   {#each languages as lang}
-                    <option value={lang.code || lang[0]}>{lang.name || lang[1]}</option>
+                    <option value={lang.code}>{lang.name}</option>
                   {/each}
                 </select>
               </div>
@@ -1409,6 +1461,80 @@
     font-size: 11.5px;
     color: #dc3545;
     margin: 0;
+  }
+
+  /* Mic test */
+  .mic-test-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+  }
+
+  .mic-test-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 7px;
+    cursor: pointer;
+    white-space: nowrap;
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
+    transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .mic-test-toggle:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .mic-test-toggle.active {
+    background: #dc3545;
+    border-color: #dc3545;
+    color: #fff;
+  }
+
+  .mic-test-toggle.active:hover {
+    background: #c82333;
+    border-color: #c82333;
+  }
+
+  .mic-meter {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 28px;
+    min-width: 0;
+  }
+
+  .mic-bar {
+    flex: 1;
+    min-width: 0;
+    border-radius: 2px 2px 1px 1px;
+    background: var(--bg-tertiary);
+    transition: background 0.06s ease, box-shadow 0.06s ease;
+  }
+
+  .mic-bar.lit {
+    background: var(--bar-color);
+    box-shadow: 0 0 6px var(--bar-glow);
+  }
+
+  .mic-hint {
+    animation: mic-hint-in 0.25s ease;
+  }
+
+  @keyframes mic-hint-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   @media (max-width: 840px) {

@@ -75,6 +75,8 @@ impl WhisperManager {
     }
 
     pub fn set_api_language(&mut self, lang: &str) -> Result<()> {
+        // Handle corrupted values like "en,English" by extracting the code before the comma.
+        let lang = lang.split(',').next().unwrap_or(lang).trim();
         let languages = Self::get_available_languages();
         if languages.iter().any(|(code, _)| code == lang) {
             self.api_language = lang.to_string();
@@ -103,6 +105,8 @@ impl WhisperManager {
     }
 
     pub fn set_local_language(&mut self, lang: &str) -> Result<()> {
+        // Handle corrupted values like "en,English" by extracting the code before the comma.
+        let lang = lang.split(',').next().unwrap_or(lang).trim();
         // "auto" is valid for local mode (whisper.cpp auto-detects language)
         if lang == "auto" {
             self.local_language = lang.to_string();

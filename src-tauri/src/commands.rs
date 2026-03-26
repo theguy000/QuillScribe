@@ -42,8 +42,16 @@ pub fn get_settings(state: tauri::State<AppState>) -> Result<Settings, String> {
 pub fn save_settings(
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
-    settings: Settings,
+    mut settings: Settings,
 ) -> Result<(), String> {
+    // Sanitize the language code: strip anything after a comma (e.g. "en,English" → "en").
+    if let Some(code) = settings.whisper.api_language.split(',').next() {
+        settings.whisper.api_language = code.trim().to_string();
+    }
+    if let Some(code) = settings.whisper.local_language.split(',').next() {
+        settings.whisper.local_language = code.trim().to_string();
+    }
+
     // Extract the device_id before moving settings into config.
     let device_id = settings.audio.device_id.clone();
 
@@ -223,6 +231,23 @@ pub fn test_microphone(
 ) -> Result<bool, String> {
     let audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.test_microphone(device_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn start_mic_test(
+    state: tauri::State<AppState>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.set_input_device(device_id.clone()).map_err(|e| e.to_string())?;
+    audio.start_monitoring().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn stop_mic_test(state: tauri::State<AppState>) -> Result<(), String> {
+    let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
+    audio.stop_monitoring();
+    Ok(())
 }
 
 // ── Whisper commands ─────────────────────────────────────────────────────────

@@ -16,8 +16,8 @@ use commands::{
     get_downloaded_models, get_model_info, get_recent_history, get_session_stats, get_settings,
     get_sounds_enabled, is_model_downloaded, play_start_sound, play_stop_sound,
     process_transcription, reset_statistics, save_settings, set_always_on_top, set_audio_device,
-    set_sounds_enabled, start_monitoring, start_recording, stop_monitoring, stop_recording,
-    test_clipboard, test_microphone, validate_api_key,
+    set_sounds_enabled, start_mic_test, start_monitoring, start_recording, stop_mic_test,
+    stop_monitoring, stop_recording, test_clipboard, test_microphone, validate_api_key,
 };
 use tauri::Manager;
 
@@ -119,6 +119,8 @@ pub fn run() {
             stop_recording,
             get_audio_level,
             test_microphone,
+            start_mic_test,
+            stop_mic_test,
             // Whisper
             get_available_models,
             get_available_local_models,
