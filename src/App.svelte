@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import TitleBar from './lib/TitleBar.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
+  import { allThemeClasses } from './lib/themes.js';
 
   let isRecording = $state(false);
   let transcriptionText = $state('');
@@ -23,7 +24,6 @@
   const historyDays = 30;
 
   let isDark = $derived(
-    currentTheme === 'dark' ||
     currentTheme.startsWith('dark_') ||
     currentTheme === 'obsidian'
   );
@@ -31,11 +31,11 @@
   let recentHistory = $derived([...historyEntries].reverse());
 
   $effect(() => {
+    document.documentElement.classList.remove('dark', ...allThemeClasses);
     if (isDark) {
       document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
     }
+    document.documentElement.classList.add(currentTheme);
   });
 
   $effect(() => {
@@ -63,17 +63,20 @@
     };
   });
 
-  onMount(async () => {
-    await Promise.all([loadSettings(), loadHistory()]);
+  onMount(() => {
+    let unlisten;
 
-    const unlisten = await listen('hotkey-record-toggle', () => {
-      if (activePanel === 'settings') return;
-      if (statusMessage === 'Transcribing...') return;
-      toggleRecording();
-    });
+    (async () => {
+      await Promise.all([loadSettings(), loadHistory()]);
+      unlisten = await listen('hotkey-record-toggle', () => {
+        if (activePanel === 'settings') return;
+        if (statusMessage === 'Transcribing...') return;
+        toggleRecording();
+      });
+    })();
 
     return () => {
-      unlisten();
+      unlisten?.();
     };
   });
 
@@ -684,7 +687,7 @@
     background:
       radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 42%),
       linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 90%, transparent), color-mix(in srgb, var(--bg-secondary) 92%, transparent));
-    box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 32%, transparent);
+    box-shadow: inset 0 1px 0 var(--highlight);
   }
 
   .compact .hero-card {
@@ -740,7 +743,7 @@
   .mic-ring.recording {
     background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 82%, white 18%), var(--accent));
     border-color: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
     box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent), 0 18px 34px color-mix(in srgb, var(--accent) 28%, transparent);
   }
 

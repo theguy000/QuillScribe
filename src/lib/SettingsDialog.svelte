@@ -31,20 +31,7 @@
     { id: 'statistics', label: 'Statistics' },
   ]
 
-  const themes = [
-    { value: 'white', label: 'White' },
-    { value: 'warm_gray', label: 'Warm Gray' },
-    { value: 'soft_beige', label: 'Soft Beige' },
-    { value: 'blue_gray', label: 'Blue Gray' },
-    { value: 'warm_taupe', label: 'Warm Taupe' },
-    { value: 'soft_sage', label: 'Soft Sage' },
-    { value: 'dark_charcoal', label: 'Dark Charcoal' },
-    { value: 'dark_blue', label: 'Dark Blue' },
-    { value: 'dark_purple', label: 'Dark Purple' },
-    { value: 'dark_forest', label: 'Dark Forest' },
-    { value: 'dark_burgundy', label: 'Dark Burgundy' },
-    { value: 'obsidian', label: 'Obsidian' },
-  ]
+  import { themes } from './themes.js'
 
   const outputModes = [
     { value: 0, label: 'Copy Only' },
@@ -1180,7 +1167,7 @@
 
   .action-btn:hover {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   .action-btn:disabled {
@@ -1248,7 +1235,7 @@
   }
 
   .btn-primary {
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent);
     border: 1px solid var(--accent);
   }
@@ -1339,13 +1326,13 @@
   }
 
   .btn-danger {
-    color: #fff;
-    background: #dc3545;
-    border: 1px solid #dc3545;
+    color: var(--on-danger);
+    background: var(--danger);
+    border: 1px solid var(--danger);
   }
 
   .btn-danger:hover {
-    background: #c82333;
+    background: var(--danger-hover);
   }
 
   /* Slider row */
@@ -1389,15 +1376,15 @@
   }
 
   .badge-success {
-    background: rgba(40, 167, 69, 0.15);
-    color: #28a745;
-    border: 1px solid rgba(40, 167, 69, 0.3);
+    background: color-mix(in srgb, var(--success) 15%, transparent);
+    color: var(--success);
+    border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
   }
 
   .badge-warning {
-    background: rgba(255, 193, 7, 0.15);
-    color: #d39e00;
-    border: 1px solid rgba(255, 193, 7, 0.3);
+    background: color-mix(in srgb, var(--warning) 15%, transparent);
+    color: var(--warning);
+    border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
   }
 
   .btn-sm {
@@ -1406,13 +1393,13 @@
   }
 
   .btn-danger-outline {
-    color: #dc3545;
-    border-color: #dc3545;
+    color: var(--danger);
+    border-color: var(--danger);
   }
 
   .btn-danger-outline:hover {
-    background: #dc3545;
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
 
   .download-progress {
@@ -1446,7 +1433,7 @@
 
   .field-error {
     font-size: 11.5px;
-    color: #dc3545;
+    color: var(--danger);
     margin: 0;
   }
 
@@ -1479,18 +1466,18 @@
 
   .mic-test-toggle:hover {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   .mic-test-toggle.active {
-    background: #dc3545;
-    border-color: #dc3545;
-    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--on-danger);
   }
 
   .mic-test-toggle.active:hover {
-    background: #c82333;
-    border-color: #c82333;
+    background: var(--danger-hover);
+    border-color: var(--danger-hover);
   }
 
   .mic-pill-track {
@@ -1506,14 +1493,14 @@
   .mic-pill-fill {
     height: 100%;
     border-radius: 99px;
-    background: #22c55e;
+    background: var(--success);
     transition: width 0.04s linear, background 0.15s ease, box-shadow 0.15s ease;
     box-shadow: 0 0 0 transparent;
   }
 
   .mic-pill-fill.loud {
-    background: #eab308;
-    box-shadow: 0 0 14px rgba(234, 179, 8, 0.45), inset 0 0 6px rgba(255, 255, 255, 0.15);
+    background: var(--warning);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--warning) 45%, transparent), inset 0 0 6px var(--highlight);
   }
 
   .mic-hint {

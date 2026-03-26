@@ -45,7 +45,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--titlebar-bg) 96%, #ffffff 4%), var(--titlebar-bg));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--titlebar-bg) 96%, var(--bg-primary) 4%), var(--titlebar-bg));
     color: var(--titlebar-text);
     padding-left: 14px;
     border-bottom: 1px solid var(--border-light);
@@ -105,7 +105,7 @@
   }
 
   .close-btn:hover {
-    background: #e81123;
-    color: #ffffff;
+    background: var(--danger);
+    color: var(--on-danger);
   }
 </style>
