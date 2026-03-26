@@ -5,6 +5,7 @@
   import TitleBar from './lib/TitleBar.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import Toast from './lib/Toast.svelte';
+  import QuillIcon from './lib/QuillIcon.svelte';
   import { allThemeClasses } from './lib/themes.js';
 
   let isRecording = $state(false);
@@ -260,8 +261,15 @@
 <main class="app-container">
   <aside class="sidebar">
     <div class="sidebar-header">
-      <h1>QuillScribe</h1>
-      <p class="sidebar-tagline">Voice Workspace</p>
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-icon">
+          <QuillIcon width={20} height={20} />
+        </div>
+        <div>
+          <h1><span class="logo-accent">Quill</span>Scribe</h1>
+          <p class="sidebar-tagline">Voice Workspace</p>
+        </div>
+      </div>
     </div>
 
     <nav class="sidebar-nav">
@@ -544,6 +552,28 @@
   .sidebar-header {
     padding: 0 4px 16px;
     border-bottom: 1px solid var(--border-light);
+  }
+
+  .sidebar-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .sidebar-logo-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .logo-accent {
+    color: var(--accent);
   }
 
   .sidebar-header h1 {

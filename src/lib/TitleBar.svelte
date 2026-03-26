@@ -1,5 +1,6 @@
 <script>
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import QuillIcon from './QuillIcon.svelte';
 
   let { isDark = false } = $props();
 
@@ -15,11 +16,7 @@
 <div class="titlebar" data-tauri-drag-region>
   <div class="titlebar-left" data-tauri-drag-region>
     <div class="titlebar-icon" data-tauri-drag-region>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-        <path d="M2 17l10 5 10-5" />
-        <path d="M2 12l10 5 10-5" />
-      </svg>
+      <QuillIcon width={16} height={16} />
     </div>
     <span class="titlebar-title" data-tauri-drag-region>QuillScribe</span>
   </div>
