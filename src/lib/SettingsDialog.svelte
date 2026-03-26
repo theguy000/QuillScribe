@@ -318,7 +318,7 @@
         {#if activeTab === 'audio'}
           <div class="tab-panel">
             <div class="field">
-              <label class="field-label">Microphone</label>
+              <span class="field-label">Microphone</span>
               <div class="field-row">
                 <select
                   class="field-select"
@@ -340,7 +340,7 @@
             </div>
 
             <div class="field">
-              <label class="field-label">Test Microphone</label>
+              <span class="field-label">Test Microphone</span>
               <div class="mic-test-container">
                 <button
                   class="mic-test-toggle"
@@ -385,7 +385,7 @@
             </div>
 
             <div class="field">
-              <label class="field-label">Microphone Blocklist</label>
+              <span class="field-label">Microphone Blocklist</span>
               <button class="action-btn" onclick={() => alert('Microphone blocklist management coming soon!')}>
                 Manage Blocklist
               </button>
@@ -398,7 +398,7 @@
         {#if activeTab === 'whisper'}
           <div class="tab-panel">
             <div class="field">
-              <label class="field-label">Mode</label>
+              <span class="field-label">Mode</span>
               <div class="radio-group">
                 <label class="radio-label">
                   <input
@@ -425,7 +425,7 @@
 
             {#if localSettings.whisper.mode === 'api'}
               <div class="field">
-                <label class="field-label">API Key</label>
+                <span class="field-label">API Key</span>
                 <div class="field-row">
                   <input
                     class="field-input"
@@ -451,7 +451,7 @@
               </div>
 
               <div class="field">
-                <label class="field-label">API Model</label>
+                <span class="field-label">API Model</span>
                 <select
                   class="field-select"
                   value={localSettings.whisper.api_model}
@@ -464,7 +464,7 @@
               </div>
 
               <div class="field">
-                <label class="field-label">Language</label>
+                <span class="field-label">Language</span>
                 <select
                   class="field-select"
                   value={localSettings.whisper.api_language}
@@ -477,7 +477,7 @@
               </div>
             {:else}
               <div class="field">
-                <label class="field-label">Category</label>
+                <span class="field-label">Category</span>
                 <select
                   class="field-select"
                   value={modelCategory}
@@ -490,7 +490,7 @@
               </div>
 
               <div class="field">
-                <label class="field-label">Model</label>
+                <span class="field-label">Model</span>
                 <select
                   class="field-select"
                   value={localSettings.whisper.local_model}
@@ -538,7 +538,7 @@
               </div>
 
               <div class="field">
-                <label class="field-label">Language</label>
+                <span class="field-label">Language</span>
                 <select
                   class="field-select"
                   value={localSettings.whisper.api_language}
@@ -579,7 +579,7 @@
         {#if activeTab === 'ui'}
           <div class="tab-panel">
             <div class="field">
-              <label class="field-label">Theme</label>
+              <span class="field-label">Theme</span>
               <select
                 class="field-select"
                 value={localSettings.ui.theme}
@@ -666,7 +666,7 @@
             </div>
 
             <div class="field">
-              <label class="field-label">Animation Strength</label>
+              <span class="field-label">Animation Strength</span>
               <div class="slider-row">
                 <input type="range" class="field-range" min="1" max="10"
                   value={localSettings.ui.animation_strength ?? 3}
@@ -682,7 +682,7 @@
         {#if activeTab === 'output'}
           <div class="tab-panel">
             <div class="field">
-              <label class="field-label">Output Mode</label>
+              <span class="field-label">Output Mode</span>
               <div class="radio-group">
                 {#each outputModes as mode}
                   <label class="radio-label">
@@ -723,7 +723,7 @@
 
             {#if localSettings.output.auto_clear}
               <div class="field">
-                <label class="field-label">Auto-clear delay (seconds)</label>
+                <span class="field-label">Auto-clear delay (seconds)</span>
                 <input
                   class="field-input field-input-short"
                   type="number"
@@ -741,7 +741,7 @@
         {#if activeTab === 'keyboard'}
           <div class="tab-panel">
             <div class="field">
-              <label class="field-label">Record Toggle Shortcut</label>
+              <span class="field-label">Record Toggle Shortcut</span>
               <div class="field-row">
                 <input
                   bind:this={shortcutInputEl}
@@ -1070,13 +1070,6 @@
     font-size: 11.5px;
     color: var(--text-muted);
     margin: 0;
-  }
-
-  .field-hint code {
-    background: var(--bg-tertiary);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 11px;
   }
 
   /* Shortcut recording */
