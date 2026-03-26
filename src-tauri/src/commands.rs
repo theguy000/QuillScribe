@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use tauri::Manager;
-
 use crate::audio::{AudioDevice, AudioManager};
 use crate::config::{ConfigManager, Settings};
 use crate::hotkey;
@@ -67,14 +65,11 @@ pub fn save_settings(
     // Re-register the global hotkey so shortcut changes take effect immediately.
     hotkey::register_record_toggle(&app);
 
-    let (custom_titlebar, always_on_top) = {
+    let custom_titlebar = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
-        (config.get_custom_titlebar(), config.get_always_on_top())
+        config.get_custom_titlebar()
     };
     crate::window::apply_custom_titlebar(&app, custom_titlebar);
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_always_on_top(always_on_top);
-    }
 
     Ok(())
 }
