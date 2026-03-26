@@ -7,6 +7,7 @@
 
   let isRecording = $state(false);
   let transcriptionText = $state('');
+  let isEditing = $state(false);
   let statusMessage = $state('Ready');
   let currentTheme = $state('white');
   let compactMode = $state(false);
@@ -158,6 +159,18 @@
       console.error('Failed to save settings:', err);
       statusMessage = `Failed to save settings: ${err}`;
     }
+  }
+
+  async function copyTranscription() {
+    try {
+      await navigator.clipboard.writeText(transcriptionText);
+    } catch {
+      // fallback: select all text
+    }
+  }
+
+  function toggleEdit() {
+    isEditing = !isEditing;
   }
 
   function formatTimestamp(timestamp) {
@@ -323,83 +336,82 @@
         onsave={handleSaveSettings}
       />
     {:else}
-      <div class="panel record-panel">
-        <div class="panel-header">
-          <div>
-            <p class="panel-kicker">Recorder</p>
-            <h2>Capture voice input</h2>
-          </div>
-          <p class="panel-summary">The left rail keeps controls close at hand while this panel stays focused on active work.</p>
-        </div>
-
-        <div class="record-grid">
-          <section class="hero-card">
-            <div class="mic-section">
-              <button
-                class="mic-button"
+      <div class="record-grid">
+        <section class="hero-card">
+          <div class="mic-section">
+            <button
+              class="mic-button"
+              class:recording={isRecording}
+              onclick={toggleRecording}
+              aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+            >
+              <div
+                class="mic-glow"
+                style:opacity={isRecording ? 0.6 + audioLevel * 0.4 : 0}
+                style:transform="scale({isRecording ? 1 + audioLevel * 0.5 : 0.8})"
+              ></div>
+              <div
+                class="mic-ring"
                 class:recording={isRecording}
-                onclick={toggleRecording}
-                aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+                style:transform="scale({isRecording ? 1 + audioLevel * 0.15 : 1})"
               >
-                <div
-                  class="mic-glow"
-                  style:opacity={isRecording ? 0.6 + audioLevel * 0.4 : 0}
-                  style:transform="scale({isRecording ? 1 + audioLevel * 0.5 : 0.8})"
-                ></div>
-                <div
-                  class="mic-ring"
-                  class:recording={isRecording}
-                  style:transform="scale({isRecording ? 1 + audioLevel * 0.15 : 1})"
+                <svg
+                  width="32"
+                  height="32"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
                 >
-                  <svg
-                    width="32"
-                    height="32"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <rect x="9" y="1" width="6" height="14" rx="3" />
-                    <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-                    <line x1="12" y1="19" x2="12" y2="23" />
-                    <line x1="8" y1="23" x2="16" y2="23" />
-                  </svg>
-                </div>
+                  <rect x="9" y="1" width="6" height="14" rx="3" />
+                  <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              </div>
+            </button>
+          </div>
+
+          <div class="hero-copy">
+            <p class="hero-title">{isRecording ? 'Recording in progress' : 'Ready to record'}</p>
+            <p class="hero-text">
+              {isRecording
+                ? 'Click the microphone again to stop and send the captured audio for transcription.'
+                : 'Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.'}
+            </p>
+          </div>
+        </section>
+
+        <section class="transcription-section">
+          {#if transcriptionText}
+            <div class="transcription-actions">
+              <button class="action-btn" onclick={copyTranscription} title="Copy">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+              <button class="action-btn" class:active={isEditing} onclick={toggleEdit} title={isEditing ? 'Done editing' : 'Edit'}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
               </button>
             </div>
-
-            <div class="hero-copy">
-              <p class="hero-title">{isRecording ? 'Recording in progress' : 'Ready to record'}</p>
-              <p class="hero-text">
-                {isRecording
-                  ? 'Click the microphone again to stop and send the captured audio for transcription.'
-                  : 'Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.'}
-              </p>
+            {#if isEditing}
+              <textarea class="transcription-text transcription-edit" bind:value={transcriptionText}></textarea>
+            {:else}
+              <p class="transcription-text">{transcriptionText}</p>
+            {/if}
+          {:else}
+            <div class="empty-inline">
+              <p class="empty-title">No transcription yet</p>
+              <p class="empty-copy">Once you stop a recording, the converted text will appear here.</p>
             </div>
-          </section>
-
-          <section class="transcription-section">
-            <div class="transcription-box">
-              <div class="transcription-header">
-                <p class="transcription-label">Main window</p>
-                {#if transcriptionText}
-                  <button class="panel-action subtle" onclick={showHistoryPanel}>View history</button>
-                {/if}
-              </div>
-
-              {#if transcriptionText}
-                <p class="transcription-text">{transcriptionText}</p>
-              {:else}
-                <div class="empty-state empty-inline">
-                  <p class="empty-title">No transcription yet</p>
-                  <p class="empty-copy">Once you stop a recording, the converted text will appear here.</p>
-                </div>
-              {/if}
-            </div>
-          </section>
-        </div>
+          {/if}
+        </section>
       </div>
     {/if}
   </section>
@@ -668,15 +680,15 @@
   }
 
   .record-grid {
-    flex: 1;
+    height: 100%;
     display: grid;
-    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    grid-template-columns: 1fr 1fr;
     gap: 18px;
     min-height: 0;
   }
 
   .hero-card,
-  .transcription-box,
+  .transcription-section,
   .history-item,
   .empty-state {
     border: 1px solid color-mix(in srgb, var(--border-light) 95%, transparent);
@@ -776,25 +788,43 @@
   .transcription-section {
     min-width: 0;
     min-height: 0;
-  }
-
-  .transcription-box {
-    height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 24px;
+    padding: 20px;
     overflow: hidden;
-    box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent);
   }
 
-  .transcription-header {
+  .transcription-actions {
     display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+  }
+
+  .action-btn {
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 18px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border-light) 72%, transparent);
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg-secondary) 80%, var(--bg-primary));
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  }
+
+  .action-btn:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    color: var(--accent);
+  }
+
+  .action-btn.active {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   .transcription-text {
@@ -806,6 +836,17 @@
     word-wrap: break-word;
     overflow-y: auto;
     padding-right: 8px;
+  }
+
+  .transcription-edit {
+    resize: none;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    padding: 0;
+    padding-right: 8px;
+    margin: 0;
   }
 
   .history-panel {
@@ -877,15 +918,19 @@
     border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
   }
 
-  .empty-state {
+  .empty-state,
+  .empty-inline {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 8px;
+    text-align: center;
+  }
+
+  .empty-state {
     min-height: 220px;
     padding: 28px;
-    text-align: center;
     background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 94%, transparent), color-mix(in srgb, var(--bg-secondary) 86%, transparent));
   }
 
