@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import TitleBar from './lib/TitleBar.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
+  import Toast from './lib/Toast.svelte';
   import { allThemeClasses } from './lib/themes.js';
 
   let isRecording = $state(false);
@@ -19,8 +20,23 @@
   let historyLoading = $state(false);
   let historyError = $state('');
   let expandedHistoryIndex = $state(-1);
+  let toasts = $state([]);
 
   let audioLevelInterval = null;
+
+  const MAX_TOASTS = 3;
+
+  function showToast(message, type = 'info', duration = 3000) {
+    const id = Date.now() + Math.random();
+    let updated = [...toasts, { id, message, type, duration }];
+    if (updated.length > MAX_TOASTS) {
+      updated = updated.slice(updated.length - MAX_TOASTS);
+    }
+    toasts = updated;
+    setTimeout(() => {
+      toasts = toasts.filter(t => t.id !== id);
+    }, duration);
+  }
 
   const historyDays = 30;
 
@@ -160,9 +176,10 @@
       settings = newSettings;
       currentTheme = newSettings.ui?.theme || 'white';
       customTitlebar = newSettings.ui?.custom_titlebar ?? true;
+      showToast('Settings saved successfully', 'success');
     } catch (err) {
       console.error('Failed to save settings:', err);
-      statusMessage = `Failed to save settings: ${err}`;
+      showToast(`Failed to save settings: ${err}`, 'error', 5000);
     }
   }
 
@@ -468,6 +485,8 @@
     {/if}
   </section>
 </main>
+
+<Toast bind:toasts />
 
 <style>
   .app-container {
