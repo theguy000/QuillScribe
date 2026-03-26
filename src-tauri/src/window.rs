@@ -63,12 +63,15 @@ fn is_position_visible(app: &AppHandle, x: i32, y: i32) -> bool {
     false
 }
 
-/// Apply always-on-top setting from config.
-pub fn apply_always_on_top(app: &AppHandle, config: &ConfigManager) {
-    let on_top = config.get_always_on_top();
+/// Apply always-on-top setting.
+pub fn apply_always_on_top(app: &AppHandle, on_top: bool) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_always_on_top(on_top);
-        debug!("Always-on-top set to {}", on_top);
+        match window.set_always_on_top(on_top) {
+            Ok(_) => info!("Always-on-top set to {}", on_top),
+            Err(e) => error!("Failed to set always-on-top to {}: {}", on_top, e),
+        }
+    } else {
+        error!("Could not find main window for always-on-top");
     }
 }
 
@@ -84,8 +87,5 @@ pub fn apply_custom_titlebar(app: &AppHandle, custom: bool) {
 pub fn set_always_on_top(app: &AppHandle, config: &ConfigManager, on_top: bool) {
     config.set_always_on_top(on_top);
     let _ = config.save_settings();
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_always_on_top(on_top);
-    }
-    info!("Always-on-top changed to {}", on_top);
+    apply_always_on_top(app, on_top);
 }

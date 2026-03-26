@@ -47,7 +47,7 @@ pub fn run() {
             let state: tauri::State<commands::AppState> = app.state();
             if let Ok(config) = state.config.lock() {
                 window::restore_window_position(&handle, &config);
-                window::apply_always_on_top(&handle, &config);
+                window::apply_always_on_top(&handle, config.get_always_on_top());
 
                 // Initialize sound enabled state from config
                 state.sound.set_sounds_enabled(config.get_sounds_enabled());
