@@ -86,6 +86,8 @@ pub struct HistoryEntry {
     pub success: bool,
     pub text_length: usize,
     pub confidence: f64,
+    #[serde(default)]
+    pub text: String,
 }
 
 // ── Statistics Manager ───────────────────────────────────────────────────────
@@ -301,6 +303,7 @@ impl StatisticsManager {
             success,
             text_length: text.len(),
             confidence,
+            text: text.to_string(),
         };
 
         if let Ok(mut history) = self.history.lock() {

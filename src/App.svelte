@@ -18,6 +18,7 @@
   let historyEntries = $state([]);
   let historyLoading = $state(false);
   let historyError = $state('');
+  let expandedHistoryIndex = $state(-1);
 
   let audioLevelInterval = null;
 
@@ -96,6 +97,7 @@
   async function loadHistory() {
     historyLoading = true;
     historyError = '';
+    expandedHistoryIndex = -1;
 
     try {
       historyEntries = await invoke('get_recent_history', { days: historyDays });
@@ -209,6 +211,18 @@
     if (confidence == null) return '—';
     return `${Math.round(confidence * 100)}%`;
   }
+
+  function toggleHistoryExpand(index) {
+    expandedHistoryIndex = expandedHistoryIndex === index ? -1 : index;
+  }
+
+  async function copyHistoryText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // fallback silently
+    }
+  }
 </script>
 
 {#if customTitlebar}
@@ -310,24 +324,57 @@
           </div>
         {:else}
           <div class="history-list">
-            {#each recentHistory as entry}
-              <article class="history-item">
-                <div class="history-item-top">
-                  <div>
-                    <p class="history-time">{formatTimestamp(entry.timestamp)}</p>
-                    <p class="history-mode">{entry.mode} mode</p>
+            {#each recentHistory as entry, i}
+              <div
+                class="history-item"
+                class:expanded={expandedHistoryIndex === i}
+              >
+                <button
+                  class="history-item-toggle"
+                  type="button"
+                  onclick={() => toggleHistoryExpand(i)}
+                >
+                  <div class="history-item-top">
+                    <div>
+                      <p class="history-time">{formatTimestamp(entry.timestamp)}</p>
+                      <p class="history-mode">{entry.mode} mode</p>
+                    </div>
+                    <span class="history-badge" class:success={entry.success} class:failed={!entry.success}>
+                      {entry.success ? 'Success' : 'Failed'}
+                    </span>
                   </div>
-                  <span class="history-badge" class:success={entry.success} class:failed={!entry.success}>
-                    {entry.success ? 'Success' : 'Failed'}
-                  </span>
-                </div>
-                <div class="history-metrics">
-                  <span>{formatDuration(entry.duration_secs)} audio</span>
-                  <span>{formatDuration(entry.transcription_time_secs)} transcribed</span>
-                  <span>{entry.text_length} chars</span>
-                  <span>{formatConfidence(entry.confidence)} confidence</span>
-                </div>
-              </article>
+                  <div class="history-metrics">
+                    <span>{formatDuration(entry.duration_secs)} audio</span>
+                    <span>{formatDuration(entry.transcription_time_secs)} transcribed</span>
+                    <span>{entry.text_length} chars</span>
+                    <span>{formatConfidence(entry.confidence)} confidence</span>
+                  </div>
+                </button>
+
+                {#if expandedHistoryIndex === i}
+                  <div class="history-detail">
+                    {#if entry.text}
+                      <div class="history-detail-header">
+                        <p class="history-detail-label">Transcription</p>
+                        <button
+                          class="action-btn"
+                          type="button"
+                          onclick={() => copyHistoryText(entry.text)}
+                          title="Copy transcription"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                        </button>
+                      </div>
+                      <p class="history-detail-text">{entry.text}</p>
+                    {:else}
+                      <p class="history-detail-empty">No transcription text available for this session.</p>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
             {/each}
           </div>
         {/if}
@@ -829,6 +876,32 @@
   .history-item {
     padding: 18px;
     box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow) 28%, transparent);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .history-item:hover {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border-light));
+  }
+
+  .history-item.expanded {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-light));
+    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow) 28%, transparent),
+                0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  .history-item-toggle {
+    all: unset;
+    display: block;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .history-item-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: inherit;
   }
 
   .history-item-top {
@@ -881,6 +954,50 @@
     border-radius: 999px;
     background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
     border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
+  }
+
+  .history-detail {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid color-mix(in srgb, var(--border-light) 70%, transparent);
+  }
+
+  .history-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .history-detail-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+
+  .history-detail-text {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-primary);
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border-light) 70%, transparent);
+    user-select: text;
+  }
+
+  .history-detail-empty {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 12px;
   }
 
   .empty-state,
