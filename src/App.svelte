@@ -8,6 +8,7 @@
   import { allThemeClasses } from './lib/themes.js';
 
   let isRecording = $state(false);
+  let isTranscribing = $state(false);
   let transcriptionText = $state('');
   let isEditing = $state(false);
   let statusMessage = $state('Ready');
@@ -87,7 +88,7 @@
       await Promise.all([loadSettings(), loadHistory()]);
       unlisten = await listen('hotkey-record-toggle', () => {
         if (activePanel === 'settings') return;
-        if (statusMessage === 'Transcribing...') return;
+        if (isTranscribing) return;
         toggleRecording();
       });
     })();
@@ -126,6 +127,8 @@
   }
 
   async function toggleRecording() {
+    if (isTranscribing) return;
+
     if (!isRecording) {
       try {
         activePanel = 'record';
@@ -137,6 +140,7 @@
       } catch (err) {
         statusMessage = `Error: ${err}`;
         isRecording = false;
+        showToast(`Failed to start recording: ${err}`, 'error', 5000);
       }
       return;
     }
@@ -144,12 +148,19 @@
     try {
       statusMessage = 'Transcribing...';
       isRecording = false;
+      isTranscribing = true;
       const text = await invoke('stop_recording');
       transcriptionText = text || '';
       statusMessage = text ? 'Transcription complete' : 'No speech detected';
+      if (!text) {
+        showToast('No speech detected', 'warning');
+      }
       await loadHistory();
     } catch (err) {
       statusMessage = `Error: ${err}`;
+      showToast(`Transcription failed: ${err}`, 'error', 5000);
+    } finally {
+      isTranscribing = false;
     }
   }
 
@@ -406,13 +417,14 @@
       />
     {:else}
       <div class="record-grid">
-        <section class="hero-card">
-          <div class="mic-section">
+        <section class="record-card">
             <button
               class="mic-button"
               class:recording={isRecording}
+              class:transcribing={isTranscribing}
               onclick={toggleRecording}
-              aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+              disabled={isTranscribing}
+              aria-label={isTranscribing ? 'Transcribing...' : isRecording ? 'Stop recording' : 'Start recording'}
             >
               <div
                 class="mic-glow"
@@ -441,14 +453,29 @@
                 </svg>
               </div>
             </button>
-          </div>
 
-          <div class="hero-copy">
-            <p class="hero-title">{isRecording ? 'Recording in progress' : 'Ready to record'}</p>
-            <p class="hero-text">
-              {isRecording
-                ? 'Click the microphone again to stop and send the captured audio for transcription.'
-                : 'Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.'}
+          <div class="record-info">
+            <p class="record-title">
+              {#if isTranscribing}
+                Transcribing audio
+              {:else if isRecording}
+                Recording in progress
+              {:else if statusMessage.startsWith('Error:')}
+                Something went wrong
+              {:else}
+                Ready to record
+              {/if}
+            </p>
+            <p class="record-text">
+              {#if isTranscribing}
+                Processing your audio. This may take a moment depending on the length of the recording.
+              {:else if isRecording}
+                Click the microphone again to stop and send the captured audio for transcription.
+              {:else if statusMessage.startsWith('Error:')}
+                {statusMessage.slice(7)}
+              {:else}
+                Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.
+              {/if}
             </p>
           </div>
         </section>
@@ -553,7 +580,7 @@
   }
 
   .sidebar-tagline,
-  .hero-text,
+  .record-text,
   .empty-copy,
   .history-mode,
   .history-metrics {
@@ -722,7 +749,7 @@
     min-height: 0;
   }
 
-  .hero-card,
+  .record-card,
   .transcription-section,
   .history-item,
   .empty-state {
@@ -731,14 +758,14 @@
     background: color-mix(in srgb, var(--bg-secondary) 80%, var(--bg-primary));
   }
 
-  .hero-card {
-    display: flex;
-    flex-direction: column;
+  .record-card {
+    display: grid;
+    grid-template-rows: 1fr 100px;
     align-items: center;
-    justify-content: center;
-    gap: 22px;
+    justify-items: center;
     padding: 30px;
     text-align: center;
+    overflow: visible;
     background:
       radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 42%),
       linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 90%, transparent), color-mix(in srgb, var(--bg-secondary) 92%, transparent));
@@ -746,10 +773,14 @@
   }
 
 
-  .mic-section {
+  .record-info {
+    height: 100px;
     display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
     align-items: center;
-    justify-content: center;
+    gap: 4px;
+    overflow: hidden;
   }
 
   .mic-button {
@@ -798,19 +829,29 @@
     box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent), 0 18px 34px color-mix(in srgb, var(--accent) 28%, transparent);
   }
 
+  .mic-button.transcribing {
+    cursor: wait;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .mic-button:disabled {
+    cursor: not-allowed;
+  }
+
   .mic-button:hover .mic-ring:not(.recording) {
     border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
     color: var(--accent);
     background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 96%, transparent), color-mix(in srgb, var(--bg-tertiary) 72%, transparent));
   }
 
-  .hero-title {
+  .record-title {
     font-size: 23px;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
 
-  .hero-text {
+  .record-text {
     font-size: 14px;
     line-height: 1.7;
     max-width: 280px;
