@@ -248,12 +248,17 @@
       </button>
     </nav>
 
-    <div class="sidebar-status-card">
-      <div class="sidebar-status-row">
-        <span class="status-dot" class:recording={isRecording}></span>
-        <p class="sidebar-status" class:recording={isRecording}>{statusMessage}</p>
+    <div class="sidebar-user">
+      <div class="user-avatar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
       </div>
-      <p class="sidebar-meta">{historyEntries.length} sessions &middot; {historyDays}d</p>
+      <div class="user-info">
+        <span class="user-name">User</span>
+        <span class="user-meta">{historyEntries.length} sessions</span>
+      </div>
     </div>
   </aside>
 
@@ -417,14 +422,18 @@
     flex-direction: column;
     gap: 24px;
     padding: 20px 14px 16px;
-    border-right: 1px solid var(--border-light);
-    background: var(--bg-secondary);
+    margin: 22px 0 22px 22px;
+    border: 1px solid color-mix(in srgb, var(--border-light) 92%, transparent);
+    border-radius: 22px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 98%, transparent), color-mix(in srgb, var(--bg-secondary) 60%, transparent));
+    box-shadow: 0 24px 60px color-mix(in srgb, var(--shadow-lg) 62%, transparent);
     flex-shrink: 0;
   }
 
   .compact .sidebar {
     width: 200px;
     padding: 16px 12px;
+    margin: 16px 0 16px 16px;
     gap: 18px;
   }
 
@@ -547,49 +556,44 @@
     font-weight: 600;
   }
 
-  .sidebar-status-card {
+  .sidebar-user {
     margin-top: auto;
-    padding: 12px;
-    border-radius: 10px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-light);
-  }
-
-  .sidebar-status-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    padding: 10px 8px;
+    border-top: 1px solid color-mix(in srgb, var(--border-light) 60%, transparent);
   }
 
-  .status-dot {
-    width: 7px;
-    height: 7px;
+  .user-avatar {
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
-    background: var(--text-muted);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
   }
 
-  .status-dot.recording {
-    background: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  .user-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
 
-  .sidebar-status {
-    font-size: 13px;
+  .user-name {
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-primary);
+    line-height: 1.2;
   }
 
-  .sidebar-status.recording {
-    color: var(--accent);
-  }
-
-  .sidebar-meta {
-    margin-top: 6px;
-    font-size: 11px;
-    line-height: 1.4;
+  .user-meta {
+    font-size: 10px;
     color: var(--text-muted);
-    padding-left: 15px;
+    line-height: 1.3;
   }
 
   .workspace {
@@ -902,10 +906,11 @@
     }
 
     .sidebar {
-      width: 100%;
+      width: auto;
+      margin: 14px 14px 0 14px;
       padding-top: 14px;
       border-right: none;
-      border-bottom: 1px solid var(--border-light);
+      border-bottom: none;
     }
 
     .sidebar-nav {
@@ -918,8 +923,10 @@
       display: none;
     }
 
-    .sidebar-status-card {
+    .sidebar-user {
       margin-top: 0;
+      border-top: none;
+      padding-top: 4px;
     }
 
     .panel-header,
