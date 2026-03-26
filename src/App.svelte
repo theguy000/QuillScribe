@@ -12,6 +12,7 @@
   let statusMessage = $state('Ready');
   let currentTheme = $state('white');
   let compactMode = $state(false);
+  let customTitlebar = $state(true);
   let audioLevel = $state(0);
   let settings = $state(null);
   let activePanel = $state('record');
@@ -87,6 +88,7 @@
         settings = loadedSettings;
         currentTheme = loadedSettings.ui?.theme || 'white';
         compactMode = loadedSettings.ui?.compact_mode || false;
+        customTitlebar = loadedSettings.ui?.custom_titlebar ?? true;
       }
     } catch (err) {
       console.warn('Failed to load settings:', err);
@@ -158,6 +160,7 @@
       settings = newSettings;
       currentTheme = newSettings.ui?.theme || 'white';
       compactMode = newSettings.ui?.compact_mode || false;
+      customTitlebar = newSettings.ui?.custom_titlebar ?? true;
     } catch (err) {
       console.error('Failed to save settings:', err);
       statusMessage = `Failed to save settings: ${err}`;
@@ -211,7 +214,9 @@
   }
 </script>
 
-<TitleBar {isDark} />
+{#if customTitlebar}
+  <TitleBar {isDark} />
+{/if}
 
 <main class="app-container" class:compact={compactMode}>
   <aside class="sidebar">

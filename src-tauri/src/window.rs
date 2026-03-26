@@ -72,6 +72,14 @@ pub fn apply_always_on_top(app: &AppHandle, config: &ConfigManager) {
     }
 }
 
+/// Apply the custom-titlebar toggle. Caller must drop the config lock first.
+pub fn apply_custom_titlebar(app: &AppHandle, custom: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_decorations(!custom);
+        debug!("Custom titlebar: {} (decorations: {})", custom, !custom);
+    }
+}
+
 /// Set always-on-top and persist to config.
 pub fn set_always_on_top(app: &AppHandle, config: &ConfigManager, on_top: bool) {
     config.set_always_on_top(on_top);

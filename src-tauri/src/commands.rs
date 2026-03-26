@@ -65,6 +65,12 @@ pub fn save_settings(
     // Re-register the global hotkey so shortcut changes take effect immediately.
     hotkey::register_record_toggle(&app);
 
+    let custom_titlebar = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        config.get_custom_titlebar()
+    };
+    crate::window::apply_custom_titlebar(&app, custom_titlebar);
+
     Ok(())
 }
 

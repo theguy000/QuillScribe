@@ -274,6 +274,10 @@ impl ConfigManager {
         self.settings.lock().unwrap().ui.always_on_top
     }
 
+    pub fn get_custom_titlebar(&self) -> bool {
+        self.settings.lock().unwrap().ui.custom_titlebar
+    }
+
     pub fn set_always_on_top(&self, on_top: bool) {
         self.settings.lock().unwrap().ui.always_on_top = on_top;
     }
