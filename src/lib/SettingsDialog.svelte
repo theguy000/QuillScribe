@@ -121,7 +121,7 @@
 
   async function loadModelInfo(modelName) {
     try {
-      modelInfo = await invoke('get_model_info', { model: modelName })
+      modelInfo = await invoke('get_model_info', { modelName: modelName })
     } catch (e) {
       console.error('Failed to load model info:', e)
       modelInfo = null
@@ -169,7 +169,7 @@
     testingMic = true
     micTestLevel = 0
     try {
-      await invoke('start_mic_test', { device_id: localSettings.audio.device_id ?? null })
+      await invoke('start_mic_test', { deviceId: localSettings.audio.device_id ?? null })
       // Poll audio level every 50ms
       micTestInterval = setInterval(async () => {
         try {
@@ -177,7 +177,7 @@
         } catch (e) {
           console.error('Failed to get audio level:', e)
         }
-      }, 100)
+      }, 50)
     } catch (e) {
       console.error('Mic test failed:', e)
       testingMic = false
@@ -349,22 +349,16 @@
                 >
                   {testingMic ? 'Stop' : 'Test'}
                 </button>
-                <div class="mic-meter">
-                  {#each Array(16) as _, i}
-                    {@const threshold = (i + 1) / 16}
-                    {@const isActive = testingMic && micTestLevel >= threshold * 0.8}
-                    <div
-                      class="mic-bar"
-                      class:lit={isActive}
-                      style:--bar-color={i < 10 ? '#22c55e' : i < 13 ? '#eab308' : '#dc3545'}
-                      style:--bar-glow={i < 10 ? 'rgba(34, 197, 94, 0.25)' : i < 13 ? 'rgba(234, 179, 8, 0.25)' : 'rgba(220, 53, 69, 0.25)'}
-                      style:height="{50 + (i / 15) * 50}%"
-                    ></div>
-                  {/each}
+                <div class="mic-pill-track">
+                  <div
+                    class="mic-pill-fill"
+                    class:loud={testingMic && micTestLevel > 0.15}
+                    style:width="{testingMic ? Math.min(micTestLevel / 0.25 * 100, 100) : 0}%"
+                  ></div>
                 </div>
               </div>
               {#if testingMic}
-                <p class="field-hint mic-hint">Speak into your mic — bars should move.</p>
+                <p class="field-hint mic-hint">Speak into your mic — the pill should glow.</p>
               {/if}
             </div>
 
@@ -1506,26 +1500,27 @@
     border-color: #c82333;
   }
 
-  .mic-meter {
+  .mic-pill-track {
     flex: 1;
-    display: flex;
-    align-items: flex-end;
-    gap: 3px;
-    height: 28px;
+    height: 22px;
     min-width: 0;
-  }
-
-  .mic-bar {
-    flex: 1;
-    min-width: 0;
-    border-radius: 2px 2px 1px 1px;
+    border-radius: 99px;
     background: var(--bg-tertiary);
-    transition: background 0.06s ease, box-shadow 0.06s ease;
+    overflow: hidden;
+    border: 1px solid var(--border-light);
   }
 
-  .mic-bar.lit {
-    background: var(--bar-color);
-    box-shadow: 0 0 6px var(--bar-glow);
+  .mic-pill-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: #22c55e;
+    transition: width 0.04s linear, background 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 0 0 transparent;
+  }
+
+  .mic-pill-fill.loud {
+    background: #eab308;
+    box-shadow: 0 0 14px rgba(234, 179, 8, 0.45), inset 0 0 6px rgba(255, 255, 255, 0.15);
   }
 
   .mic-hint {

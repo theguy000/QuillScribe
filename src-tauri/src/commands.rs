@@ -244,6 +244,13 @@ pub fn start_mic_test(
 pub fn stop_mic_test(state: tauri::State<AppState>) -> Result<(), String> {
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.stop_monitoring();
+    // Restore the persisted audio device so the mic test doesn't leave
+    // a stale `selected_device_id` when the user cancels settings.
+    let device_id = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        config.get_audio_device_id()
+    };
+    audio.set_input_device(device_id).map_err(|e| e.to_string())?;
     Ok(())
 }
 

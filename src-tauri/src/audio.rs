@@ -149,7 +149,6 @@ impl AudioManager {
                 return Ok(());
             }
             state.is_monitoring = true;
-            state.is_recording = false;
             state.audio_level = 0.0;
         }
 
@@ -592,8 +591,8 @@ fn process_audio_data(data: &[f32], channels: u16, state: &Arc<Mutex<AudioState>
 
     let mut state = state.lock().unwrap();
 
-    // Smooth the level with exponential moving average (factor 0.7).
-    state.audio_level = state.audio_level * 0.7 + level * 0.3;
+    // Smooth the level with exponential moving average (history weight 0.4).
+    state.audio_level = state.audio_level * 0.4 + level * 0.6;
 
     // If recording, append mono samples to the buffer.
     if state.is_recording {
