@@ -790,7 +790,7 @@
 
   .record-card {
     display: grid;
-    grid-template-rows: 1fr 100px;
+    grid-template-rows: 1fr auto 1fr;
     align-items: center;
     justify-items: center;
     padding: 30px;
@@ -802,15 +802,19 @@
     box-shadow: inset 0 1px 0 var(--highlight);
   }
 
+  .record-card::before {
+    content: '';
+    display: block;
+  }
+
 
   .record-info {
-    height: 100px;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
     align-items: center;
+    align-self: start;
     gap: 4px;
-    overflow: hidden;
+    padding-top: 16px;
   }
 
   .mic-button {
