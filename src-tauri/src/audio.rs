@@ -23,6 +23,9 @@ struct AudioState {
     record_buffer: Vec<f32>,
     /// The actual sample rate of the active audio stream (set when stream starts).
     device_sample_rate: u32,
+    /// Whether monitoring was active before the current recording started.
+    /// Used to decide whether to stop the stream when recording ends.
+    was_monitoring_before_recording: bool,
 }
 
 impl AudioState {
@@ -33,6 +36,7 @@ impl AudioState {
             is_monitoring: false,
             record_buffer: Vec::new(),
             device_sample_rate: 16_000, // default, updated when stream starts
+            was_monitoring_before_recording: false,
         }
     }
 }
@@ -179,6 +183,7 @@ impl AudioManager {
                 return Ok(());
             }
             let was_monitoring = state.is_monitoring;
+            state.was_monitoring_before_recording = was_monitoring;
             state.is_recording = true;
             state.is_monitoring = true;
             state.record_buffer.clear();
@@ -206,25 +211,26 @@ impl AudioManager {
     /// together with the actual device sample rate.
     /// Returns `None` if no recording was in progress.
     pub fn stop_recording(&mut self) -> Result<Option<(Vec<f32>, u32)>> {
-        let (buffer, device_sr) = {
+        let (buffer, device_sr, was_monitoring_before) = {
             let mut state = self.state.lock().unwrap();
             if !state.is_recording {
                 return Ok(None);
             }
             state.is_recording = false;
+            let was_mon = state.was_monitoring_before_recording;
+            // If the user wasn't monitoring before recording, stop monitoring too.
+            if !was_mon {
+                state.is_monitoring = false;
+            }
             let buf = std::mem::take(&mut state.record_buffer);
             let sr = state.device_sample_rate;
-            (buf, sr)
+            (buf, sr, was_mon)
         };
 
-        // Stop the stream if we're not also monitoring.
-        {
-            let state = self.state.lock().unwrap();
-            if !state.is_monitoring {
-                drop(state);
-                let tx = self.command_tx.lock().unwrap();
-                let _ = tx.send(AudioCommand::StopRecording);
-            }
+        // Stop the stream if we weren't monitoring before recording started.
+        if !was_monitoring_before {
+            let tx = self.command_tx.lock().unwrap();
+            let _ = tx.send(AudioCommand::StopRecording);
         }
 
         if buffer.is_empty() {
@@ -420,8 +426,13 @@ fn build_input_stream(
     let channels = supported_config.channels();
     let config: StreamConfig = supported_config.into();
 
-    let err_fn = |err: cpal::StreamError| {
+    let err_state = Arc::clone(&state);
+    let err_fn = move |err: cpal::StreamError| {
         eprintln!("Audio stream error: {}", err);
+        // Mark monitoring/recording as stopped so the next attempt starts a fresh stream.
+        let mut s = err_state.lock().unwrap();
+        s.is_monitoring = false;
+        s.is_recording = false;
     };
 
     let stream = match sample_format {

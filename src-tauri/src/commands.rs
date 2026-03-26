@@ -48,9 +48,6 @@ pub fn save_settings(
     if let Some(code) = settings.whisper.api_language.split(',').next() {
         settings.whisper.api_language = code.trim().to_string();
     }
-    if let Some(code) = settings.whisper.local_language.split(',').next() {
-        settings.whisper.local_language = code.trim().to_string();
-    }
 
     // Extract the device_id before moving settings into config.
     let device_id = settings.audio.device_id.clone();
