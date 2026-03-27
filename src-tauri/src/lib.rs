@@ -79,6 +79,11 @@ pub fn run() {
             // Record session start for statistics
             state.statistics.record_session_start();
 
+            // Apply max history entries from config
+            if let Ok(config) = state.config.lock() {
+                state.statistics.set_max_history_entries(config.get_max_history_entries());
+            }
+
             // Register global hotkeys
             hotkey::register_record_toggle(&handle);
 

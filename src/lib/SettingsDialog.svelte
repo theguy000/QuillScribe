@@ -617,6 +617,42 @@
               </label>
             </div>
 
+            <div class="field">
+              <span class="field-label">Maximum Recent History</span>
+              <div class="stepper">
+                <button
+                  class="stepper-btn"
+                  onclick={() => localSettings.advanced.max_history_entries = Math.max(1, localSettings.advanced.max_history_entries - 10)}
+                  disabled={localSettings.advanced.max_history_entries <= 1}
+                  aria-label="Decrease"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M2.5 6H9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                <input
+                  class="stepper-value"
+                  type="text"
+                  inputmode="numeric"
+                  value={localSettings.advanced.max_history_entries}
+                  onchange={(e) => {
+                    const v = parseInt(getFieldValue(e), 10)
+                    localSettings.advanced.max_history_entries = isNaN(v) ? 100 : Math.max(1, Math.min(1000, v))
+                  }}
+                />
+                <button
+                  class="stepper-btn"
+                  onclick={() => localSettings.advanced.max_history_entries = Math.min(1000, localSettings.advanced.max_history_entries + 10)}
+                  disabled={localSettings.advanced.max_history_entries >= 1000}
+                  aria-label="Increase"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M6 2.5V9.5M2.5 6H9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <p class="field-hint">Maximum number of transcription history entries to keep (1–1000).</p>
+            </div>
 
 
           </div>
@@ -668,14 +704,38 @@
             {#if localSettings.output.auto_clear}
               <div class="field">
                 <span class="field-label">Auto-clear delay (seconds)</span>
-                <input
-                  class="field-input field-input-short"
-                  type="number"
-                  min="1"
-                  max="300"
-                  value={localSettings.output.auto_clear_delay}
-                  oninput={(e) => localSettings.output.auto_clear_delay = Number(getFieldValue(e))}
-                />
+                <div class="stepper">
+                  <button
+                    class="stepper-btn"
+                    onclick={() => localSettings.output.auto_clear_delay = Math.max(1, localSettings.output.auto_clear_delay - 1)}
+                    disabled={localSettings.output.auto_clear_delay <= 1}
+                    aria-label="Decrease"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M2.5 6H9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                  <input
+                    class="stepper-value"
+                    type="text"
+                    inputmode="numeric"
+                    value={localSettings.output.auto_clear_delay}
+                    onchange={(e) => {
+                      const v = parseInt(getFieldValue(e), 10)
+                      localSettings.output.auto_clear_delay = isNaN(v) ? 5 : Math.max(1, Math.min(300, v))
+                    }}
+                  />
+                  <button
+                    class="stepper-btn"
+                    onclick={() => localSettings.output.auto_clear_delay = Math.min(300, localSettings.output.auto_clear_delay + 1)}
+                    disabled={localSettings.output.auto_clear_delay >= 300}
+                    aria-label="Increase"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M6 2.5V9.5M2.5 6H9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
             {/if}
           </div>
@@ -908,8 +968,63 @@
     box-shadow: 0 0 0 2px var(--accent-glow);
   }
 
-  .field-input-short {
-    max-width: 100px;
+  /* Custom stepper */
+  .stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    align-self: flex-start;
+  }
+
+  .stepper-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .stepper-btn:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .stepper-btn:active:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+  }
+
+  .stepper-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .stepper-value {
+    width: 52px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--border-light);
+    border-right: 1px solid var(--border-light);
+    outline: none;
+    padding: 6px 0;
+    -moz-appearance: textfield;
+  }
+
+  .stepper-value:focus {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
   }
 
   .field-hint {

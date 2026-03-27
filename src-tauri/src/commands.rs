@@ -66,6 +66,14 @@ pub fn save_settings(
     // Apply the sounds_enabled flag so it takes effect immediately.
     state.sound.set_sounds_enabled(sounds_enabled);
 
+    // Apply the max history entries setting so it takes effect immediately.
+    {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        let max_history = config.get_max_history_entries();
+        drop(config);
+        state.statistics.set_max_history_entries(max_history);
+    }
+
     // Re-register the global hotkey so shortcut changes take effect immediately.
     hotkey::register_record_toggle(&app);
 

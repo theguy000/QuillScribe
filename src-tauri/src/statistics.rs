@@ -99,9 +99,10 @@ pub struct StatisticsManager {
     session: Mutex<SessionStats>,
     history: Mutex<Vec<HistoryEntry>>,
     session_active: Mutex<bool>,
+    max_history_entries: Mutex<usize>,
 }
 
-const MAX_HISTORY_ENTRIES: usize = 1000;
+const DEFAULT_MAX_HISTORY_ENTRIES: usize = 100;
 
 impl StatisticsManager {
     pub fn new() -> Self {
@@ -128,6 +129,7 @@ impl StatisticsManager {
             session: Mutex::new(SessionStats::default()),
             history: Mutex::new(history),
             session_active: Mutex::new(false),
+            max_history_entries: Mutex::new(DEFAULT_MAX_HISTORY_ENTRIES),
         }
     }
 
@@ -306,11 +308,17 @@ impl StatisticsManager {
             text: text.to_string(),
         };
 
+        // Read the cap before acquiring the history lock to avoid nested locking
+        let max = self
+            .max_history_entries
+            .lock()
+            .map(|m| *m)
+            .unwrap_or(DEFAULT_MAX_HISTORY_ENTRIES);
+
         if let Ok(mut history) = self.history.lock() {
             history.push(entry);
-            // Cap at MAX_HISTORY_ENTRIES
-            if history.len() > MAX_HISTORY_ENTRIES {
-                let excess = history.len() - MAX_HISTORY_ENTRIES;
+            if history.len() > max {
+                let excess = history.len() - max;
                 history.drain(0..excess);
             }
         }
@@ -392,6 +400,24 @@ impl StatisticsManager {
         self.save_statistics();
         self.save_history();
         info!("Statistics reset");
+    }
+
+    /// Updates the maximum number of history entries to keep.
+    /// If the current history exceeds the new limit, the oldest entries are trimmed.
+    pub fn set_max_history_entries(&self, max: usize) {
+        let max = max.max(1); // ensure at least 1
+        if let Ok(mut m) = self.max_history_entries.lock() {
+            *m = max;
+        }
+        // Immediately trim if current history exceeds the new limit
+        if let Ok(mut history) = self.history.lock() {
+            if history.len() > max {
+                let excess = history.len() - max;
+                history.drain(0..excess);
+            }
+        }
+        self.save_history();
+        info!("Max history entries set to {}", max);
     }
 
     pub fn export_statistics(&self, file_path: &str) -> Result<()> {

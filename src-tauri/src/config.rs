@@ -111,6 +111,12 @@ pub struct AdvancedConfig {
     pub buffer_size: u32,
     pub noise_threshold: f64,
     pub silence_timeout: f64,
+    #[serde(default = "default_max_history_entries")]
+    pub max_history_entries: usize,
+}
+
+fn default_max_history_entries() -> usize {
+    100
 }
 
 impl Default for AdvancedConfig {
@@ -119,6 +125,7 @@ impl Default for AdvancedConfig {
             buffer_size: 1024,
             noise_threshold: 0.01,
             silence_timeout: 2.0,
+            max_history_entries: default_max_history_entries(),
         }
     }
 }
@@ -292,6 +299,12 @@ impl ConfigManager {
             .shortcuts
             .record_toggle
             .clone()
+    }
+
+    // ── Advanced getters ─────────────────────────────────────────────────
+
+    pub fn get_max_history_entries(&self) -> usize {
+        self.settings.lock().unwrap().advanced.max_history_entries
     }
 
     // ── Bulk access ──────────────────────────────────────────────────────
