@@ -49,8 +49,9 @@ pub fn save_settings(
         settings.whisper.api_language = code.trim().to_string();
     }
 
-    // Extract the device_id before moving settings into config.
+    // Extract values before moving settings into config.
     let device_id = settings.audio.device_id.clone();
+    let sounds_enabled = settings.audio.sounds_enabled;
 
     let config = state.config.lock().map_err(|e| e.to_string())?;
     config.set_settings(settings);
@@ -61,6 +62,9 @@ pub fn save_settings(
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.set_input_device(device_id).map_err(|e| e.to_string())?;
     drop(audio);
+
+    // Apply the sounds_enabled flag so it takes effect immediately.
+    state.sound.set_sounds_enabled(sounds_enabled);
 
     // Re-register the global hotkey so shortcut changes take effect immediately.
     hotkey::register_record_toggle(&app);
