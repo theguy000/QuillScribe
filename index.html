@@ -7,7 +7,40 @@
     <title>quillscribe-frontend</title>
   </head>
   <body>
-    <div id="app"></div>
+    <!-- Apply cached theme instantly to prevent flash of white on startup -->
+    <script>
+      (function() {
+        var theme = localStorage.getItem('qs-theme') || 'white';
+        var dark = theme.startsWith('dark_') || theme === 'obsidian';
+        var cl = document.documentElement.classList;
+        cl.add(theme);
+        if (dark) cl.add('dark');
+      })();
+    </script>
+    <div id="app">
+      <!-- Inline loading indicator — shown until Svelte mounts and replaces this content -->
+      <div id="startup-loader" style="
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-family: 'Aptos', 'Segoe UI Variable Text', 'Segoe UI', 'Inter', sans-serif;
+        font-size: 14px;
+        gap: 10px;
+        user-select: none;
+      ">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="animation: spin 1s linear infinite;">
+          <circle cx="12" cy="12" r="10" stroke="var(--border)" stroke-width="3"/>
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <span>Loading QuillScribe...</span>
+      </div>
+      <style>
+        @keyframes spin { to { transform: rotate(360deg); } }
+      </style>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

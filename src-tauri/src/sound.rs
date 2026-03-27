@@ -8,34 +8,59 @@ use std::sync::Mutex;
 const START_WAV: &[u8] = include_bytes!("../sounds/start.wav");
 const STOP_WAV: &[u8] = include_bytes!("../sounds/stop.wav");
 
+/// Holds the lazily-initialized audio output stream.
+struct StreamState {
+    initialized: bool,
+    _stream: Option<OutputStream>,
+    handle: Option<OutputStreamHandle>,
+}
+
 pub struct SoundManager {
     enabled: Mutex<bool>,
-    // We keep the stream alive for the lifetime of the manager.
-    // The handle is used to create sinks for playback.
-    _stream: Option<OutputStream>,
-    stream_handle: Option<OutputStreamHandle>,
+    // Lazily initialized on first sound playback to avoid blocking startup.
+    stream: Mutex<StreamState>,
 }
 
 impl SoundManager {
     pub fn new() -> Self {
-        let (stream, handle) = match OutputStream::try_default() {
+        SoundManager {
+            enabled: Mutex::new(true),
+            stream: Mutex::new(StreamState {
+                initialized: false,
+                _stream: None,
+                handle: None,
+            }),
+        }
+    }
+
+    /// Ensures the audio output stream is initialized. Called lazily on first
+    /// sound playback so that startup is not blocked by WASAPI initialization.
+    fn ensure_stream(&self) -> bool {
+        let mut state = match self.stream.lock() {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+
+        if state.initialized {
+            return state.handle.is_some();
+        }
+
+        state.initialized = true;
+
+        match OutputStream::try_default() {
             Ok((s, h)) => {
                 info!("Audio output stream initialized for notification sounds");
-                (Some(s), Some(h))
+                state._stream = Some(s);
+                state.handle = Some(h);
+                true
             }
             Err(e) => {
                 warn!(
                     "Failed to initialize audio output for sounds: {}. Sounds will be disabled.",
                     e
                 );
-                (None, None)
+                false
             }
-        };
-
-        SoundManager {
-            enabled: Mutex::new(true),
-            _stream: stream,
-            stream_handle: handle,
         }
     }
 
@@ -67,15 +92,22 @@ impl SoundManager {
             return;
         }
 
-        let handle = match &self.stream_handle {
+        if !self.ensure_stream() {
+            warn!(
+                "No audio output stream available, cannot play {} sound",
+                name
+            );
+            return;
+        }
+
+        let state = match self.stream.lock() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        let handle = match &state.handle {
             Some(h) => h,
-            None => {
-                warn!(
-                    "No audio output stream available, cannot play {} sound",
-                    name
-                );
-                return;
-            }
+            None => return,
         };
 
         match Sink::try_new(handle) {

@@ -15,7 +15,7 @@
   let isTranscribing = $state(false);
   let transcriptionText = $state('');
   let statusMessage = $state('Ready');
-  let currentTheme = $state('white');
+  let currentTheme = $state(localStorage.getItem('qs-theme') || 'white');
   let customTitlebar = $state(true);
   let audioLevel = $state(0);
   let settings = $state(null);
@@ -55,6 +55,7 @@
       document.documentElement.classList.add('dark');
     }
     document.documentElement.classList.add(currentTheme);
+    localStorage.setItem('qs-theme', currentTheme);
     if (settings) {
       invoke('set_tray_theme', { theme: currentTheme }).catch(() => {});
       invoke('set_taskbar_icon_theme', { theme: currentTheme }).catch(() => {});
@@ -95,6 +96,12 @@
         if (isCapturingShortcut) return;
         if (isTranscribing) return;
         toggleRecording({ navigateToRecordOnStart: false });
+      });
+
+      // Enable theme transitions only after the initial render is complete
+      // to avoid first-paint jank from CSS transitions on every element.
+      requestAnimationFrame(() => {
+        document.body.classList.add('theme-ready');
       });
     })();
 

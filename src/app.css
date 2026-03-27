@@ -357,9 +357,12 @@
   --titlebar-text: #d8d8d8;
 }
 
-/* Smooth transitions on theme change */
-body,
-body * {
+/* Smooth transitions on theme change.
+   Gated behind .theme-ready so the initial render is not slowed by
+   transition computation on every element. The class is added by
+   App.svelte after mount. */
+body.theme-ready,
+body.theme-ready * {
   transition: background-color 0.2s ease, color 0.2s ease,
     border-color 0.2s ease, box-shadow 0.2s ease;
 }
