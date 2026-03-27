@@ -25,6 +25,7 @@
   let historyError = $state('');
   let toasts = $state([]);
   let showBurst = $state(false);
+  let isCapturingShortcut = $state(false);
 
   let audioLevelInterval = null;
 
@@ -87,9 +88,9 @@
     (async () => {
       await Promise.all([loadSettings(), loadHistory()]);
       unlisten = await listen('hotkey-record-toggle', () => {
-        if (activePanel === 'settings') return;
+        if (isCapturingShortcut) return;
         if (isTranscribing) return;
-        toggleRecording();
+        toggleRecording({ navigateToRecordOnStart: false });
       });
     })();
 
@@ -125,12 +126,16 @@
     }
   }
 
-  async function toggleRecording() {
+  async function toggleRecording(options = {}) {
+    const { navigateToRecordOnStart = true } = options;
+
     if (isTranscribing) return;
 
     if (!isRecording) {
       try {
-        activePanel = 'record';
+        if (navigateToRecordOnStart) {
+          activePanel = 'record';
+        }
         statusMessage = 'Starting recording...';
         await invoke('start_recording');
         isRecording = true;
@@ -214,6 +219,9 @@
         onclose={() => { activePanel = 'record'; }}
         settings={settings}
         onsave={handleSaveSettings}
+        onshortcutrecordingchange={(recordingShortcut) => {
+          isCapturingShortcut = recordingShortcut;
+        }}
       />
     {:else}
       <div class="record-grid">

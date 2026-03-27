@@ -1,7 +1,15 @@
 <script>
   import { invoke } from '@tauri-apps/api/core'
+  import { onDestroy } from 'svelte'
 
-  let { show, onclose, settings, onsave, embedded = false } = $props()
+  let {
+    show,
+    onclose,
+    settings,
+    onsave,
+    embedded = false,
+    onshortcutrecordingchange = () => {},
+  } = $props()
 
   let activeTab = $state('audio')
   let localSettings = $state(null)
@@ -51,6 +59,10 @@
           return name.includes(modelCategory.toLowerCase())
         })
   )
+
+  onDestroy(() => {
+    onshortcutrecordingchange(false)
+  })
 
   $effect(() => {
     if (show && settings) {
@@ -185,11 +197,13 @@
   }
 
   function handleSave() {
+    if (recordingShortcut) stopRecordingShortcut()
     if (testingMic) stopMicTest()
     onsave(localSettings)
   }
 
   function handleCancel() {
+    if (recordingShortcut) stopRecordingShortcut()
     if (testingMic) stopMicTest()
     onclose()
   }
@@ -224,6 +238,7 @@
 
   function startRecordingShortcut() {
     recordingShortcut = true
+    onshortcutrecordingchange(true)
     // Focus the input on next tick so it receives key events
     requestAnimationFrame(() => {
       shortcutInputEl?.focus()
@@ -232,6 +247,7 @@
 
   function stopRecordingShortcut() {
     recordingShortcut = false
+    onshortcutrecordingchange(false)
   }
 
   function handleShortcutKeydown(e) {
@@ -242,7 +258,7 @@
 
     // Escape cancels recording
     if (e.key === 'Escape') {
-      recordingShortcut = false
+      stopRecordingShortcut()
       return
     }
 
@@ -268,7 +284,7 @@
     parts.push(key)
 
     localSettings.shortcuts.record_toggle = parts.join('+')
-    recordingShortcut = false
+    stopRecordingShortcut()
   }
 </script>
 
