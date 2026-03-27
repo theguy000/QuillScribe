@@ -171,6 +171,8 @@
     width: 100vw;
     height: 100vh;
     padding: 0 12px;
+    border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    box-shadow: 0 2px 12px var(--shadow);
   }
 
   .bars {
@@ -211,15 +213,21 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--danger, #e81123);
-    box-shadow: 0 0 5px var(--recording-glow, rgba(231, 76, 60, 0.5));
+    background: var(--accent, #2563eb);
+    box-shadow: 0 0 5px var(--accent-glow, rgba(37, 99, 235, 0.3));
+    animation: dot-blink 1.4s ease-in-out infinite;
+  }
+
+  @keyframes dot-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
 
   .label {
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 1px;
-    color: var(--danger, #e81123);
+    color: var(--accent, #2563eb);
     text-transform: uppercase;
   }
 
@@ -240,16 +248,19 @@
     justify-content: center;
     border: none;
     border-radius: 6px;
-    background: var(--danger, #e81123);
-    color: var(--on-danger, #fff);
+    background: var(--accent, #2563eb);
+    color: var(--on-accent, #fff);
     cursor: pointer;
+    box-shadow: 0 1px 4px var(--accent-glow, rgba(37, 99, 235, 0.3));
   }
 
   .stop-btn:hover {
-    background: var(--danger-hover, #c82333);
+    background: var(--accent-hover, #1d4ed8);
+    box-shadow: 0 2px 8px var(--accent-glow, rgba(37, 99, 235, 0.4));
   }
 
   .stop-btn:active {
     opacity: 0.85;
+    transform: scale(0.92);
   }
 </style>
