@@ -23,6 +23,7 @@
   let historyError = $state('');
   let expandedHistoryIndex = $state(-1);
   let toasts = $state([]);
+  let showBurst = $state(false);
 
   let audioLevelInterval = null;
 
@@ -157,6 +158,8 @@
         showToast('No speech detected', 'warning');
       }
       await loadHistory();
+      showBurst = true;
+      setTimeout(() => { showBurst = false; }, 800);
     } catch (err) {
       statusMessage = `Error: ${err}`;
       showToast(`Transcription failed: ${err}`, 'error', 5000);
@@ -434,38 +437,61 @@
               disabled={isTranscribing}
               aria-label={isTranscribing ? 'Transcribing...' : isRecording ? 'Stop recording' : 'Start recording'}
             >
-              <div
-                class="mic-glow"
-                style:opacity={isRecording ? 0.6 + audioLevel * 0.4 : 0}
-                style:transform="scale({isRecording ? 1 + audioLevel * 0.5 : 0.8})"
-              ></div>
+              {#if isRecording}
+                <div class="wave-ring wave-ring-1"></div>
+                <div class="wave-ring wave-ring-2"></div>
+                <div class="wave-ring wave-ring-3"></div>
+              {/if}
+              {#if isTranscribing}
+                <svg class="dual-spinner" width="108" height="108" viewBox="0 0 108 108">
+                  <circle class="spinner-arc-slow" cx="54" cy="54" r="50" />
+                  <circle class="spinner-arc-fast" cx="54" cy="54" r="50" />
+                </svg>
+              {/if}
+              {#if showBurst}
+                <div class="burst-ring burst-ring-1"></div>
+                <div class="burst-ring burst-ring-2"></div>
+                <div class="burst-ring burst-ring-3"></div>
+                <div class="burst-flash"></div>
+              {/if}
               <div
                 class="mic-ring"
                 class:recording={isRecording}
-                style:transform="scale({isRecording ? 1 + audioLevel * 0.15 : 1})"
+                class:transcribing={isTranscribing}
+                style:transform="scale({isRecording ? 1 + audioLevel * 0.08 : 1})"
               >
-                <svg
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <rect x="9" y="1" width="6" height="14" rx="3" />
-                  <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
-                </svg>
+                {#if isRecording}
+                  <div class="mic-icon-wrap recording">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                      <rect x="6" y="6" width="12" height="12" rx="3" />
+                    </svg>
+                  </div>
+                {:else}
+                  <div class="mic-icon-wrap">
+                    <svg
+                      width="32"
+                      height="32"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="9" y="1" width="6" height="14" rx="3" />
+                      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+                      <line x1="12" y1="19" x2="12" y2="23" />
+                      <line x1="8" y1="23" x2="16" y2="23" />
+                    </svg>
+                  </div>
+                {/if}
               </div>
             </button>
 
           <div class="record-info">
             <p class="record-title">
               {#if isTranscribing}
-                Transcribing audio
+                <span class="transcribing-dots">Transcribing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>
               {:else if isRecording}
                 Recording in progress
               {:else if statusMessage.startsWith('Error:')}
@@ -830,14 +856,38 @@
     cursor: pointer;
   }
 
-  .mic-glow {
+  .wave-ring {
     position: absolute;
-    width: 148px;
-    height: 148px;
+    width: 88px;
+    height: 88px;
     border-radius: 50%;
-    background: radial-gradient(circle, var(--recording-glow) 0%, transparent 70%);
-    transition: opacity 0.15s ease, transform 0.15s ease;
+    border: 2px solid var(--accent);
     pointer-events: none;
+    opacity: 0;
+    animation: wave-ripple 2.4s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
+  }
+
+  .wave-ring-1 {
+    animation-delay: 0s;
+  }
+
+  .wave-ring-2 {
+    animation-delay: 0.8s;
+  }
+
+  .wave-ring-3 {
+    animation-delay: 1.6s;
+  }
+
+  @keyframes wave-ripple {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
   }
 
   .mic-ring {
@@ -860,17 +910,133 @@
     background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 82%, white 18%), var(--accent));
     border-color: var(--accent);
     color: var(--on-accent);
-    box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent), 0 18px 34px color-mix(in srgb, var(--accent) 28%, transparent);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .mic-button.transcribing {
     cursor: wait;
-    opacity: 0.6;
     pointer-events: none;
   }
 
   .mic-button:disabled {
     cursor: not-allowed;
+  }
+
+  .mic-button:active:not(:disabled) .mic-ring {
+    transform: scale(0.9) !important;
+    transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .mic-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: icon-fade-in 0.25s ease both;
+  }
+
+  @keyframes icon-fade-in {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Dual-arc spinner for transcribing state */
+  .dual-spinner {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .spinner-arc-slow {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 100 214;
+    transform-origin: center;
+    animation: spin-slow 2s linear infinite;
+  }
+
+  .spinner-arc-fast {
+    fill: none;
+    stroke: color-mix(in srgb, var(--accent) 35%, transparent);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-dasharray: 40 274;
+    transform-origin: center;
+    animation: spin-fast 1.2s linear infinite;
+  }
+
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes spin-fast {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(-360deg); }
+  }
+
+  .mic-ring.transcribing {
+    opacity: 0.5;
+  }
+
+  /* Dot pulse text */
+  .transcribing-dots .dot {
+    display: inline-block;
+    opacity: 0;
+    animation: dot-pulse 1.4s ease-in-out infinite;
+  }
+
+  .transcribing-dots .dot:nth-child(1) { animation-delay: 0s; }
+  .transcribing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+  .transcribing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes dot-pulse {
+    0%, 60%, 100% { opacity: 0; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-2px); }
+  }
+
+  /* Ring burst on transcription complete */
+  .burst-ring {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    pointer-events: none;
+    opacity: 0;
+    animation: burst-out 0.7s ease-out forwards;
+  }
+
+  .burst-ring-1 { animation-delay: 0s; }
+  .burst-ring-2 { animation-delay: 0.08s; }
+  .burst-ring-3 { animation-delay: 0.16s; }
+
+  @keyframes burst-out {
+    0% { transform: scale(1); opacity: 0.7; }
+    100% { transform: scale(2.6); opacity: 0; }
+  }
+
+  .burst-flash {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 40%, transparent) 0%, transparent 70%);
+    pointer-events: none;
+    opacity: 0;
+    animation: burst-flash 0.6s ease-out forwards;
+  }
+
+  @keyframes burst-flash {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.8); opacity: 0; }
   }
 
   .mic-button:hover .mic-ring:not(.recording) {
