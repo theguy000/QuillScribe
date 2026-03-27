@@ -936,11 +936,45 @@
   }
 
   .checkbox-label input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
     width: 16px;
     height: 16px;
-    accent-color: var(--accent);
+    margin: 0;
     cursor: pointer;
     flex-shrink: 0;
+    display: grid;
+    place-content: center;
+    background: var(--bg-secondary);
+    border: 1.5px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius: 4px;
+    box-sizing: border-box;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .checkbox-label input[type="checkbox"]::before {
+    content: '';
+    width: 8px;
+    height: 4px;
+    border-left: 2px solid var(--on-accent);
+    border-bottom: 2px solid var(--on-accent);
+    transform: rotate(-45deg) scale(0);
+    transform-origin: center;
+    transition: transform 0.15s ease;
+  }
+
+  .checkbox-label input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .checkbox-label input[type="checkbox"]:checked::before {
+    transform: rotate(-45deg) scale(1);
+  }
+
+  .checkbox-label input[type="checkbox"]:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    outline-offset: 1px;
   }
 
   /* Radio */
@@ -960,11 +994,43 @@
   }
 
   .radio-label input[type="radio"] {
+    -webkit-appearance: none;
+    appearance: none;
     width: 16px;
     height: 16px;
-    accent-color: var(--accent);
+    margin: 0;
     cursor: pointer;
     flex-shrink: 0;
+    border-radius: 50%;
+    display: grid;
+    place-content: center;
+    background: var(--bg-secondary);
+    border: 1.5px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    box-sizing: border-box;
+    transition: border-color 0.15s ease;
+  }
+
+  .radio-label input[type="radio"]::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: scale(0);
+    transition: transform 0.15s ease;
+  }
+
+  .radio-label input[type="radio"]:checked {
+    border-color: var(--accent);
+  }
+
+  .radio-label input[type="radio"]:checked::before {
+    transform: scale(1);
+  }
+
+  .radio-label input[type="radio"]:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    outline-offset: 1px;
   }
 
   /* Icon button */
