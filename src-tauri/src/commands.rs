@@ -443,3 +443,8 @@ pub fn get_always_on_top(state: tauri::State<AppState>) -> Result<bool, String> 
 pub fn set_tray_theme(app: tauri::AppHandle, theme: String) {
     crate::tray::set_tray_theme(&app, &theme);
 }
+
+#[tauri::command]
+pub fn set_taskbar_icon_theme(app: tauri::AppHandle, theme: String) {
+    crate::tray::set_window_icon_theme(&app, &theme);
+}

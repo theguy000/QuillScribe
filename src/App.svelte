@@ -57,6 +57,7 @@
     document.documentElement.classList.add(currentTheme);
     if (settings) {
       invoke('set_tray_theme', { theme: currentTheme }).catch(() => {});
+      invoke('set_taskbar_icon_theme', { theme: currentTheme }).catch(() => {});
     }
   });
 

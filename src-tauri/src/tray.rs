@@ -122,3 +122,19 @@ pub fn set_tray_theme(app: &AppHandle, theme: &str) {
         }
     }
 }
+
+/// Updates the window/taskbar icon to match the given theme.
+pub fn set_window_icon_theme(app: &AppHandle, theme: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        match tauri::image::Image::from_bytes(icon_bytes_for_theme(theme)) {
+            Ok(icon) => {
+                if let Err(e) = window.set_icon(icon) {
+                    warn!("Failed to set window icon: {}", e);
+                } else {
+                    debug!("Window icon updated for theme: {}", theme);
+                }
+            }
+            Err(e) => warn!("Failed to decode window icon for theme {}: {}", theme, e),
+        }
+    }
+}
