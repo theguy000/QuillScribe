@@ -16,8 +16,9 @@ use commands::{
     get_downloaded_models, get_model_info, get_recent_history, get_session_stats, get_settings,
     get_sounds_enabled, is_model_downloaded, play_start_sound, play_stop_sound,
     process_transcription, reset_statistics, save_settings, set_always_on_top, set_audio_device,
-    set_sounds_enabled, start_mic_test, start_monitoring, start_recording, stop_mic_test,
-    stop_monitoring, stop_recording, test_clipboard, test_microphone, validate_api_key,
+    set_sounds_enabled, set_tray_theme, start_mic_test, start_monitoring, start_recording,
+    stop_mic_test, stop_monitoring, stop_recording, test_clipboard, test_microphone,
+    validate_api_key,
 };
 use tauri::Manager;
 
@@ -37,9 +38,18 @@ pub fn run() {
                 )?;
             }
 
-            // Set up system tray
+            // Set up system tray with the saved theme
             let handle = app.handle().clone();
-            if let Err(e) = tray::setup_tray(&handle) {
+            let initial_theme = {
+                let state: tauri::State<commands::AppState> = app.state();
+                state
+                    .config
+                    .lock()
+                    .ok()
+                    .map(|c| c.get_settings().ui.theme)
+                    .unwrap_or_else(|| "white".to_string())
+            };
+            if let Err(e) = tray::setup_tray(&handle, &initial_theme) {
                 log::warn!("Failed to set up system tray: {}", e);
             }
 
@@ -151,6 +161,8 @@ pub fn run() {
             // Window
             set_always_on_top,
             get_always_on_top,
+            // Tray
+            set_tray_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -438,3 +438,8 @@ pub fn get_always_on_top(state: tauri::State<AppState>) -> Result<bool, String> 
     let config = state.config.lock().map_err(|e| e.to_string())?;
     Ok(config.get_always_on_top())
 }
+
+#[tauri::command]
+pub fn set_tray_theme(app: tauri::AppHandle, theme: String) {
+    crate::tray::set_tray_theme(&app, &theme);
+}

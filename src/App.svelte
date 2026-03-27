@@ -55,6 +55,9 @@
       document.documentElement.classList.add('dark');
     }
     document.documentElement.classList.add(currentTheme);
+    if (settings) {
+      invoke('set_tray_theme', { theme: currentTheme }).catch(() => {});
+    }
   });
 
   $effect(() => {
