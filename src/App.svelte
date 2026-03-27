@@ -1,6 +1,10 @@
 <script>
   import { invoke } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
+  import { listen, emit } from '@tauri-apps/api/event';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+  import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
+  import { currentMonitor } from '@tauri-apps/api/window';
   import { onMount } from 'svelte';
   import TitleBar from './lib/TitleBar.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
@@ -28,6 +32,9 @@
   let isCapturingShortcut = $state(false);
 
   let audioLevelInterval = null;
+  let windowFocused = $state(true);
+  let overlayVisible = $state(false);
+  let recordingStartTime = null;
 
   const MAX_TOASTS = 3;
   const historyDays = 30;
@@ -42,6 +49,63 @@
     setTimeout(() => {
       toasts = toasts.filter(t => t.id !== id);
     }, duration);
+  }
+
+  async function showOverlay() {
+    if (overlayVisible) return;
+    try {
+      const overlay = await WebviewWindow.getByLabel('overlay');
+      if (!overlay) return;
+      const overlayMode = settings?.ui?.overlay_mode || 'minimal';
+      const isMinimal = overlayMode === 'minimal';
+      const ow = isMinimal ? 120 : 240;
+      const oh = isMinimal ? 32 : 48;
+      const elapsedSecs = recordingStartTime
+        ? Math.floor((Date.now() - recordingStartTime) / 1000)
+        : 0;
+      await emit('overlay-show', { theme: currentTheme, elapsed: elapsedSecs, mode: overlayMode });
+      await new Promise(r => setTimeout(r, 50));
+      await overlay.setSize(new LogicalSize(ow, oh));
+      await overlay.show();
+      await overlay.setFocus();
+      // Position at bottom-center of the current monitor
+      try {
+        const monitor = await currentMonitor();
+        if (monitor) {
+          const sw = monitor.size.width / monitor.scaleFactor;
+          const sh = monitor.size.height / monitor.scaleFactor;
+          const x = Math.round((sw - ow) / 2);
+          const y = Math.round(sh - oh - 48);
+          await overlay.setPosition(new LogicalPosition(x, y));
+        }
+      } catch {}
+      // WebView2 workaround: nudge size to force transparency to apply
+      await overlay.setSize(new LogicalSize(ow + 1, oh + 1));
+      await overlay.setSize(new LogicalSize(ow, oh));
+      overlayVisible = true;
+    } catch (e) {
+      console.warn('Failed to show overlay:', e);
+    }
+  }
+
+  async function hideOverlay() {
+    if (!overlayVisible) return;
+    try {
+      const overlay = await WebviewWindow.getByLabel('overlay');
+      if (overlay) await overlay.hide();
+      await emit('overlay-hide');
+      overlayVisible = false;
+    } catch (e) {
+      console.warn('Failed to hide overlay:', e);
+    }
+  }
+
+  async function updateOverlayVisibility() {
+    if (isRecording && !windowFocused) {
+      await showOverlay();
+    } else {
+      await hideOverlay();
+    }
   }
 
   let isDark = $derived(
@@ -118,6 +182,20 @@
         await listen('tray-model-changed', async () => {
           await loadSettings();
         }),
+        await listen('overlay-stop-recording', () => {
+          if (isRecording) {
+            toggleRecording({ navigateToRecordOnStart: false });
+          }
+        }),
+      );
+
+      // Track main window focus to control recording overlay visibility
+      const mainWindow = getCurrentWindow();
+      unlisteners.push(
+        await mainWindow.onFocusChanged(({ payload: focused }) => {
+          windowFocused = focused;
+          updateOverlayVisibility();
+        }),
       );
 
       // Enable theme transitions only after the initial render is complete
@@ -174,8 +252,10 @@
         statusMessage = 'Starting recording...';
         await invoke('start_recording');
         isRecording = true;
+        recordingStartTime = Date.now();
         statusMessage = 'Recording... Click to stop';
         transcriptionText = '';
+        updateOverlayVisibility();
       } catch (err) {
         statusMessage = `Error: ${err}`;
         isRecording = false;
@@ -187,7 +267,9 @@
     try {
       statusMessage = 'Transcribing...';
       isRecording = false;
+      recordingStartTime = null;
       isTranscribing = true;
+      hideOverlay();
       const text = await invoke('stop_recording');
       transcriptionText = text || '';
       statusMessage = text ? 'Transcription complete' : 'No speech detected';

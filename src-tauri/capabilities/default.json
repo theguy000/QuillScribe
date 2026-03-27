@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "QuillScribe default capabilities",
   "windows": [
-    "main"
+    "main",
+    "overlay"
   ],
   "permissions": [
     "core:default",
@@ -17,6 +18,9 @@
     "core:window:allow-set-focus",
     "core:window:allow-show",
     "core:window:allow-hide",
+    "core:window:allow-is-minimized",
+    "core:window:allow-current-monitor",
+    "core:event:default",
     "shell:default",
     "clipboard-manager:default",
     "clipboard-manager:allow-write-text",

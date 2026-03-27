@@ -10,15 +10,14 @@ mod whisper;
 mod window;
 
 use commands::{
-    app_state, copy_to_clipboard, delete_model, download_model, export_statistics,
-    get_accuracy_rate, get_all_time_stats, get_always_on_top, get_audio_devices, get_audio_level,
-    get_available_languages, get_available_local_models, get_available_models, get_daily_usage,
-    get_downloaded_models, get_model_info, get_recent_history, get_session_stats, get_settings,
+    app_state, copy_to_clipboard, delete_model, download_model, get_always_on_top,
+    get_audio_devices, get_audio_level, get_available_languages, get_available_local_models,
+    get_available_models, get_downloaded_models, get_model_info, get_recent_history, get_settings,
     get_sounds_enabled, is_model_downloaded, play_start_sound, play_stop_sound,
-    process_transcription, rebuild_tray_menu, reset_statistics, save_settings, set_always_on_top,
-    set_audio_device, set_sounds_enabled, set_taskbar_icon_theme, set_tray_theme, start_mic_test,
-    start_monitoring, start_recording, stop_mic_test, stop_monitoring, stop_recording,
-    test_clipboard, test_microphone, validate_api_key,
+    process_transcription, rebuild_tray_menu, save_settings, set_always_on_top, set_audio_device,
+    set_sounds_enabled, set_taskbar_icon_theme, set_tray_theme, start_mic_test, start_monitoring,
+    start_recording, stop_mic_test, stop_monitoring, stop_recording, test_clipboard,
+    test_microphone, validate_api_key,
 };
 use tauri::Manager;
 
@@ -75,9 +74,6 @@ pub fn run() {
                 }
             }
 
-            // Record session start for statistics
-            state.statistics.record_session_start();
-
             // Apply max history entries from config
             if let Ok(config) = state.config.lock() {
                 state.statistics.set_max_history_entries(config.get_max_history_entries());
@@ -92,14 +88,17 @@ pub fn run() {
             use tauri::WindowEvent;
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
-                    // Always minimize to tray on close
+                    let label = window.label();
+                    if label == "overlay" {
+                        // Overlay: just hide, never truly close
+                        api.prevent_close();
+                        let _ = window.hide();
+                        return;
+                    }
+
+                    // Main window: minimize to tray on close
                     api.prevent_close();
                     let _ = window.hide();
-
-                    // Record session end on actual close
-                    let app = window.app_handle();
-                    let state = app.state::<commands::AppState>();
-                    state.statistics.record_session_end();
                 }
                 _ => {}
             }
@@ -139,13 +138,7 @@ pub fn run() {
             set_sounds_enabled,
             get_sounds_enabled,
             // Statistics
-            get_all_time_stats,
-            get_session_stats,
             get_recent_history,
-            get_accuracy_rate,
-            get_daily_usage,
-            reset_statistics,
-            export_statistics,
             // Window
             set_always_on_top,
             get_always_on_top,

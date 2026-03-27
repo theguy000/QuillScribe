@@ -1,5 +1,4 @@
 use log::warn;
-use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::audio::{AudioDevice, AudioManager};
@@ -7,7 +6,7 @@ use crate::config::{ConfigManager, Settings};
 use crate::hotkey;
 use crate::output::{OutputManager, OutputMode};
 use crate::sound::SoundManager;
-use crate::statistics::{AllTimeStats, HistoryEntry, SessionStats, StatisticsManager};
+use crate::statistics::{HistoryEntry, StatisticsManager};
 use crate::whisper::{ModelInfo, WhisperManager};
 
 pub struct AppState {
@@ -134,7 +133,6 @@ pub fn stop_monitoring(state: tauri::State<AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn start_recording(state: tauri::State<AppState>) -> Result<(), String> {
     state.sound.play_start_sound();
-    state.statistics.record_recording_start();
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.start_recording().map_err(|e| e.to_string())
 }
@@ -398,50 +396,11 @@ pub fn get_sounds_enabled(state: tauri::State<AppState>) -> bool {
 // ── Statistics commands ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_all_time_stats(state: tauri::State<AppState>) -> AllTimeStats {
-    state.statistics.get_statistics()
-}
-
-#[tauri::command]
-pub fn get_session_stats(state: tauri::State<AppState>) -> SessionStats {
-    state.statistics.get_session_statistics()
-}
-
-#[tauri::command]
 pub fn get_recent_history(
     state: tauri::State<AppState>,
     days: Option<i64>,
 ) -> Vec<HistoryEntry> {
     state.statistics.get_recent_history(days.unwrap_or(7))
-}
-
-#[tauri::command]
-pub fn get_accuracy_rate(state: tauri::State<AppState>) -> f64 {
-    state.statistics.get_accuracy_rate()
-}
-
-#[tauri::command]
-pub fn get_daily_usage(
-    state: tauri::State<AppState>,
-    days: Option<i64>,
-) -> HashMap<String, u64> {
-    state.statistics.get_daily_usage_trend(days.unwrap_or(30))
-}
-
-#[tauri::command]
-pub fn reset_statistics(state: tauri::State<AppState>) {
-    state.statistics.reset_statistics();
-}
-
-#[tauri::command]
-pub fn export_statistics(
-    state: tauri::State<AppState>,
-    file_path: String,
-) -> Result<(), String> {
-    state
-        .statistics
-        .export_statistics(&file_path)
-        .map_err(|e| e.to_string())
 }
 
 // ── Window commands ──────────────────────────────────────────────────────────

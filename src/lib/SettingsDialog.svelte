@@ -607,6 +607,19 @@
             </div>
 
             <div class="field">
+              <span class="field-label">Recording Overlay Style</span>
+              <select
+                class="field-select"
+                value={localSettings.ui.overlay_mode ?? 'minimal'}
+                onchange={(e) => localSettings.ui.overlay_mode = getFieldValue(e)}
+              >
+                <option value="minimal">Minimal (bars only)</option>
+                <option value="full">Full (bars, timer, stop button)</option>
+              </select>
+              <p class="field-hint">Style of the floating overlay shown when recording and the app is unfocused.</p>
+            </div>
+
+            <div class="field">
               <span class="field-label">Maximum Recent History</span>
               <div class="stepper">
                 <button

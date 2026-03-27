@@ -73,6 +73,12 @@ pub struct UiConfig {
     pub theme: String,
     pub always_on_top: bool,
     pub custom_titlebar: bool,
+    #[serde(default = "default_overlay_mode")]
+    pub overlay_mode: String,
+}
+
+fn default_overlay_mode() -> String {
+    "minimal".to_string()
 }
 
 impl Default for UiConfig {
@@ -81,6 +87,7 @@ impl Default for UiConfig {
             theme: "white".to_string(),
             always_on_top: false,
             custom_titlebar: true,
+            overlay_mode: "minimal".to_string(),
         }
     }
 }
