@@ -54,10 +54,9 @@ pub fn run() {
             }
             tray::set_window_icon_theme(&handle, &initial_theme);
 
-            // Restore window position and apply settings
+            // Apply window settings
             let state: tauri::State<commands::AppState> = app.state();
             if let Ok(config) = state.config.lock() {
-                window::restore_window_position(&handle, &config);
                 window::apply_always_on_top(&handle, config.get_always_on_top());
 
                 // Initialize sound enabled state from config
@@ -93,31 +92,14 @@ pub fn run() {
             use tauri::WindowEvent;
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
-                    // Save window position before closing
-                    let app = window.app_handle();
-                    let state = app.state::<commands::AppState>();
-                    {
-                        let config = state.config.lock();
-                        if let Ok(config) = config {
-                            window::save_window_position(app, &config);
-
-                            // Always minimize to tray on close
-                            api.prevent_close();
-                            let _ = window.hide();
-                        }
-                    };
+                    // Always minimize to tray on close
+                    api.prevent_close();
+                    let _ = window.hide();
 
                     // Record session end on actual close
-                    state.statistics.record_session_end();
-                }
-                WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
-                    // Auto-save position on move/resize
                     let app = window.app_handle();
                     let state = app.state::<commands::AppState>();
-                    let config = state.config.lock();
-                    if let Ok(config) = config {
-                        window::save_window_position(app, &config);
-                    }
+                    state.statistics.record_session_end();
                 }
                 _ => {}
             }

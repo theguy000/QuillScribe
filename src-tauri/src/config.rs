@@ -75,8 +75,6 @@ pub struct UiConfig {
 
     pub always_on_top: bool,
     pub custom_titlebar: bool,
-    pub window_x: Option<i32>,
-    pub window_y: Option<i32>,
 }
 
 impl Default for UiConfig {
@@ -87,8 +85,6 @@ impl Default for UiConfig {
 
             always_on_top: false,
             custom_titlebar: true,
-            window_x: None,
-            window_y: None,
         }
     }
 }
@@ -277,17 +273,6 @@ impl ConfigManager {
 
     pub fn set_always_on_top(&self, on_top: bool) {
         self.settings.lock().unwrap().ui.always_on_top = on_top;
-    }
-
-    pub fn get_window_position(&self) -> (Option<i32>, Option<i32>) {
-        let guard = self.settings.lock().unwrap();
-        (guard.ui.window_x, guard.ui.window_y)
-    }
-
-    pub fn set_window_position(&self, x: Option<i32>, y: Option<i32>) {
-        let mut guard = self.settings.lock().unwrap();
-        guard.ui.window_x = x;
-        guard.ui.window_y = y;
     }
 
     // ── Shortcuts getters ────────────────────────────────────────────────
