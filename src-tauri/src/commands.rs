@@ -1,3 +1,4 @@
+use log::warn;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -85,6 +86,11 @@ pub fn save_settings(
 
         crate::window::apply_custom_titlebar(&app, custom_titlebar);
         crate::window::apply_always_on_top(&app, always_on_top);
+    }
+
+    // Rebuild the tray menu so model / mode changes are reflected.
+    if let Err(e) = crate::tray::rebuild_tray_menu(&app) {
+        warn!("Failed to rebuild tray menu after settings change: {}", e);
     }
 
     Ok(())
@@ -308,10 +314,15 @@ pub fn get_available_languages() -> Vec<(String, String)> {
 }
 
 #[tauri::command]
-pub async fn download_model(model_name: String) -> Result<String, String> {
-    WhisperManager::download_model(&model_name)
+pub async fn download_model(app: tauri::AppHandle, model_name: String) -> Result<String, String> {
+    let result = WhisperManager::download_model(&model_name)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Rebuild tray menu so the newly downloaded model appears in the submenu.
+    if let Err(e) = crate::tray::rebuild_tray_menu(&app) {
+        warn!("Failed to rebuild tray menu after model download: {}", e);
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -320,8 +331,13 @@ pub fn is_model_downloaded(model_name: String) -> bool {
 }
 
 #[tauri::command]
-pub fn delete_model(model_name: String) -> Result<(), String> {
-    WhisperManager::delete_model(&model_name).map_err(|e| e.to_string())
+pub fn delete_model(app: tauri::AppHandle, model_name: String) -> Result<(), String> {
+    WhisperManager::delete_model(&model_name).map_err(|e| e.to_string())?;
+    // Rebuild tray menu so the deleted model is removed from the submenu.
+    if let Err(e) = crate::tray::rebuild_tray_menu(&app) {
+        warn!("Failed to rebuild tray menu after model delete: {}", e);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -455,4 +471,9 @@ pub fn set_tray_theme(app: tauri::AppHandle, theme: String) {
 #[tauri::command]
 pub fn set_taskbar_icon_theme(app: tauri::AppHandle, theme: String) {
     crate::tray::set_window_icon_theme(&app, &theme);
+}
+
+#[tauri::command]
+pub fn rebuild_tray_menu(app: tauri::AppHandle) -> Result<(), String> {
+    crate::tray::rebuild_tray_menu(&app).map_err(|e| e.to_string())
 }

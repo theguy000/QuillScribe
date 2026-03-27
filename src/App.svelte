@@ -88,15 +88,37 @@
   });
 
   onMount(() => {
-    let unlisten;
+    /** @type {Array<() => void>} */
+    let unlisteners = [];
 
     (async () => {
       await Promise.all([loadSettings(), loadHistory()]);
-      unlisten = await listen('hotkey-record-toggle', () => {
-        if (isCapturingShortcut) return;
-        if (isTranscribing) return;
-        toggleRecording({ navigateToRecordOnStart: false });
-      });
+
+      unlisteners.push(
+        await listen('hotkey-record-toggle', () => {
+          if (isCapturingShortcut) return;
+          if (isTranscribing) return;
+          toggleRecording({ navigateToRecordOnStart: false });
+        }),
+        await listen('tray-open-settings', () => {
+          activePanel = 'settings';
+        }),
+        await listen('tray-start-recording', () => {
+          if (isCapturingShortcut) return;
+          if (isTranscribing) return;
+          if (!isRecording) {
+            toggleRecording({ navigateToRecordOnStart: false });
+          }
+        }),
+        await listen('tray-stop-recording', () => {
+          if (isRecording) {
+            toggleRecording({ navigateToRecordOnStart: false });
+          }
+        }),
+        await listen('tray-model-changed', async () => {
+          await loadSettings();
+        }),
+      );
 
       // Enable theme transitions only after the initial render is complete
       // to avoid first-paint jank from CSS transitions on every element.
@@ -106,7 +128,9 @@
     })();
 
     return () => {
-      unlisten?.();
+      for (const unlisten of unlisteners) {
+        unlisten?.();
+      }
     };
   });
 
