@@ -587,24 +587,13 @@
               <label class="checkbox-label">
                 <input
                   type="checkbox"
-                  checked={localSettings.ui.show_waveform}
-                  onchange={(e) => localSettings.ui.show_waveform = getCheckedValue(e)}
-                />
-                <span>Show waveform</span>
-              </label>
-            </div>
-
-
-            <div class="field">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
                   checked={localSettings.ui.custom_titlebar}
                   onchange={(e) => localSettings.ui.custom_titlebar = getCheckedValue(e)}
                 />
                 <span>Custom titlebar</span>
               </label>
             </div>
+
 
             <div class="field">
               <label class="checkbox-label">

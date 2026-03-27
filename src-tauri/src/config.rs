@@ -71,8 +71,6 @@ impl Default for OutputConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiConfig {
     pub theme: String,
-    pub show_waveform: bool,
-
     pub always_on_top: bool,
     pub custom_titlebar: bool,
 }
@@ -81,8 +79,6 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             theme: "white".to_string(),
-            show_waveform: true,
-
             always_on_top: false,
             custom_titlebar: true,
         }
