@@ -5,13 +5,15 @@
   import TitleBar from './lib/TitleBar.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import Toast from './lib/Toast.svelte';
-  import QuillIcon from './lib/QuillIcon.svelte';
+  import Sidebar from './lib/Sidebar.svelte';
+  import RecordPanel from './lib/RecordPanel.svelte';
+  import TranscriptionPanel from './lib/TranscriptionPanel.svelte';
+  import HistoryPanel from './lib/HistoryPanel.svelte';
   import { allThemeClasses } from './lib/themes.js';
 
   let isRecording = $state(false);
   let isTranscribing = $state(false);
   let transcriptionText = $state('');
-  let isEditing = $state(false);
   let statusMessage = $state('Ready');
   let currentTheme = $state('white');
   let customTitlebar = $state(true);
@@ -21,13 +23,13 @@
   let historyEntries = $state([]);
   let historyLoading = $state(false);
   let historyError = $state('');
-  let expandedHistoryIndex = $state(-1);
   let toasts = $state([]);
   let showBurst = $state(false);
 
   let audioLevelInterval = null;
 
   const MAX_TOASTS = 3;
+  const historyDays = 30;
 
   function showToast(message, type = 'info', duration = 3000) {
     const id = Date.now() + Math.random();
@@ -41,14 +43,10 @@
     }, duration);
   }
 
-  const historyDays = 30;
-
   let isDark = $derived(
     currentTheme.startsWith('dark_') ||
     currentTheme === 'obsidian'
   );
-
-  let recentHistory = $derived([...historyEntries].reverse());
 
   $effect(() => {
     document.documentElement.classList.remove('dark', ...allThemeClasses);
@@ -116,7 +114,6 @@
   async function loadHistory() {
     historyLoading = true;
     historyError = '';
-    expandedHistoryIndex = -1;
 
     try {
       historyEntries = await invoke('get_recent_history', { days: historyDays });
@@ -168,21 +165,13 @@
     }
   }
 
-  function openSettings() {
-    activePanel = 'settings';
-  }
-
-  function closeSettings() {
-    activePanel = 'record';
-  }
-
-  function showRecordPanel() {
-    activePanel = 'record';
-  }
-
-  async function showHistoryPanel() {
-    activePanel = 'history';
-    await loadHistory();
+  function handleNavigate(panel) {
+    if (panel === 'history') {
+      activePanel = 'history';
+      loadHistory();
+    } else {
+      activePanel = panel;
+    }
   }
 
   async function handleSaveSettings(newSettings) {
@@ -197,64 +186,6 @@
       showToast(`Failed to save settings: ${err}`, 'error', 5000);
     }
   }
-
-  async function copyTranscription() {
-    try {
-      await navigator.clipboard.writeText(transcriptionText);
-    } catch {
-      // fallback: select all text
-    }
-  }
-
-  function toggleEdit() {
-    isEditing = !isEditing;
-  }
-
-  function formatTimestamp(timestamp) {
-    const date = new Date(timestamp);
-
-    if (Number.isNaN(date.getTime())) {
-      return timestamp;
-    }
-
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(date);
-  }
-
-  function formatDuration(seconds) {
-    if (seconds == null || Number.isNaN(seconds)) return '—';
-    if (seconds < 60) {
-      return `${seconds.toFixed(1)}s`;
-    }
-
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.round(seconds % 60)
-      .toString()
-      .padStart(2, '0');
-
-    return `${minutes}:${remainingSeconds}`;
-  }
-
-  function formatConfidence(confidence) {
-    if (confidence == null) return '—';
-    return `${Math.round(confidence * 100)}%`;
-  }
-
-  function toggleHistoryExpand(index) {
-    expandedHistoryIndex = expandedHistoryIndex === index ? -1 : index;
-  }
-
-  async function copyHistoryText(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // fallback silently
-    }
-  }
 </script>
 
 {#if customTitlebar}
@@ -262,286 +193,39 @@
 {/if}
 
 <main class="app-container">
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-logo">
-        <div class="sidebar-logo-icon">
-          <QuillIcon width={20} height={20} />
-        </div>
-        <div>
-          <h1><span class="logo-accent">Quill</span>Scribe</h1>
-          <p class="sidebar-tagline">Voice Workspace</p>
-        </div>
-      </div>
-    </div>
-
-    <nav class="sidebar-nav">
-      <p class="sidebar-section-label">Navigation</p>
-      <button
-        class="nav-button"
-        class:active={activePanel === 'record'}
-        onclick={showRecordPanel}
-      >
-        <span class="nav-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="1" width="6" height="14" rx="3" />
-            <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-            <line x1="12" y1="19" x2="12" y2="23" />
-            <line x1="8" y1="23" x2="16" y2="23" />
-          </svg>
-        </span>
-        <span class="nav-label">Record</span>
-      </button>
-
-      <button class="nav-button" class:active={activePanel === 'settings'} onclick={openSettings}>
-        <span class="nav-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </span>
-        <span class="nav-label">Settings</span>
-      </button>
-
-      <button
-        class="nav-button"
-        class:active={activePanel === 'history'}
-        onclick={showHistoryPanel}
-      >
-        <span class="nav-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 3v5h5" />
-            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-            <path d="M12 7v5l3 3" />
-          </svg>
-        </span>
-        <span class="nav-label">History</span>
-      </button>
-    </nav>
-
-    <div class="sidebar-user">
-      <div class="user-avatar">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-      </div>
-      <div class="user-info">
-        <span class="user-name">User</span>
-        <span class="user-meta">{historyEntries.length} sessions</span>
-      </div>
-    </div>
-  </aside>
+  <Sidebar
+    {activePanel}
+    sessionCount={historyEntries.length}
+    onnavigate={handleNavigate}
+  />
 
   <section class="workspace">
     {#if activePanel === 'history'}
-      <div class="panel history-panel">
-        <div class="panel-header">
-          <div>
-            <p class="panel-kicker">Archive</p>
-            <h2>Recent history</h2>
-          </div>
-          <button class="panel-action" onclick={loadHistory} disabled={historyLoading}>
-            {historyLoading ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
-
-        {#if historyError}
-          <div class="empty-state">
-            <p class="empty-title">Could not load history</p>
-            <p class="empty-copy">{historyError}</p>
-          </div>
-        {:else if historyLoading && recentHistory.length === 0}
-          <div class="empty-state">
-            <p class="empty-title">Loading history</p>
-            <p class="empty-copy">Pulling recent sessions from the local statistics store.</p>
-          </div>
-        {:else if recentHistory.length === 0}
-          <div class="empty-state">
-            <p class="empty-title">No sessions yet</p>
-            <p class="empty-copy">Start a recording and completed sessions will appear here.</p>
-          </div>
-        {:else}
-          <div class="history-list">
-            {#each recentHistory as entry, i}
-              <div
-                class="history-item"
-                class:expanded={expandedHistoryIndex === i}
-              >
-                <button
-                  class="history-item-toggle"
-                  type="button"
-                  onclick={() => toggleHistoryExpand(i)}
-                >
-                  <div class="history-item-top">
-                    <div>
-                      <p class="history-time">{formatTimestamp(entry.timestamp)}</p>
-                      <p class="history-mode">{entry.mode} mode</p>
-                    </div>
-                    <span class="history-badge" class:success={entry.success} class:failed={!entry.success}>
-                      {entry.success ? 'Success' : 'Failed'}
-                    </span>
-                  </div>
-                  <div class="history-metrics">
-                    <span>{formatDuration(entry.duration_secs)} audio</span>
-                    <span>{formatDuration(entry.transcription_time_secs)} transcribed</span>
-                    <span>{entry.text_length} chars</span>
-                    <span>{formatConfidence(entry.confidence)} confidence</span>
-                  </div>
-                </button>
-
-                {#if expandedHistoryIndex === i}
-                  <div class="history-detail">
-                    {#if entry.text}
-                      <div class="history-detail-header">
-                        <p class="history-detail-label">Transcription</p>
-                        <button
-                          class="action-btn"
-                          type="button"
-                          onclick={() => copyHistoryText(entry.text)}
-                          title="Copy transcription"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                          </svg>
-                        </button>
-                      </div>
-                      <p class="history-detail-text">{entry.text}</p>
-                    {:else}
-                      <p class="history-detail-empty">No transcription text available for this session.</p>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
+      <HistoryPanel
+        {historyEntries}
+        {historyLoading}
+        {historyError}
+        onrefresh={loadHistory}
+      />
     {:else if activePanel === 'settings'}
       <SettingsDialog
         show={activePanel === 'settings'}
         embedded={true}
-        onclose={closeSettings}
+        onclose={() => { activePanel = 'record'; }}
         settings={settings}
         onsave={handleSaveSettings}
       />
     {:else}
       <div class="record-grid">
-        <section class="record-card">
-            <button
-              class="mic-button"
-              class:recording={isRecording}
-              class:transcribing={isTranscribing}
-              onclick={toggleRecording}
-              disabled={isTranscribing}
-              aria-label={isTranscribing ? 'Transcribing...' : isRecording ? 'Stop recording' : 'Start recording'}
-            >
-              {#if isRecording}
-                <div class="wave-ring wave-ring-1"></div>
-                <div class="wave-ring wave-ring-2"></div>
-                <div class="wave-ring wave-ring-3"></div>
-              {/if}
-              {#if isTranscribing}
-                <svg class="dual-spinner" width="108" height="108" viewBox="0 0 108 108">
-                  <circle class="spinner-arc-slow" cx="54" cy="54" r="50" />
-                  <circle class="spinner-arc-fast" cx="54" cy="54" r="50" />
-                </svg>
-              {/if}
-              {#if showBurst}
-                <div class="burst-ring burst-ring-1"></div>
-                <div class="burst-ring burst-ring-2"></div>
-                <div class="burst-ring burst-ring-3"></div>
-                <div class="burst-flash"></div>
-              {/if}
-              <div
-                class="mic-ring"
-                class:recording={isRecording}
-                class:transcribing={isTranscribing}
-                style:transform="scale({isRecording ? 1 + audioLevel * 0.08 : 1})"
-              >
-                {#if isRecording}
-                  <div class="mic-icon-wrap recording">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                      <rect x="6" y="6" width="12" height="12" rx="3" />
-                    </svg>
-                  </div>
-                {:else}
-                  <div class="mic-icon-wrap">
-                    <svg
-                      width="32"
-                      height="32"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <rect x="9" y="1" width="6" height="14" rx="3" />
-                      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-                      <line x1="12" y1="19" x2="12" y2="23" />
-                      <line x1="8" y1="23" x2="16" y2="23" />
-                    </svg>
-                  </div>
-                {/if}
-              </div>
-            </button>
-
-          <div class="record-info">
-            <p class="record-title">
-              {#if isTranscribing}
-                <span class="transcribing-dots">Transcribing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>
-              {:else if isRecording}
-                Recording in progress
-              {:else if statusMessage.startsWith('Error:')}
-                Something went wrong
-              {:else}
-                Ready to record
-              {/if}
-            </p>
-            <p class="record-text">
-              {#if isTranscribing}
-                Processing your audio. This may take a moment depending on the length of the recording.
-              {:else if isRecording}
-                Click the microphone again to stop and send the captured audio for transcription.
-              {:else if statusMessage.startsWith('Error:')}
-                {statusMessage.slice(7)}
-              {:else}
-                Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.
-              {/if}
-            </p>
-          </div>
-        </section>
-
-        <section class="transcription-section">
-          {#if transcriptionText}
-            <div class="transcription-actions">
-              <button class="action-btn" onclick={copyTranscription} title="Copy">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              </button>
-              <button class="action-btn" class:active={isEditing} onclick={toggleEdit} title={isEditing ? 'Done editing' : 'Edit'}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
-              </button>
-            </div>
-            {#if isEditing}
-              <textarea class="transcription-text transcription-edit" bind:value={transcriptionText}></textarea>
-            {:else}
-              <p class="transcription-text">{transcriptionText}</p>
-            {/if}
-          {:else}
-            <div class="empty-inline">
-              <p class="empty-title">No transcription yet</p>
-              <p class="empty-copy">Once you stop a recording, the converted text will appear here.</p>
-            </div>
-          {/if}
-        </section>
+        <RecordPanel
+          {isRecording}
+          {isTranscribing}
+          {statusMessage}
+          {audioLevel}
+          {showBurst}
+          ontogglerecording={toggleRecording}
+        />
+        <TranscriptionPanel bind:transcriptionText />
       </div>
     {/if}
   </section>
@@ -560,241 +244,11 @@
       var(--bg-primary);
   }
 
-  .sidebar {
-    width: 220px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    padding: 20px 14px 16px;
-    margin: 22px 0 22px 22px;
-    border: 1px solid color-mix(in srgb, var(--border-light) 92%, transparent);
-    border-radius: 22px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 98%, transparent), color-mix(in srgb, var(--bg-secondary) 60%, transparent));
-    box-shadow: 0 24px 60px color-mix(in srgb, var(--shadow-lg) 62%, transparent);
-    flex-shrink: 0;
-  }
-
-
-  .sidebar-header {
-    padding: 0 4px 16px;
-    border-bottom: 1px solid var(--border-light);
-  }
-
-  .sidebar-logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .sidebar-logo-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
-    flex-shrink: 0;
-  }
-
-  .logo-accent {
-    color: var(--accent);
-  }
-
-  .sidebar-header h1 {
-    font-size: 17px;
-    line-height: 1.2;
-    letter-spacing: -0.01em;
-    font-weight: 700;
-    margin-bottom: 2px;
-  }
-
-  .sidebar-tagline {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-muted);
-    letter-spacing: 0.02em;
-  }
-
-  .sidebar-section-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
-    padding: 0 8px;
-    margin-bottom: 4px;
-  }
-
-  .panel-kicker {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: var(--text-muted);
-  }
-
-  .sidebar-tagline,
-  .record-text,
-  .empty-copy,
-  .history-mode,
-  .history-metrics {
-    color: var(--text-secondary);
-  }
-
-  .sidebar-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .nav-button,
-  .panel-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
-  }
-
-  .nav-button {
-    width: 100%;
-    padding: 9px 10px;
-    justify-content: flex-start;
-  }
-
-  .panel-action {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
-    color: var(--text-primary);
-  }
-
-  .nav-button:hover {
-    background: color-mix(in srgb, var(--bg-primary) 80%, var(--bg-secondary));
-    color: var(--text-primary);
-  }
-
-  .panel-action:hover {
-    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-    background: color-mix(in srgb, var(--bg-primary) 98%, var(--accent) 2%);
-  }
-
-  .nav-button.active {
-    background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
-    color: var(--accent);
-  }
-
-  .nav-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    flex-shrink: 0;
-    opacity: 0.7;
-  }
-
-  .nav-button.active .nav-icon {
-    opacity: 1;
-  }
-
-  .nav-label {
-    font-size: 13px;
-    font-weight: 500;
-  }
-
-  .nav-button.active .nav-label {
-    font-weight: 600;
-  }
-
-  .sidebar-user {
-    margin-top: auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 8px;
-    border-top: 1px solid color-mix(in srgb, var(--border-light) 60%, transparent);
-  }
-
-  .user-avatar {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
-    color: var(--accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .user-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .user-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-primary);
-    line-height: 1.2;
-  }
-
-  .user-meta {
-    font-size: 10px;
-    color: var(--text-muted);
-    line-height: 1.3;
-  }
-
   .workspace {
     flex: 1;
     min-width: 0;
     padding: 22px;
     overflow: hidden;
-  }
-
-
-  .panel {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    padding: 26px;
-    border: 1px solid color-mix(in srgb, var(--border-light) 92%, transparent);
-    border-radius: 22px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 98%, transparent), color-mix(in srgb, var(--bg-secondary) 60%, transparent));
-    box-shadow: 0 24px 60px color-mix(in srgb, var(--shadow-lg) 62%, transparent);
-    overflow: hidden;
-  }
-
-
-  .panel-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    padding-bottom: 18px;
-    border-bottom: 1px solid color-mix(in srgb, var(--border-light) 76%, transparent);
-  }
-
-  .panel-header h2 {
-    font-size: 30px;
-    line-height: 1.1;
-    letter-spacing: -0.03em;
-    margin-top: 8px;
-  }
-
-  .panel-action {
-    padding: 10px 14px;
-    font-size: 13px;
-    font-weight: 600;
   }
 
   .record-grid {
@@ -805,519 +259,8 @@
     min-height: 0;
   }
 
-  .record-card,
-  .transcription-section,
-  .history-item,
-  .empty-state {
-    border: 1px solid color-mix(in srgb, var(--border-light) 95%, transparent);
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--bg-secondary) 80%, var(--bg-primary));
-  }
-
-  .record-card {
-    display: grid;
-    grid-template-rows: 1fr auto 1fr;
-    align-items: center;
-    justify-items: center;
-    padding: 30px;
-    text-align: center;
-    overflow: visible;
-    background:
-      radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 42%),
-      linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 90%, transparent), color-mix(in srgb, var(--bg-secondary) 92%, transparent));
-    box-shadow: inset 0 1px 0 var(--highlight);
-  }
-
-  .record-card::before {
-    content: '';
-    display: block;
-  }
-
-
-  .record-info {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    align-self: start;
-    gap: 4px;
-    padding-top: 16px;
-  }
-
-  .mic-button {
-    position: relative;
-    width: 128px;
-    height: 128px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-  }
-
-  .wave-ring {
-    position: absolute;
-    width: 88px;
-    height: 88px;
-    border-radius: 50%;
-    border: 2px solid var(--accent);
-    pointer-events: none;
-    opacity: 0;
-    animation: wave-ripple 2.4s cubic-bezier(0.2, 0.6, 0.35, 1) infinite;
-  }
-
-  .wave-ring-1 {
-    animation-delay: 0s;
-  }
-
-  .wave-ring-2 {
-    animation-delay: 0.8s;
-  }
-
-  .wave-ring-3 {
-    animation-delay: 1.6s;
-  }
-
-  @keyframes wave-ripple {
-    0% {
-      transform: scale(1);
-      opacity: 0.55;
-    }
-    100% {
-      transform: scale(2.2);
-      opacity: 0;
-    }
-  }
-
-  .mic-ring {
-    width: 88px;
-    height: 88px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 96%, transparent), color-mix(in srgb, var(--bg-secondary) 70%, transparent));
-    border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-    color: var(--text-secondary);
-    transition: all 0.2s ease;
-    position: relative;
-    z-index: 1;
-    box-shadow: 0 16px 30px color-mix(in srgb, var(--shadow) 55%, transparent);
-  }
-
-  .mic-ring.recording {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 82%, white 18%), var(--accent));
-    border-color: var(--accent);
-    color: var(--on-accent);
-    box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 35%, transparent);
-  }
-
-  .mic-button.transcribing {
-    cursor: wait;
-    pointer-events: none;
-  }
-
-  .mic-button:disabled {
-    cursor: not-allowed;
-  }
-
-  .mic-button:active:not(:disabled) .mic-ring {
-    transform: scale(0.9) !important;
-    transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .mic-icon-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: icon-fade-in 0.25s ease both;
-  }
-
-  @keyframes icon-fade-in {
-    from {
-      opacity: 0;
-      transform: scale(0.6);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  /* Dual-arc spinner for transcribing state */
-  .dual-spinner {
-    position: absolute;
-    z-index: 2;
-    pointer-events: none;
-  }
-
-  .spinner-arc-slow {
-    fill: none;
-    stroke: var(--accent);
-    stroke-width: 3;
-    stroke-linecap: round;
-    stroke-dasharray: 100 214;
-    transform-origin: center;
-    animation: spin-slow 2s linear infinite;
-  }
-
-  .spinner-arc-fast {
-    fill: none;
-    stroke: color-mix(in srgb, var(--accent) 35%, transparent);
-    stroke-width: 2.5;
-    stroke-linecap: round;
-    stroke-dasharray: 40 274;
-    transform-origin: center;
-    animation: spin-fast 1.2s linear infinite;
-  }
-
-  @keyframes spin-slow {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-
-  @keyframes spin-fast {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(-360deg); }
-  }
-
-  .mic-ring.transcribing {
-    opacity: 0.5;
-  }
-
-  /* Dot pulse text */
-  .transcribing-dots .dot {
-    display: inline-block;
-    opacity: 0;
-    animation: dot-pulse 1.4s ease-in-out infinite;
-  }
-
-  .transcribing-dots .dot:nth-child(1) { animation-delay: 0s; }
-  .transcribing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
-  .transcribing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
-
-  @keyframes dot-pulse {
-    0%, 60%, 100% { opacity: 0; transform: translateY(0); }
-    30% { opacity: 1; transform: translateY(-2px); }
-  }
-
-  /* Ring burst on transcription complete */
-  .burst-ring {
-    position: absolute;
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    border: 2px solid var(--accent);
-    pointer-events: none;
-    opacity: 0;
-    animation: burst-out 0.7s ease-out forwards;
-  }
-
-  .burst-ring-1 { animation-delay: 0s; }
-  .burst-ring-2 { animation-delay: 0.08s; }
-  .burst-ring-3 { animation-delay: 0.16s; }
-
-  @keyframes burst-out {
-    0% { transform: scale(1); opacity: 0.7; }
-    100% { transform: scale(2.6); opacity: 0; }
-  }
-
-  .burst-flash {
-    position: absolute;
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 40%, transparent) 0%, transparent 70%);
-    pointer-events: none;
-    opacity: 0;
-    animation: burst-flash 0.6s ease-out forwards;
-  }
-
-  @keyframes burst-flash {
-    0% { transform: scale(1); opacity: 0.6; }
-    100% { transform: scale(1.8); opacity: 0; }
-  }
-
-  .mic-button:hover .mic-ring:not(.recording) {
-    border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
-    color: var(--accent);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 96%, transparent), color-mix(in srgb, var(--bg-tertiary) 72%, transparent));
-  }
-
-  .record-title {
-    font-size: 23px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-  }
-
-  .record-text {
-    font-size: 14px;
-    line-height: 1.7;
-    max-width: 280px;
-  }
-
-  .transcription-section {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 20px;
-    overflow: hidden;
-  }
-
-  .transcription-actions {
-    display: flex;
-    gap: 6px;
-    justify-content: flex-end;
-    margin-bottom: 12px;
-    flex-shrink: 0;
-  }
-
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--border-light);
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--bg-secondary) 80%, var(--bg-primary));
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-  }
-
-  .action-btn:hover {
-    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-    color: var(--accent);
-  }
-
-  .action-btn.active {
-    background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .transcription-text {
-    flex: 1;
-    font-size: 15px;
-    line-height: 1.8;
-    color: var(--text-primary);
-    user-select: text;
-    word-wrap: break-word;
-    overflow-y: auto;
-    padding-right: 8px;
-  }
-
-  .transcription-edit {
-    resize: none;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-family: inherit;
-    padding: 0;
-    padding-right: 8px;
-    margin: 0;
-  }
-
-  .history-panel {
-    min-height: 0;
-  }
-
-  .history-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    overflow-y: auto;
-    padding-right: 8px;
-  }
-
-  .history-item {
-    padding: 18px;
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow) 28%, transparent);
-    cursor: pointer;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  }
-
-  .history-item:hover {
-    border-color: color-mix(in srgb, var(--accent) 35%, var(--border-light));
-  }
-
-  .history-item.expanded {
-    border-color: color-mix(in srgb, var(--accent) 45%, var(--border-light));
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow) 28%, transparent),
-                0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
-  }
-
-  .history-item-toggle {
-    all: unset;
-    display: block;
-    width: 100%;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .history-item-toggle:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-    border-radius: inherit;
-  }
-
-  .history-item-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 10px;
-  }
-
-  .history-time {
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-
-  .history-mode {
-    font-size: 13px;
-    text-transform: capitalize;
-  }
-
-  .history-badge {
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-
-  .history-badge.success {
-    background: color-mix(in srgb, var(--success) 18%, transparent);
-    color: var(--success);
-  }
-
-  .history-badge.failed {
-    background: color-mix(in srgb, var(--danger) 18%, transparent);
-    color: var(--danger);
-  }
-
-  .history-metrics {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    font-size: 13px;
-  }
-
-  .history-metrics span {
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
-  }
-
-  .history-detail {
-    margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid color-mix(in srgb, var(--border-light) 70%, transparent);
-  }
-
-  .history-detail-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-  }
-
-  .history-detail-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
-  }
-
-  .history-detail-text {
-    font-size: 14px;
-    line-height: 1.7;
-    color: var(--text-primary);
-    word-wrap: break-word;
-    white-space: pre-wrap;
-    max-height: 200px;
-    overflow-y: auto;
-    padding: 12px;
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border-light) 70%, transparent);
-    user-select: text;
-  }
-
-  .history-detail-empty {
-    font-size: 13px;
-    color: var(--text-muted);
-    font-style: italic;
-    text-align: center;
-    padding: 12px;
-  }
-
-  .empty-state,
-  .empty-inline {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    text-align: center;
-  }
-
-  .empty-state {
-    min-height: 220px;
-    padding: 28px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 94%, transparent), color-mix(in srgb, var(--bg-secondary) 86%, transparent));
-  }
-
-  .empty-inline {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .empty-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-  }
-
   @media (max-width: 840px) {
     .app-container {
-      flex-direction: column;
-    }
-
-    .sidebar {
-      width: auto;
-      margin: 14px 14px 0 14px;
-      padding-top: 14px;
-      border-right: none;
-      border-bottom: none;
-    }
-
-    .sidebar-nav {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 4px;
-    }
-
-    .sidebar-section-label {
-      display: none;
-    }
-
-    .sidebar-user {
-      margin-top: 0;
-      border-top: none;
-      padding-top: 4px;
-    }
-
-    .panel-header,
-    .history-item-top {
       flex-direction: column;
     }
 
@@ -1328,11 +271,5 @@
     .workspace {
       overflow: auto;
     }
-
-    .panel {
-      height: auto;
-      min-height: 100%;
-    }
-
   }
 </style>
