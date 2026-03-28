@@ -1149,6 +1149,7 @@
 
   .field-select,
   .field-input {
+    max-width: 340px;
     width: 100%;
     padding: 8px 12px;
     font-size: 13px;
@@ -1618,8 +1619,9 @@
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
+    max-width: 340px;
     background: var(--bg-secondary);
-    border: 1px solid var(--border-light);
+    border: none;
     border-radius: 10px;
   }
 
