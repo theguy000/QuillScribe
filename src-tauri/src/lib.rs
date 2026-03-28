@@ -76,7 +76,9 @@ pub fn run() {
 
             // Apply max history entries from config
             if let Ok(config) = state.config.lock() {
-                state.statistics.set_max_history_entries(config.get_max_history_entries());
+                state
+                    .statistics
+                    .set_max_history_entries(config.get_max_history_entries());
             }
 
             // Register global hotkeys
@@ -86,21 +88,18 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             use tauri::WindowEvent;
-            match event {
-                WindowEvent::CloseRequested { api, .. } => {
-                    let label = window.label();
-                    if label == "overlay" {
-                        // Overlay: just hide, never truly close
-                        api.prevent_close();
-                        let _ = window.hide();
-                        return;
-                    }
-
-                    // Main window: minimize to tray on close
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let label = window.label();
+                if label == "overlay" {
+                    // Overlay: just hide, never truly close
                     api.prevent_close();
                     let _ = window.hide();
+                    return;
                 }
-                _ => {}
+
+                // Main window: minimize to tray on close
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .invoke_handler(tauri::generate_handler![

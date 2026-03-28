@@ -131,7 +131,7 @@ impl Default for AdvancedConfig {
 
 // ── Root settings ────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Settings {
     pub audio: AudioConfig,
     pub whisper: WhisperConfig,
@@ -139,19 +139,6 @@ pub struct Settings {
     pub ui: UiConfig,
     pub shortcuts: ShortcutsConfig,
     pub advanced: AdvancedConfig,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            audio: AudioConfig::default(),
-            whisper: WhisperConfig::default(),
-            output: OutputConfig::default(),
-            ui: UiConfig::default(),
-            shortcuts: ShortcutsConfig::default(),
-            advanced: AdvancedConfig::default(),
-        }
-    }
 }
 
 // ── ConfigManager ────────────────────────────────────────────────────────────

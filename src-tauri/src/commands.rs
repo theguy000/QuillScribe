@@ -60,7 +60,9 @@ pub fn save_settings(
 
     // Apply the audio device to the AudioManager so it takes effect immediately.
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
-    audio.set_input_device(device_id).map_err(|e| e.to_string())?;
+    audio
+        .set_input_device(device_id)
+        .map_err(|e| e.to_string())?;
     drop(audio);
 
     // Apply the sounds_enabled flag so it takes effect immediately.
@@ -156,7 +158,9 @@ pub async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<Option<
         let whisper_cfg = config.get_whisper();
 
         let mut whisper = state.whisper.lock().map_err(|e| e.to_string())?;
-        whisper.set_mode(&whisper_cfg.mode).map_err(|e| e.to_string())?;
+        whisper
+            .set_mode(&whisper_cfg.mode)
+            .map_err(|e| e.to_string())?;
         whisper.set_api_key(&whisper_cfg.api_key);
         whisper
             .set_api_model(&whisper_cfg.api_model)
@@ -262,7 +266,9 @@ pub fn start_mic_test(
     device_id: Option<String>,
 ) -> Result<(), String> {
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
-    audio.set_input_device(device_id.clone()).map_err(|e| e.to_string())?;
+    audio
+        .set_input_device(device_id.clone())
+        .map_err(|e| e.to_string())?;
     audio.start_monitoring().map_err(|e| e.to_string())
 }
 
@@ -276,7 +282,9 @@ pub fn stop_mic_test(state: tauri::State<AppState>) -> Result<(), String> {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         config.get_audio_device_id()
     };
-    audio.set_input_device(device_id).map_err(|e| e.to_string())?;
+    audio
+        .set_input_device(device_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -355,7 +363,11 @@ pub fn process_transcription(
 
     let output = state.output.lock().map_err(|e| e.to_string())?;
     output
-        .process_transcription(&text, OutputMode::from(output_cfg.mode), output_cfg.silent_mode)
+        .process_transcription(
+            &text,
+            OutputMode::from(output_cfg.mode),
+            output_cfg.silent_mode,
+        )
         .map_err(|e| e.to_string())
 }
 
@@ -410,10 +422,7 @@ pub fn get_sounds_enabled(state: tauri::State<AppState>) -> bool {
 // ── Statistics commands ──────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_recent_history(
-    state: tauri::State<AppState>,
-    days: Option<i64>,
-) -> Vec<HistoryEntry> {
+pub fn get_recent_history(state: tauri::State<AppState>, days: Option<i64>) -> Vec<HistoryEntry> {
     state.statistics.get_recent_history(days.unwrap_or(7))
 }
 

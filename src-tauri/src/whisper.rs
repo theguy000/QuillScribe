@@ -52,7 +52,10 @@ impl WhisperManager {
                 self.mode = mode.to_string();
                 Ok(())
             }
-            _ => Err(anyhow!("Invalid mode '{}'. Must be 'api' or 'local'.", mode)),
+            _ => Err(anyhow!(
+                "Invalid mode '{}'. Must be 'api' or 'local'.",
+                mode
+            )),
         }
     }
 
@@ -123,11 +126,7 @@ impl WhisperManager {
 
     // ── Transcription entry point ────────────────────────────────────────
 
-    pub async fn transcribe_audio(
-        &self,
-        audio_data: Vec<f32>,
-        sample_rate: u32,
-    ) -> Result<String> {
+    pub async fn transcribe_audio(&self, audio_data: Vec<f32>, sample_rate: u32) -> Result<String> {
         match self.mode.as_str() {
             "api" => self.transcribe_api(audio_data, sample_rate).await,
             "local" => self.transcribe_local(audio_data, sample_rate).await,
@@ -137,11 +136,7 @@ impl WhisperManager {
 
     // ── API transcription ────────────────────────────────────────────────
 
-    async fn transcribe_api(
-        &self,
-        audio_data: Vec<f32>,
-        sample_rate: u32,
-    ) -> Result<String> {
+    async fn transcribe_api(&self, audio_data: Vec<f32>, sample_rate: u32) -> Result<String> {
         if self.api_key.is_empty() {
             return Err(anyhow!("API key is not set."));
         }
@@ -184,11 +179,7 @@ impl WhisperManager {
 
     // ── Local transcription (whisper.cpp via whisper-rs) ─────────────────
 
-    async fn transcribe_local(
-        &self,
-        audio_data: Vec<f32>,
-        sample_rate: u32,
-    ) -> Result<String> {
+    async fn transcribe_local(&self, audio_data: Vec<f32>, sample_rate: u32) -> Result<String> {
         // Resolve the model file path.
         let model_path = self.resolve_model_path()?;
 
@@ -237,10 +228,12 @@ impl WhisperManager {
             params.set_translate(false);
 
             // Use a single processing thread to avoid contention.
-            params.set_n_threads(std::thread::available_parallelism()
-                .map(|n| n.get() as i32)
-                .unwrap_or(4)
-                .min(8));
+            params.set_n_threads(
+                std::thread::available_parallelism()
+                    .map(|n| n.get() as i32)
+                    .unwrap_or(4)
+                    .min(8),
+            );
 
             let mut state = ctx
                 .create_state()
@@ -333,9 +326,8 @@ impl WhisperManager {
     pub fn delete_model(model_name: &str) -> Result<()> {
         let path = Self::get_model_path(model_name);
         if path.exists() {
-            fs::remove_file(&path).map_err(|e| {
-                anyhow!("Failed to delete model '{}': {}", model_name, e)
-            })?;
+            fs::remove_file(&path)
+                .map_err(|e| anyhow!("Failed to delete model '{}': {}", model_name, e))?;
         }
         Ok(())
     }
@@ -379,12 +371,8 @@ impl WhisperManager {
 
         // Write to a temporary file first, then rename for atomicity.
         let tmp_path = dest.with_extension("bin.tmp");
-        fs::write(&tmp_path, &bytes).map_err(|e| {
-            anyhow!("Failed to write model file: {}", e)
-        })?;
-        fs::rename(&tmp_path, &dest).map_err(|e| {
-            anyhow!("Failed to rename model file: {}", e)
-        })?;
+        fs::write(&tmp_path, &bytes).map_err(|e| anyhow!("Failed to write model file: {}", e))?;
+        fs::rename(&tmp_path, &dest).map_err(|e| anyhow!("Failed to rename model file: {}", e))?;
 
         Ok(dest.to_string_lossy().to_string())
     }
