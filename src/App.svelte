@@ -66,8 +66,8 @@
       await emit('overlay-show', { theme: currentTheme, elapsed: elapsedSecs, mode: overlayMode });
       await new Promise(r => setTimeout(r, 50));
       await overlay.setSize(new LogicalSize(ow, oh));
+      await overlay.setFocusable(false);
       await overlay.show();
-      await overlay.setFocus();
       // Position at bottom-center of the current monitor
       try {
         const monitor = await currentMonitor();
