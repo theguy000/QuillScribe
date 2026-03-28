@@ -75,7 +75,7 @@
           const sw = monitor.size.width / monitor.scaleFactor;
           const sh = monitor.size.height / monitor.scaleFactor;
           const x = Math.round((sw - ow) / 2);
-          const y = Math.round(sh - oh - 48);
+          const y = Math.round(sh - oh - 60);
           await overlay.setPosition(new LogicalPosition(x, y));
         }
       } catch {}
