@@ -237,10 +237,7 @@ pub async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<Option<
 
         let output = state.output.lock().map_err(|e| e.to_string())?;
         output
-            .process_transcription(
-                &transcribed_text,
-                OutputMode::from(output_cfg.mode),
-            )
+            .process_transcription(&transcribed_text, OutputMode::from(output_cfg.mode))
             .map_err(|e| e.to_string())?;
     }
 
@@ -368,10 +365,7 @@ pub fn process_transcription(
 
     let output = state.output.lock().map_err(|e| e.to_string())?;
     output
-        .process_transcription(
-            &text,
-            OutputMode::from(output_cfg.mode),
-        )
+        .process_transcription(&text, OutputMode::from(output_cfg.mode))
         .map_err(|e| e.to_string())
 }
 

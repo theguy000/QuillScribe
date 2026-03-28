@@ -66,9 +66,7 @@ pub struct OutputConfig {
 
 impl Default for OutputConfig {
     fn default() -> Self {
-        Self {
-            mode: 2,
-        }
+        Self { mode: 2 }
     }
 }
 

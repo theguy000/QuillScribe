@@ -207,11 +207,7 @@ impl OutputManager {
         OutputManager
     }
 
-    pub fn process_transcription(
-        &self,
-        text: &str,
-        mode: OutputMode,
-    ) -> Result<String> {
+    pub fn process_transcription(&self, text: &str, mode: OutputMode) -> Result<String> {
         if text.is_empty() {
             return Ok("No text to process".to_string());
         }

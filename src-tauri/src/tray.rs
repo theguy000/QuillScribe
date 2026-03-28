@@ -45,8 +45,8 @@ fn apply_shell_icon(theme: &str) {
     use std::path::PathBuf;
     use windows::core::{Interface, PCWSTR};
     use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile,
-        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, STGM,
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, STGM,
     };
     use windows::Win32::UI::Shell::{
         IShellLinkW, SHChangeNotify, ShellLink, SHCNE_ASSOCCHANGED, SHCNF_FLAGS,
@@ -97,9 +97,8 @@ fn apply_shell_icon(theme: &str) {
         }
 
         let result = (|| -> Result<(), String> {
-            let link: IShellLinkW =
-                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
-                    .map_err(|e| format!("CoCreateInstance(ShellLink) failed: {}", e))?;
+            let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                .map_err(|e| format!("CoCreateInstance(ShellLink) failed: {}", e))?;
 
             let persist: IPersistFile = link
                 .cast()
