@@ -165,10 +165,13 @@ impl WhisperManager {
         };
 
         if active_key.is_empty() {
-            return Err(anyhow!("API key is not set for {}.", match self.api_provider.as_str() {
-                "groq" => "Groq",
-                _ => "OpenAI",
-            }));
+            return Err(anyhow!(
+                "API key is not set for {}.",
+                match self.api_provider.as_str() {
+                    "groq" => "Groq",
+                    _ => "OpenAI",
+                }
+            ));
         }
 
         let wav_bytes = Self::encode_wav(&audio_data, sample_rate)?;
