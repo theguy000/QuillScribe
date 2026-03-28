@@ -7,6 +7,7 @@
   } = $props();
 
   let expandedHistoryIndex = $state(-1);
+  let compactView = $state(false);
 
   let recentHistory = $derived([...historyEntries].reverse());
 
@@ -35,11 +36,6 @@
     return `${minutes}:${remainingSeconds}`;
   }
 
-  function formatConfidence(confidence) {
-    if (confidence == null) return '\u2014';
-    return `${Math.round(confidence * 100)}%`;
-  }
-
   function toggleHistoryExpand(index) {
     expandedHistoryIndex = expandedHistoryIndex === index ? -1 : index;
   }
@@ -59,9 +55,29 @@
       <p class="panel-kicker">Archive</p>
       <h2>Recent history</h2>
     </div>
-    <button class="panel-action" onclick={onrefresh} disabled={historyLoading}>
-      {historyLoading ? 'Refreshing...' : 'Refresh'}
-    </button>
+    <div class="panel-actions">
+      <button
+        class="panel-action icon-btn"
+        class:active={compactView}
+        onclick={() => compactView = !compactView}
+        title={compactView ? 'Switch to detailed view' : 'Switch to compact view'}
+      >
+        {#if compactView}
+          <!-- detailed/expand icon -->
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+          </svg>
+        {:else}
+          <!-- compact/list icon -->
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+          </svg>
+        {/if}
+      </button>
+      <button class="panel-action" onclick={onrefresh} disabled={historyLoading}>
+        {historyLoading ? 'Refreshing...' : 'Refresh'}
+      </button>
+    </div>
   </div>
 
   {#if historyError}
@@ -82,10 +98,29 @@
   {:else}
     <div class="history-list">
       {#each recentHistory as entry, i}
-        <div
-          class="history-item"
-          class:expanded={expandedHistoryIndex === i}
-        >
+        {#if compactView}
+          <div class="history-item compact">
+            <div class="compact-row">
+              <p class="compact-text">{entry.text || 'No transcription text'}</p>
+              <span class="compact-time">{formatTimestamp(entry.timestamp)}</span>
+              <button
+                class="action-btn compact-copy"
+                type="button"
+                onclick={() => copyHistoryText(entry.text)}
+                title="Copy transcription"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        {:else}
+          <div
+            class="history-item"
+            class:expanded={expandedHistoryIndex === i}
+          >
           <button
             class="history-item-toggle"
             type="button"
@@ -104,7 +139,7 @@
               <span>{formatDuration(entry.duration_secs)} audio</span>
               <span>{formatDuration(entry.transcription_time_secs)} transcribed</span>
               <span>{entry.text_length} chars</span>
-              <span>{formatConfidence(entry.confidence)} confidence</span>
+              <!-- confidence omitted: currently hardcoded to 100% -->
             </div>
           </button>
 
@@ -132,6 +167,7 @@
             </div>
           {/if}
         </div>
+        {/if}
       {/each}
     </div>
   {/if}
@@ -179,6 +215,11 @@
     color: var(--text-muted);
   }
 
+  .panel-actions {
+    display: flex;
+    gap: 8px;
+  }
+
   .panel-action {
     display: inline-flex;
     align-items: center;
@@ -188,7 +229,7 @@
     background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
     color: var(--text-primary);
     cursor: pointer;
-    transition: background-color 0.12s ease, color 0.12s ease;
+    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
     padding: 10px 14px;
     font-size: 13px;
     font-weight: 600;
@@ -199,20 +240,35 @@
     background: color-mix(in srgb, var(--bg-primary) 98%, var(--accent) 2%);
   }
 
+  .panel-action.icon-btn {
+    padding: 8px;
+    line-height: 0;
+  }
+
+  .panel-action.icon-btn svg {
+    display: block;
+  }
+
+  .panel-action.active {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+    color: var(--accent);
+  }
+
   .history-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     overflow-y: auto;
     padding-right: 8px;
   }
 
   .history-item {
     border: 1px solid color-mix(in srgb, var(--border-light) 95%, transparent);
-    border-radius: 18px;
+    border-radius: 12px;
     background: color-mix(in srgb, var(--bg-secondary) 80%, var(--bg-primary));
-    padding: 18px;
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow) 28%, transparent);
+    padding: 12px 14px;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow) 22%, transparent);
     cursor: pointer;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
@@ -221,9 +277,44 @@
     border-color: color-mix(in srgb, var(--accent) 35%, var(--border-light));
   }
 
+  .history-item.compact {
+    padding: 10px 14px;
+    cursor: default;
+  }
+
+  .compact-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .compact-text {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-wrap: break-word;
+  }
+
+  .compact-copy {
+    flex-shrink: 0;
+  }
+
+  .compact-time {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    padding-top: 1px;
+  }
+
   .history-item.expanded {
     border-color: color-mix(in srgb, var(--accent) 45%, var(--border-light));
-    box-shadow: 0 10px 22px color-mix(in srgb, var(--shadow) 28%, transparent),
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow) 22%, transparent),
                 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
@@ -245,24 +336,24 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 10px;
+    gap: 12px;
+    margin-bottom: 6px;
   }
 
   .history-time {
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
 
   .history-mode {
-    font-size: 13px;
+    font-size: 12px;
     text-transform: capitalize;
     color: var(--text-secondary);
   }
 
   .history-badge {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-radius: 999px;
     font-size: 12px;
     font-weight: 700;
@@ -283,21 +374,21 @@
   .history-metrics {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    font-size: 13px;
+    gap: 8px;
+    font-size: 12px;
     color: var(--text-secondary);
   }
 
   .history-metrics span {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
     border: 1px solid color-mix(in srgb, var(--border-light) 85%, transparent);
   }
 
   .history-detail {
-    margin-top: 14px;
-    padding-top: 14px;
+    margin-top: 10px;
+    padding-top: 10px;
     border-top: 1px solid color-mix(in srgb, var(--border-light) 70%, transparent);
   }
 
