@@ -115,7 +115,13 @@
           if (event.payload?.mode) mode = event.payload.mode;
           if (event.payload?.overlayStyle) overlayStyle = event.payload.overlayStyle;
           if (typeof event.payload?.overlayOpacity === 'number') overlayOpacity = event.payload.overlayOpacity;
-          if (typeof event.payload?.noTransparency === 'boolean') noTransparency = event.payload.noTransparency;
+          if (typeof event.payload?.noTransparency === 'boolean') {
+            noTransparency = event.payload.noTransparency;
+            document.documentElement.style.setProperty(
+              '--overlay-radius',
+              event.payload.noTransparency ? '4px' : '40px'
+            );
+          }
           const startFrom = typeof event.payload?.elapsed === 'number'
             ? event.payload.elapsed
             : 0;
