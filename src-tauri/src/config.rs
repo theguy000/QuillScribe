@@ -62,18 +62,12 @@ impl Default for WhisperConfig {
 pub struct OutputConfig {
     /// 0 = Copy to Clipboard, 1 = Type to Active Window, 2 = Copy & Type, 3 = Display Only
     pub mode: u8,
-    pub silent_mode: bool,
-    pub auto_clear: bool,
-    pub auto_clear_delay: u32,
 }
 
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             mode: 2,
-            silent_mode: false,
-            auto_clear: false,
-            auto_clear_delay: 5,
         }
     }
 }

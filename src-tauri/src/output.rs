@@ -211,15 +211,12 @@ impl OutputManager {
         &self,
         text: &str,
         mode: OutputMode,
-        silent_mode: bool,
     ) -> Result<String> {
         if text.is_empty() {
             return Ok("No text to process".to_string());
         }
 
-        if !silent_mode {
-            info!("Processing transcription with mode: {:?}", mode);
-        }
+        info!("Processing transcription with mode: {:?}", mode);
         debug!("Transcription text length: {}", text.len());
 
         let status = match mode {

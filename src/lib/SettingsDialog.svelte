@@ -836,65 +836,6 @@
               </div>
             {/if}
 
-            <div class="field">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={localSettings.output.silent_mode}
-                  onchange={(e) => localSettings.output.silent_mode = getCheckedValue(e)}
-                />
-                <span>Silent mode</span>
-              </label>
-            </div>
-
-            <div class="field">
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={localSettings.output.auto_clear}
-                  onchange={(e) => localSettings.output.auto_clear = getCheckedValue(e)}
-                />
-                <span>Auto-clear clipboard</span>
-              </label>
-            </div>
-
-            {#if localSettings.output.auto_clear}
-              <div class="field">
-                <span class="field-label">Auto-clear delay (seconds)</span>
-                <div class="stepper">
-                  <button
-                    class="stepper-btn"
-                    onclick={() => localSettings.output.auto_clear_delay = Math.max(1, localSettings.output.auto_clear_delay - 1)}
-                    disabled={localSettings.output.auto_clear_delay <= 1}
-                    aria-label="Decrease"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M2.5 6H9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                    </svg>
-                  </button>
-                  <input
-                    class="stepper-value"
-                    type="text"
-                    inputmode="numeric"
-                    value={localSettings.output.auto_clear_delay}
-                    onchange={(e) => {
-                      const v = parseInt(getFieldValue(e), 10)
-                      localSettings.output.auto_clear_delay = isNaN(v) ? 5 : Math.max(1, Math.min(300, v))
-                    }}
-                  />
-                  <button
-                    class="stepper-btn"
-                    onclick={() => localSettings.output.auto_clear_delay = Math.min(300, localSettings.output.auto_clear_delay + 1)}
-                    disabled={localSettings.output.auto_clear_delay >= 300}
-                    aria-label="Increase"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M6 2.5V9.5M2.5 6H9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            {/if}
           </div>
         {/if}
 
