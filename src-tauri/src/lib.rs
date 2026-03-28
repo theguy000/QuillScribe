@@ -13,11 +13,12 @@ use commands::{
     app_state, check_paste_tool_status, copy_to_clipboard, delete_model, download_model,
     get_always_on_top, get_audio_devices, get_audio_level, get_available_languages,
     get_available_local_models, get_available_models, get_downloaded_models, get_model_info,
-    get_recent_history, get_settings, get_sounds_enabled, is_linux, is_model_downloaded,
-    play_start_sound, play_stop_sound, process_transcription, rebuild_tray_menu, save_settings,
-    set_always_on_top, set_audio_device, set_sounds_enabled, set_taskbar_icon_theme,
-    set_tray_theme, start_mic_test, start_monitoring, start_recording, stop_mic_test,
-    stop_monitoring, stop_recording, test_clipboard, test_microphone, validate_api_key,
+    get_recent_history, get_settings, get_sounds_enabled, has_compositor, is_linux,
+    is_model_downloaded, play_start_sound, play_stop_sound, process_transcription,
+    rebuild_tray_menu, save_settings, set_always_on_top, set_audio_device, set_sounds_enabled,
+    set_taskbar_icon_theme, set_tray_theme, start_mic_test, start_monitoring, start_recording,
+    stop_mic_test, stop_monitoring, stop_recording, test_clipboard, test_microphone,
+    validate_api_key,
 };
 use tauri::Manager;
 
@@ -133,6 +134,7 @@ pub fn run() {
             test_clipboard,
             check_paste_tool_status,
             is_linux,
+            has_compositor,
             // Sound
             play_start_sound,
             play_stop_sound,

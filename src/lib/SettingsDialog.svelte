@@ -8,6 +8,7 @@
     settings,
     onsave,
     embedded = false,
+    noCompositor = false,
     onshortcutrecordingchange = () => {},
   } = $props()
 
@@ -43,6 +44,7 @@
   ]
 
   import { themes } from './themes.js'
+  import { overlayStyles, styleSupportsOpacity } from './overlayStyles.js'
 
   const outputModes = [
     { value: 0, label: 'Copy to Clipboard', description: 'Copies text to clipboard only' },
@@ -644,6 +646,40 @@
               </select>
               <p class="field-hint">Style of the floating overlay shown when recording and the app is unfocused.</p>
             </div>
+
+            <div class="field">
+              <span class="field-label">Overlay Visual Style</span>
+              <select
+                class="field-select"
+                value={localSettings.ui.overlay_style ?? 'default'}
+                onchange={(e) => localSettings.ui.overlay_style = getFieldValue(e)}
+              >
+                {#each overlayStyles as style}
+                  <option value={style.value}>{style.label}</option>
+                {/each}
+              </select>
+              <p class="field-hint">Visual appearance of the recording overlay (background, border, shadows).</p>
+            </div>
+
+            {#if styleSupportsOpacity(localSettings.ui.overlay_style ?? 'default')}
+              <div class="field">
+                <span class="field-label">Overlay Opacity — {Math.round((localSettings.ui.overlay_opacity ?? 0.85) * 100)}%</span>
+                <input
+                  type="range"
+                  class="field-range"
+                  min="0.3"
+                  max="1"
+                  step="0.05"
+                  value={localSettings.ui.overlay_opacity ?? 0.85}
+                  oninput={(e) => localSettings.ui.overlay_opacity = parseFloat(getFieldValue(e))}
+                />
+                <p class="field-hint">Controls the background transparency of the glass overlay. Lower values are more transparent.</p>
+              </div>
+            {/if}
+
+            {#if noCompositor}
+              <p class="field-hint" style="margin-top: 4px;">Your system does not have a window compositor, so the overlay will display as a rectangle instead of a pill shape. Installing a compositor (e.g. picom, compton) will enable the pill style.</p>
+            {/if}
 
             <div class="field">
               <span class="field-label">Maximum Recent History</span>
@@ -1555,5 +1591,46 @@
     .settings-card.embedded .settings-header h2 {
       font-size: 24px;
     }
+  }
+
+  /* Range / slider input */
+  .field-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary, #d1d5db);
+    outline: none;
+    transition: background 0.15s;
+  }
+  .field-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent, #2563eb);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+    transition: transform 0.1s, box-shadow 0.15s;
+  }
+  .field-range::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 2px 8px var(--accent-glow, rgba(37, 99, 235, 0.35));
+  }
+  .field-range::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent, #2563eb);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  }
+  .field-range::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary, #d1d5db);
   }
 </style>

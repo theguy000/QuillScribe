@@ -35,6 +35,7 @@
   let windowFocused = $state(true);
   let overlayVisible = $state(false);
   let recordingStartTime = null;
+  let noCompositor = $state(false);
 
   const MAX_TOASTS = 3;
   const historyDays = 30;
@@ -57,13 +58,15 @@
       const overlay = await WebviewWindow.getByLabel('overlay');
       if (!overlay) return;
       const overlayMode = settings?.ui?.overlay_mode || 'minimal';
+      const overlayStyle = settings?.ui?.overlay_style || 'default';
+      const overlayOpacity = settings?.ui?.overlay_opacity ?? 0.85;
       const isMinimal = overlayMode === 'minimal';
       const ow = isMinimal ? 120 : 240;
       const oh = isMinimal ? 32 : 48;
       const elapsedSecs = recordingStartTime
         ? Math.floor((Date.now() - recordingStartTime) / 1000)
         : 0;
-      await emit('overlay-show', { theme: currentTheme, elapsed: elapsedSecs, mode: overlayMode });
+      await emit('overlay-show', { theme: currentTheme, elapsed: elapsedSecs, mode: overlayMode, overlayStyle, overlayOpacity, noTransparency: noCompositor });
       await new Promise(r => setTimeout(r, 50));
       await overlay.setSize(new LogicalSize(ow, oh));
       await overlay.setFocusable(false);
@@ -157,6 +160,12 @@
 
     (async () => {
       await Promise.all([loadSettings(), loadHistory()]);
+
+      // Detect missing compositor (Linux + X11 without compositing).
+      // Fire-and-forget so it never delays event listener registration.
+      invoke('has_compositor')
+        .then(hasComp => { noCompositor = !hasComp; })
+        .catch(() => { noCompositor = false; });
 
       unlisteners.push(
         await listen('hotkey-record-toggle', () => {
@@ -336,6 +345,7 @@
         onclose={() => { activePanel = 'record'; }}
         settings={settings}
         onsave={handleSaveSettings}
+        {noCompositor}
         onshortcutrecordingchange={(recordingShortcut) => {
           isCapturingShortcut = recordingShortcut;
         }}

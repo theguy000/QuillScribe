@@ -397,6 +397,45 @@ pub fn is_linux() -> bool {
     cfg!(target_os = "linux")
 }
 
+/// Returns true when the OS supports transparent windows.
+///
+/// - Windows / macOS / Wayland → always true (compositor is guaranteed).
+/// - Linux + X11 → true only if a compositor is running (`_NET_WM_CM_S0` atom is owned).
+#[tauri::command]
+pub fn has_compositor() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        // Check the XDG_SESSION_TYPE env var first — Wayland always composites.
+        if let Ok(session) = std::env::var("XDG_SESSION_TYPE") {
+            if session.eq_ignore_ascii_case("wayland") {
+                return true;
+            }
+        }
+
+        // X11: check if a compositor owns the _NET_WM_CM_S0 selection atom.
+        // We shell out to xprop because pulling in x11-rb just for this is overkill.
+        match std::process::Command::new("xprop")
+            .args(["-root", "-notype", "_NET_WM_CM_S0"])
+            .output()
+        {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // If a compositor is running the output contains a window id, not "not found".
+                !stdout.contains("not found")
+            }
+            Err(_) => {
+                // xprop not available — assume no compositor.
+                false
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
 // ── Sound commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -75,10 +75,22 @@ pub struct UiConfig {
     pub custom_titlebar: bool,
     #[serde(default = "default_overlay_mode")]
     pub overlay_mode: String,
+    #[serde(default = "default_overlay_style")]
+    pub overlay_style: String,
+    #[serde(default = "default_overlay_opacity")]
+    pub overlay_opacity: f64,
 }
 
 fn default_overlay_mode() -> String {
     "minimal".to_string()
+}
+
+fn default_overlay_style() -> String {
+    "default".to_string()
+}
+
+fn default_overlay_opacity() -> f64 {
+    0.85
 }
 
 impl Default for UiConfig {
@@ -88,6 +100,8 @@ impl Default for UiConfig {
             always_on_top: false,
             custom_titlebar: true,
             overlay_mode: "minimal".to_string(),
+            overlay_style: "default".to_string(),
+            overlay_opacity: default_overlay_opacity(),
         }
     }
 }

@@ -3,10 +3,15 @@
   import { listen, emit } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
   import { allThemeClasses } from './themes.js';
+  import { resolveOverlayCSS, styleHasFrost } from './overlayStyles.js';
 
   let audioLevel = $state(0);
   let elapsed = $state(0);
   let mode = $state('minimal'); // 'minimal' or 'full'
+  let overlayStyle = $state('default');
+  let overlayOpacity = $state(0.85);
+  let currentTheme = $state('white');
+  let noTransparency = $state(false);
 
   let audioInterval = null;
   let timerInterval = null;
@@ -34,6 +39,16 @@
     const count = mode === 'minimal' ? BAR_COUNT_MINIMAL : BAR_COUNT_FULL;
     return generateBars(audioLevel, count);
   });
+
+  /** Build an inline style string from the current overlay style + theme. */
+  let overlayInlineStyle = $derived(() => {
+    const css = resolveOverlayCSS(overlayStyle, currentTheme, overlayOpacity);
+    let s = `background: ${css.background}; border: ${css.border}; box-shadow: ${css.boxShadow};`;
+    return s;
+  });
+
+  /** Whether the current style needs the frost noise texture. */
+  let showFrost = $derived(() => styleHasFrost(overlayStyle));
 
   function startPolling() {
     if (audioInterval) return;
@@ -93,8 +108,14 @@
     (async () => {
       unlisteners.push(
         await listen('overlay-show', (event) => {
-          if (event.payload?.theme) applyTheme(event.payload.theme);
+          if (event.payload?.theme) {
+            currentTheme = event.payload.theme;
+            applyTheme(event.payload.theme);
+          }
           if (event.payload?.mode) mode = event.payload.mode;
+          if (event.payload?.overlayStyle) overlayStyle = event.payload.overlayStyle;
+          if (typeof event.payload?.overlayOpacity === 'number') overlayOpacity = event.payload.overlayOpacity;
+          if (typeof event.payload?.noTransparency === 'boolean') noTransparency = event.payload.noTransparency;
           const startFrom = typeof event.payload?.elapsed === 'number'
             ? event.payload.elapsed
             : 0;
@@ -119,8 +140,18 @@
   });
 </script>
 
+<!-- Hidden SVG noise filter used by frost styles -->
+<svg class="frost-svg" aria-hidden="true">
+  <filter id="frost-noise">
+    <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="4" stitchTiles="stitch" result="noise"/>
+    <feColorMatrix type="saturate" values="0" in="noise" result="mono"/>
+    <feBlend in="SourceGraphic" in2="mono" mode="overlay"/>
+  </filter>
+</svg>
+
 {#if mode === 'minimal'}
-  <div class="overlay minimal" data-tauri-drag-region>
+  <div class="overlay minimal" class:neon-glow={overlayStyle === 'neon_glow'} class:no-transparency={noTransparency} style={overlayInlineStyle()} data-tauri-drag-region>
+    {#if showFrost() && !noTransparency}<div class="frost-texture" data-tauri-drag-region></div>{/if}
     <div class="bars" data-tauri-drag-region>
       {#each bars() as height}
         <div class="bar" style="height: {height * 100}%"></div>
@@ -128,7 +159,8 @@
     </div>
   </div>
 {:else}
-  <div class="overlay full" data-tauri-drag-region>
+  <div class="overlay full" class:neon-glow={overlayStyle === 'neon_glow'} class:no-transparency={noTransparency} style={overlayInlineStyle()} data-tauri-drag-region>
+    {#if showFrost() && !noTransparency}<div class="frost-texture" data-tauri-drag-region></div>{/if}
     <div class="indicator" data-tauri-drag-region>
       <span class="red-dot"></span>
       <span class="label" data-tauri-drag-region>REC</span>
@@ -148,15 +180,43 @@
 {/if}
 
 <style>
+  /* Hidden SVG for the frost noise filter definition */
+  .frost-svg {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+
   .overlay {
     display: flex;
     align-items: center;
-    background: var(--bg-secondary, #eef2f7);
-    border: none;
     border-radius: 40px;
     user-select: none;
     cursor: grab;
     overflow: hidden;
+    position: relative;
+    /* Fallback values — overridden by inline style from overlayStyles.js */
+    background: var(--bg-secondary, #eef2f7);
+    border: none;
+    transition: box-shadow 0.3s ease, background 0.3s ease;
+  }
+
+  /* Frost noise grain overlay — sits behind content, on top of background */
+  .frost-texture {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    filter: url(#frost-noise);
+    opacity: 0.12;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Ensure all content sits above the frost texture */
+  .overlay > :not(.frost-texture) {
+    position: relative;
+    z-index: 1;
   }
 
   .overlay.minimal {
@@ -171,8 +231,19 @@
     width: 100vw;
     height: 100vh;
     padding: 0 12px;
-    border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-    box-shadow: 0 2px 12px var(--shadow);
+  }
+
+  /* Neon glow breathing animation */
+  .overlay.neon-glow {
+    animation: neon-breathe 1.4s ease-in-out infinite;
+  }
+  @keyframes neon-breathe {
+    0%, 100% {
+      box-shadow: 0 0 14px rgba(37,99,235,0.2), 0 0 30px rgba(37,99,235,0.08), inset 0 0 10px rgba(37,99,235,0.05);
+    }
+    50% {
+      box-shadow: 0 0 22px rgba(37,99,235,0.35), 0 0 44px rgba(37,99,235,0.14), inset 0 0 16px rgba(37,99,235,0.09);
+    }
   }
 
   .bars {
@@ -262,5 +333,11 @@
   .stop-btn:active {
     opacity: 0.85;
     transform: scale(0.92);
+  }
+
+  /* Rectangle fallback for systems without a compositor (e.g. Linux X11) */
+  .overlay.no-transparency {
+    border-radius: 4px;
+    box-shadow: none !important;
   }
 </style>
