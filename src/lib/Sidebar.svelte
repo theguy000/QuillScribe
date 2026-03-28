@@ -4,6 +4,7 @@
   let {
     activePanel = 'record',
     sessionCount = 0,
+    hasUpdate = false,
     onnavigate,
   } = $props();
 </script>
@@ -47,6 +48,9 @@
         </svg>
       </span>
       <span class="nav-label">Settings</span>
+      {#if hasUpdate}
+        <span class="update-dot" title="Update available"></span>
+      {/if}
     </button>
 
     <button
@@ -198,6 +202,22 @@
 
   .nav-button.active .nav-label {
     font-weight: 600;
+  }
+
+  .update-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    margin-left: auto;
+    box-shadow: 0 0 6px var(--accent-glow, rgba(37, 99, 235, 0.4));
+    animation: dot-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   .sidebar-user {

@@ -1,5 +1,6 @@
 <script>
   import { invoke } from '@tauri-apps/api/core'
+  import { getVersion } from '@tauri-apps/api/app'
   import { onDestroy } from 'svelte'
 
   let {
@@ -9,6 +10,12 @@
     onsave,
     embedded = false,
     noCompositor = false,
+    updateAvailable = null,
+    updateDownloading = false,
+    updateProgress = 0,
+    updateChecking = false,
+    oninstallupdate = () => {},
+    oncheckupdate = () => {},
     onshortcutrecordingchange = () => {},
   } = $props()
 
@@ -31,6 +38,8 @@
   let recordingShortcut = $state(false)
   let shortcutInputEl = $state(null)
 
+  let appVersion = $state('')
+
   // Linux paste tool status (only relevant for typing modes)
   let isLinuxPlatform = $state(false)
   let pasteToolStatus = $state(null)
@@ -41,6 +50,7 @@
     { id: 'ui', label: 'UI' },
     { id: 'output', label: 'Output' },
     { id: 'keyboard', label: 'Keyboard' },
+    { id: 'about', label: 'About' },
   ]
 
   import { themes } from './themes.js'
@@ -66,6 +76,18 @@
         })
   )
 
+  /** Strip markdown syntax for plain-text display of release notes. */
+  function stripMarkdown(text) {
+    return text
+      .replace(/^#{1,6}\s+/gm, '')       // Remove heading markers
+      .replace(/\*\*(.+?)\*\*/g, '$1')   // Bold **text** → text
+      .replace(/\*(.+?)\*/g, '$1')       // Italic *text* → text
+      .replace(/`(.+?)`/g, '$1')         // Inline code `text` → text
+      .replace(/^\s*[-*+]\s+/gm, '• ')   // List items → bullet
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Links [text](url) → text
+      .trim()
+  }
+
   onDestroy(() => {
     onshortcutrecordingchange(false)
   })
@@ -87,6 +109,7 @@
       loadLocalModels(),
       loadDownloadedModels(),
       loadPasteToolStatus(),
+      getVersion().then(v => appVersion = v).catch(() => {}),
     ])
   }
 
@@ -339,6 +362,9 @@
             onclick={() => activeTab = tab.id}
           >
             {tab.label}
+            {#if tab.id === 'about' && updateAvailable}
+              <span class="tab-dot"></span>
+            {/if}
           </button>
         {/each}
       </nav>
@@ -853,6 +879,97 @@
           </div>
         {/if}
 
+
+        <!-- About Tab -->
+        {#if activeTab === 'about'}
+          <div class="tab-panel about-panel">
+            <div class="about-header">
+              <div>
+                <h3 class="about-title">QuillScribe</h3>
+                <p class="about-version">{appVersion ? `v${appVersion}` : ''}</p>
+              </div>
+            </div>
+
+            <p class="about-description">
+              Beautiful voice-to-text transcription app. Record your voice, get text instantly using OpenAI's Whisper API or a local model.
+            </p>
+
+            <!-- Update Section -->
+            <div class="field">
+              <span class="field-label">Updates</span>
+              {#if updateAvailable}
+                <div class="update-card">
+                  <div class="update-card-header">
+                    <span class="update-badge">New version available</span>
+                    <span class="update-version">v{updateAvailable.version}</span>
+                  </div>
+                  {#if updateAvailable.body}
+                    <p class="update-notes">{stripMarkdown(updateAvailable.body)}</p>
+                  {/if}
+                  {#if updateDownloading}
+                    <div class="update-progress-wrap">
+                      <div class="update-progress-bar">
+                        <div class="update-progress-fill" style="width: {updateProgress}%"></div>
+                      </div>
+                      <span class="update-progress-text">{updateProgress}%</span>
+                    </div>
+                  {:else}
+                    <button class="action-btn update-btn" onclick={() => oninstallupdate()}>
+                      Download & Install
+                    </button>
+                  {/if}
+                </div>
+              {:else}
+                <div class="update-no-update-row">
+                  <p class="about-up-to-date">You're on the latest version.</p>
+                  <button class="action-btn btn-sm" onclick={() => oncheckupdate()} disabled={updateChecking}>
+                    {updateChecking ? 'Checking...' : 'Check for updates'}
+                  </button>
+                </div>
+              {/if}
+            </div>
+
+            <div class="about-divider"></div>
+
+            <div class="field">
+              <span class="field-label">Project</span>
+              <div class="about-info-grid">
+                <div class="about-info-item">
+                  <span class="about-info-label">License</span>
+                  <span class="about-info-value">MIT</span>
+                </div>
+                <div class="about-info-item">
+                  <span class="about-info-label">Framework</span>
+                  <span class="about-info-value">Tauri v2 + Svelte 5</span>
+                </div>
+                <div class="about-info-item">
+                  <span class="about-info-label">Backend</span>
+                  <span class="about-info-value">Rust</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <span class="field-label">Links</span>
+              <div class="about-link-row">
+                <a href="https://github.com/theguy000/QuillScribe" target="_blank" rel="noopener noreferrer" class="about-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                  GitHub
+                </a>
+                <a href="https://github.com/theguy000/QuillScribe/issues" target="_blank" rel="noopener noreferrer" class="about-link">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  Report Issue
+                </a>
+              </div>
+            </div>
+          </div>
+        {/if}
 
       </div>
 
@@ -1632,5 +1749,197 @@
     height: 6px;
     border-radius: 3px;
     background: var(--bg-tertiary, #d1d5db);
+  }
+
+  /* Tab dot (update indicator) */
+  .tab-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-left: 4px;
+    vertical-align: middle;
+    box-shadow: 0 0 4px var(--accent-glow, rgba(37, 99, 235, 0.4));
+  }
+
+  /* About tab */
+  .about-panel {
+    gap: 18px;
+  }
+
+  .about-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .about-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    line-height: 1.2;
+  }
+
+  .about-version {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 2px 0 0;
+  }
+
+  .about-description {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0;
+  }
+
+  .about-divider {
+    height: 1px;
+    background: var(--border-light);
+  }
+
+  .about-link-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .about-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .about-link:hover {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+
+  .about-up-to-date {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0;
+    padding: 8px 0;
+  }
+
+  .update-no-update-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .about-info-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .about-info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+  }
+
+  .about-info-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-muted);
+  }
+
+  .about-info-value {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  /* Update card */
+  .update-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border-light));
+  }
+
+  .update-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .update-badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--on-accent, #fff);
+    background: var(--accent);
+    padding: 3px 8px;
+    border-radius: 5px;
+  }
+
+  .update-version {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .update-notes {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .update-btn {
+    align-self: flex-start;
+  }
+
+  .update-progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .update-progress-bar {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    overflow: hidden;
+  }
+
+  .update-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--accent);
+    transition: width 0.15s ease;
+  }
+
+  .update-progress-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 32px;
+    text-align: right;
   }
 </style>

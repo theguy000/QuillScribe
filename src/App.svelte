@@ -5,6 +5,7 @@
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
   import { currentMonitor } from '@tauri-apps/api/window';
+  import { check } from '@tauri-apps/plugin-updater';
   import { onMount } from 'svelte';
   import TitleBar from './lib/TitleBar.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
@@ -30,6 +31,12 @@
   let toasts = $state([]);
   let showBurst = $state(false);
   let isCapturingShortcut = $state(false);
+
+  // OTA update state (non-blocking background check)
+  let updateAvailable = $state(null);
+  let updateDownloading = $state(false);
+  let updateProgress = $state(0);
+  let updateChecking = $state(false);
 
   let audioLevelInterval = null;
   let windowFocused = $state(true);
@@ -166,6 +173,9 @@
       invoke('has_compositor')
         .then(hasComp => { noCompositor = !hasComp; })
         .catch(() => { noCompositor = false; });
+
+      // Non-blocking OTA update check (fire-and-forget)
+      checkForUpdate();
 
       unlisteners.push(
         await listen('hotkey-record-toggle', () => {
@@ -317,6 +327,49 @@
       showToast(`Failed to save settings: ${err}`, 'error', 5000);
     }
   }
+
+  async function checkForUpdate() {
+    updateChecking = true;
+    try {
+      const update = await check();
+      if (update) {
+        updateAvailable = update;
+      }
+    } catch (e) {
+      console.warn('Update check failed:', e);
+    } finally {
+      updateChecking = false;
+    }
+  }
+
+  async function installUpdate() {
+    if (!updateAvailable || updateDownloading) return;
+    updateDownloading = true;
+    updateProgress = 0;
+    try {
+      let downloaded = 0;
+      let contentLength = 0;
+      await updateAvailable.downloadAndInstall((event) => {
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength || 0;
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            updateProgress = contentLength > 0 ? Math.round((downloaded / contentLength) * 100) : 0;
+            break;
+          case 'Finished':
+            updateProgress = 100;
+            break;
+        }
+      });
+      // The app will restart automatically after install
+    } catch (e) {
+      console.error('Update install failed:', e);
+      showToast(`Update failed: ${e}`, 'error', 5000);
+      updateDownloading = false;
+    }
+  }
 </script>
 
 {#if customTitlebar}
@@ -327,6 +380,7 @@
   <Sidebar
     {activePanel}
     sessionCount={historyEntries.length}
+    hasUpdate={!!updateAvailable}
     onnavigate={handleNavigate}
   />
 
@@ -346,6 +400,12 @@
         settings={settings}
         onsave={handleSaveSettings}
         {noCompositor}
+        {updateAvailable}
+        {updateDownloading}
+        {updateProgress}
+        {updateChecking}
+        oninstallupdate={installUpdate}
+        oncheckupdate={checkForUpdate}
         onshortcutrecordingchange={(recordingShortcut) => {
           isCapturingShortcut = recordingShortcut;
         }}
