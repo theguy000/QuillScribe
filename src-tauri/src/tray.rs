@@ -10,7 +10,8 @@ use crate::whisper::WhisperManager;
 
 const TRAY_ID: &str = "main-tray";
 
-fn icon_bytes_for_theme(theme: &str) -> &'static [u8] {
+/// Returns the 32x32 tray icon bytes for the given theme.
+fn tray_icon_bytes_for_theme(theme: &str) -> &'static [u8] {
     match theme {
         "white" => include_bytes!("../icons/tray/white.png"),
         "warm_gray" => include_bytes!("../icons/tray/warm_gray.png"),
@@ -25,6 +26,25 @@ fn icon_bytes_for_theme(theme: &str) -> &'static [u8] {
         "dark_burgundy" => include_bytes!("../icons/tray/dark_burgundy.png"),
         "obsidian" => include_bytes!("../icons/tray/obsidian.png"),
         _ => include_bytes!("../icons/tray/white.png"),
+    }
+}
+
+/// Returns the 256x256 taskbar icon bytes for the given theme.
+fn taskbar_icon_bytes_for_theme(theme: &str) -> &'static [u8] {
+    match theme {
+        "white" => include_bytes!("../icons/taskbar/white.png"),
+        "warm_gray" => include_bytes!("../icons/taskbar/warm_gray.png"),
+        "soft_beige" => include_bytes!("../icons/taskbar/soft_beige.png"),
+        "blue_gray" => include_bytes!("../icons/taskbar/blue_gray.png"),
+        "warm_taupe" => include_bytes!("../icons/taskbar/warm_taupe.png"),
+        "soft_sage" => include_bytes!("../icons/taskbar/soft_sage.png"),
+        "dark_charcoal" => include_bytes!("../icons/taskbar/dark_charcoal.png"),
+        "dark_blue" => include_bytes!("../icons/taskbar/dark_blue.png"),
+        "dark_purple" => include_bytes!("../icons/taskbar/dark_purple.png"),
+        "dark_forest" => include_bytes!("../icons/taskbar/dark_forest.png"),
+        "dark_burgundy" => include_bytes!("../icons/taskbar/dark_burgundy.png"),
+        "obsidian" => include_bytes!("../icons/taskbar/obsidian.png"),
+        _ => include_bytes!("../icons/taskbar/white.png"),
     }
 }
 
@@ -179,7 +199,7 @@ fn handle_model_selection(app: &AppHandle, menu_id: &str) {
 /// Sets up the system tray icon with a context menu.
 pub fn setup_tray(app: &AppHandle, theme: &str) -> Result<TrayIcon, Box<dyn std::error::Error>> {
     let menu = build_tray_menu(app)?;
-    let icon = tauri::image::Image::from_bytes(icon_bytes_for_theme(theme))?;
+    let icon = tauri::image::Image::from_bytes(tray_icon_bytes_for_theme(theme))?;
 
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
@@ -258,7 +278,7 @@ pub fn rebuild_tray_menu(app: &AppHandle) -> Result<(), Box<dyn std::error::Erro
 /// Updates the tray icon to match the given theme.
 pub fn set_tray_theme(app: &AppHandle, theme: &str) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        match tauri::image::Image::from_bytes(icon_bytes_for_theme(theme)) {
+        match tauri::image::Image::from_bytes(tray_icon_bytes_for_theme(theme)) {
             Ok(icon) => {
                 if let Err(e) = tray.set_icon(Some(icon)) {
                     warn!("Failed to set tray icon: {}", e);
@@ -272,9 +292,11 @@ pub fn set_tray_theme(app: &AppHandle, theme: &str) {
 }
 
 /// Updates the window/taskbar icon to match the given theme.
+/// Uses the 256x256 taskbar icons (not the 32x32 tray icons) so that
+/// Windows can display a crisp icon in the taskbar, ALT+TAB, and title bar.
 pub fn set_window_icon_theme(app: &AppHandle, theme: &str) {
     if let Some(window) = app.get_webview_window("main") {
-        match tauri::image::Image::from_bytes(icon_bytes_for_theme(theme)) {
+        match tauri::image::Image::from_bytes(taskbar_icon_bytes_for_theme(theme)) {
             Ok(icon) => {
                 if let Err(e) = window.set_icon(icon) {
                     warn!("Failed to set window icon: {}", e);
