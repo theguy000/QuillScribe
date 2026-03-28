@@ -50,7 +50,7 @@ impl Default for WhisperConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
-    /// 2 = copy & paste
+    /// 0 = Copy to Clipboard, 1 = Type to Active Window, 2 = Copy & Type, 3 = Display Only
     pub mode: u8,
     pub silent_mode: bool,
     pub auto_clear: bool,

@@ -30,6 +30,10 @@
   let recordingShortcut = $state(false)
   let shortcutInputEl = $state(null)
 
+  // Linux paste tool status (only relevant for typing modes)
+  let isLinuxPlatform = $state(false)
+  let pasteToolStatus = $state(null)
+
   const tabs = [
     { id: 'audio', label: 'Audio' },
     { id: 'whisper', label: 'Whisper' },
@@ -41,10 +45,10 @@
   import { themes } from './themes.js'
 
   const outputModes = [
-    { value: 0, label: 'Copy Only' },
-    { value: 1, label: 'Paste Only' },
-    { value: 2, label: 'Copy & Paste' },
-    { value: 3, label: 'Display Only' },
+    { value: 0, label: 'Copy to Clipboard', description: 'Copies text to clipboard only' },
+    { value: 1, label: 'Type to Active Window', description: 'Types text into the focused app without affecting clipboard' },
+    { value: 2, label: 'Copy & Type to Window', description: 'Copies to clipboard and types into the focused app' },
+    { value: 3, label: 'Display Only', description: 'Shows the result in the app only' },
   ]
 
   const apiModels = ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe']
@@ -80,6 +84,7 @@
       loadLanguages(),
       loadLocalModels(),
       loadDownloadedModels(),
+      loadPasteToolStatus(),
     ])
   }
 
@@ -134,6 +139,27 @@
       downloadedModels = []
     }
   }
+
+  async function loadPasteToolStatus() {
+    try {
+      isLinuxPlatform = await invoke('is_linux')
+      if (isLinuxPlatform) {
+        pasteToolStatus = await invoke('check_paste_tool_status')
+      }
+    } catch (e) {
+      console.error('Failed to check paste tool status:', e)
+    }
+  }
+
+  /** Whether the currently selected output mode requires typing (paste simulation). */
+  let needsTyping = $derived(
+    localSettings?.output?.mode === 1 || localSettings?.output?.mode === 2
+  )
+
+  /** Whether no paste tool is available on Linux when a typing mode is selected. */
+  let showPasteToolWarning = $derived(
+    isLinuxPlatform && needsTyping && pasteToolStatus && pasteToolStatus.detected_tool === 'None'
+  )
 
   async function handleDownloadModel() {
     const model = localSettings.whisper.local_model
@@ -675,11 +701,28 @@
                       checked={localSettings.output.mode === mode.value}
                       onchange={() => localSettings.output.mode = mode.value}
                     />
-                    <span>{mode.label}</span>
+                    <span class="radio-text">
+                      <span>{mode.label}</span>
+                      <span class="radio-description">{mode.description}</span>
+                    </span>
                   </label>
                 {/each}
               </div>
             </div>
+
+            {#if showPasteToolWarning}
+              <div class="paste-tool-warning">
+                <div class="paste-tool-warning-header">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 1.5L1 14h14L8 1.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/>
+                    <path d="M8 6v3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                    <circle cx="8" cy="11.5" r="0.7" fill="currentColor"/>
+                  </svg>
+                  <span>Paste tool required for typing modes on Linux</span>
+                </div>
+                <pre class="paste-tool-hint">{pasteToolStatus.setup_hint}</pre>
+              </div>
+            {/if}
 
             <div class="field">
               <label class="checkbox-label">
@@ -1119,11 +1162,50 @@
 
   .radio-label {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     cursor: pointer;
     font-size: 13px;
     color: var(--text-primary);
+  }
+
+  .radio-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .radio-description {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+  }
+
+  .paste-tool-warning {
+    background: color-mix(in srgb, var(--warning, #f0ad4e) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning, #f0ad4e) 35%, transparent);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 4px;
+  }
+
+  .paste-tool-warning-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--warning, #f0ad4e);
+    margin-bottom: 6px;
+  }
+
+  .paste-tool-hint {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    margin: 0;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   }
 
   .radio-label input[type="radio"] {
@@ -1131,7 +1213,7 @@
     appearance: none;
     width: 16px;
     height: 16px;
-    margin: 0;
+    margin: 2px 0 0 0;
     cursor: pointer;
     flex-shrink: 0;
     border-radius: 50%;

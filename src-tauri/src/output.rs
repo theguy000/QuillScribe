@@ -2,33 +2,203 @@ use anyhow::{Context, Result};
 use arboard::Clipboard;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
+use std::thread::sleep;
+use std::time::Duration;
 
+/// Output modes control how transcription results are delivered.
+///
+/// - `CopyToClipboard` (0): Copies the text to the system clipboard only.
+/// - `TypeToApp` (1): Types the text into the active window via simulated paste,
+///   then restores the original clipboard contents (clipboard is not polluted).
+/// - `CopyAndType` (2): Copies text to clipboard AND types it into the active window.
+/// - `DisplayOnly` (3): Shows the text in the app UI only; no clipboard or typing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum OutputMode {
-    CopyOnly = 0,
-    PasteOnly = 1,
-    CopyAndPaste = 2,
+    CopyToClipboard = 0,
+    TypeToApp = 1,
+    CopyAndType = 2,
     DisplayOnly = 3,
 }
 
 impl From<u8> for OutputMode {
     fn from(value: u8) -> Self {
         match value {
-            0 => OutputMode::CopyOnly,
-            1 => OutputMode::PasteOnly,
-            2 => OutputMode::CopyAndPaste,
+            0 => OutputMode::CopyToClipboard,
+            1 => OutputMode::TypeToApp,
+            2 => OutputMode::CopyAndType,
             3 => OutputMode::DisplayOnly,
             _ => {
                 warn!(
-                    "Unknown output mode value: {}, defaulting to CopyOnly",
+                    "Unknown output mode value: {}, defaulting to CopyToClipboard",
                     value
                 );
-                OutputMode::CopyOnly
+                OutputMode::CopyToClipboard
             }
         }
     }
 }
+
+// ── Linux: paste tool detection (cached once per process) ────────────────────
+
+/// Which tool will be used to simulate paste on Linux.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LinuxPasteTool {
+    /// xdotool — works on X11, zero setup required.
+    Xdotool,
+    /// ydotool — works on X11 and Wayland (kernel-level input).
+    Ydotool,
+    /// No working tool was found.
+    None,
+}
+
+/// Status of paste tool availability on Linux.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasteToolStatus {
+    /// Which tool was detected and will be used.
+    pub detected_tool: LinuxPasteTool,
+    /// Whether xdotool is available.
+    pub xdotool_found: bool,
+    /// Whether ydotool binary is installed.
+    pub ydotool_found: bool,
+    /// Whether ydotoold daemon is running (only checked if ydotool binary exists).
+    pub ydotool_daemon_running: bool,
+    /// Human-readable setup instructions when no tool is available,
+    /// or informational note about which tool is active.
+    pub setup_hint: String,
+}
+
+/// Cached paste tool status — computed once, reused for the lifetime of the process.
+#[cfg(target_os = "linux")]
+static PASTE_TOOL_STATUS: std::sync::OnceLock<PasteToolStatus> = std::sync::OnceLock::new();
+
+/// Detect which paste tool is available on Linux. Result is cached after the first call.
+///
+/// Detection order:
+/// 1. **xdotool** — preferred because it needs zero setup on X11 desktops (no daemon,
+///    no special permissions). If available and working, it is used.
+/// 2. **ydotool** — fallback that works on both X11 and Wayland, but requires the
+///    `ydotoold` daemon and `/dev/uinput` access.
+/// 3. **None** — neither tool is usable; user is shown setup instructions.
+#[cfg(target_os = "linux")]
+pub fn check_paste_tool() -> &'static PasteToolStatus {
+    PASTE_TOOL_STATUS.get_or_init(|| {
+        use std::process::Command;
+
+        // 1. Check xdotool.
+        let xdotool_found = Command::new("xdotool")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        // 2. Check ydotool binary.
+        let ydotool_found = Command::new("ydotool")
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok();
+
+        // 3. If ydotool binary exists, check if daemon is reachable.
+        let ydotool_daemon_running = if ydotool_found {
+            Command::new("ydotool")
+                .args(["key", "0:0"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        // Determine which tool to use: prefer xdotool, fall back to ydotool.
+        let detected_tool = if xdotool_found {
+            LinuxPasteTool::Xdotool
+        } else if ydotool_found && ydotool_daemon_running {
+            LinuxPasteTool::Ydotool
+        } else {
+            LinuxPasteTool::None
+        };
+
+        let setup_hint = match detected_tool {
+            LinuxPasteTool::Xdotool => {
+                "Using xdotool (X11). No additional setup required.".to_string()
+            }
+            LinuxPasteTool::Ydotool => {
+                "Using ydotool (Wayland/X11). No additional setup required.".to_string()
+            }
+            LinuxPasteTool::None => {
+                let mut hint =
+                    String::from("No paste tool is available. Install one of the following:\n\n");
+
+                hint.push_str(
+                    "Option 1 — xdotool (recommended for X11):\n\
+                     Arch Linux:  sudo pacman -S xdotool\n\
+                     Fedora:      sudo dnf install xdotool\n\
+                     Ubuntu:      sudo apt install xdotool\n\n",
+                );
+
+                hint.push_str(
+                    "Option 2 — ydotool (works on X11 and Wayland):\n\
+                     Arch Linux:  sudo pacman -S ydotool\n\
+                     Fedora:      sudo dnf install ydotool\n\
+                     Ubuntu:      sudo apt install ydotool\n\
+                     Then enable the daemon:\n\
+                     sudo systemctl enable --now ydotool\n\
+                     You may also need:  sudo usermod -aG input $USER",
+                );
+
+                // Add specific hint if ydotool is installed but daemon isn't running.
+                if ydotool_found && !ydotool_daemon_running {
+                    hint = "ydotool is installed but the ydotoold daemon is not running.\n\n\
+                            Start and enable the daemon:\n\
+                            sudo systemctl enable --now ydotool\n\n\
+                            Your user may also need access to /dev/uinput.\n\
+                            Add yourself to the input group:  sudo usermod -aG input $USER\n\
+                            Then log out and back in.\n\n\
+                            Alternatively, install xdotool (simpler, X11 only):\n\
+                            Arch Linux:  sudo pacman -S xdotool\n\
+                            Fedora:      sudo dnf install xdotool\n\
+                            Ubuntu:      sudo apt install xdotool"
+                        .to_string();
+                }
+
+                hint
+            }
+        };
+
+        info!(
+            "Linux paste tool check: xdotool={}, ydotool={} (daemon={}), using={:?}",
+            xdotool_found, ydotool_found, ydotool_daemon_running, detected_tool
+        );
+
+        PasteToolStatus {
+            detected_tool,
+            xdotool_found,
+            ydotool_found,
+            ydotool_daemon_running,
+            setup_hint,
+        }
+    })
+}
+
+/// On non-Linux platforms, return a dummy status (not applicable).
+#[cfg(not(target_os = "linux"))]
+pub fn check_paste_tool() -> PasteToolStatus {
+    PasteToolStatus {
+        detected_tool: LinuxPasteTool::None,
+        xdotool_found: false,
+        ydotool_found: false,
+        ydotool_daemon_running: false,
+        setup_hint: "Paste tool detection is only applicable on Linux.".to_string(),
+    }
+}
+
+// ── OutputManager ────────────────────────────────────────────────────────────
 
 pub struct OutputManager;
 
@@ -53,21 +223,41 @@ impl OutputManager {
         debug!("Transcription text length: {}", text.len());
 
         let status = match mode {
-            OutputMode::CopyOnly => {
+            OutputMode::CopyToClipboard => {
                 self.copy_to_clipboard(text)?;
                 "Text copied to clipboard".to_string()
             }
-            OutputMode::PasteOnly => {
+            OutputMode::TypeToApp => {
+                // Type text into the active window without polluting the clipboard.
+                // Save current clipboard → copy text → paste → restore clipboard.
+                let original_clipboard = self.get_clipboard_content().ok();
                 self.copy_to_clipboard(text)?;
-                self.paste_to_active_app()?;
-                "Text pasted to active application".to_string()
+                self.simulate_paste()?;
+                // Wait for the paste to complete before restoring the clipboard.
+                sleep(Duration::from_millis(150));
+                // Restore the original clipboard contents.
+                match original_clipboard {
+                    Some(ref original) => {
+                        if let Err(e) = self.copy_to_clipboard(original) {
+                            warn!("Failed to restore original clipboard contents: {}", e);
+                        }
+                    }
+                    None => {
+                        if let Err(e) = self.clear_clipboard() {
+                            warn!("Failed to clear clipboard after paste: {}", e);
+                        }
+                    }
+                }
+                "Text typed to active window".to_string()
             }
-            OutputMode::CopyAndPaste => {
+            OutputMode::CopyAndType => {
+                // Copy text to clipboard AND type it into the active window.
+                // Clipboard retains the transcription text.
                 self.copy_to_clipboard(text)?;
-                self.paste_to_active_app()?;
-                "Text copied and pasted".to_string()
+                self.simulate_paste()?;
+                "Text copied to clipboard and typed to active window".to_string()
             }
-            OutputMode::DisplayOnly => "Text displayed (no clipboard operation)".to_string(),
+            OutputMode::DisplayOnly => "Text displayed in app".to_string(),
         };
 
         Ok(status)
@@ -82,15 +272,24 @@ impl OutputManager {
         Ok(())
     }
 
-    pub fn paste_to_active_app(&self) -> Result<()> {
+    /// Simulate a Ctrl+V paste into the currently active application.
+    /// - Windows: uses the Win32 SendInput API.
+    /// - Linux: uses xdotool (X11) or ydotool (Wayland/X11), whichever was detected.
+    pub fn simulate_paste(&self) -> Result<()> {
         #[cfg(windows)]
         {
             self.windows_paste()?;
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
         {
-            warn!("Auto-paste is only supported on Windows");
+            self.linux_paste()?;
+        }
+
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            warn!("Paste simulation is not yet supported on this platform");
+            anyhow::bail!("Paste simulation is not supported on this platform");
         }
 
         Ok(())
@@ -98,14 +297,12 @@ impl OutputManager {
 
     #[cfg(windows)]
     fn windows_paste(&self) -> Result<()> {
-        use std::thread::sleep;
-        use std::time::Duration;
         use windows::Win32::UI::Input::KeyboardAndMouse::{
             SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
             KEYEVENTF_KEYUP, VK_CONTROL, VK_V,
         };
 
-        debug!("Simulating Ctrl+V paste via SendInput");
+        debug!("Simulating Ctrl+V paste via SendInput (Windows)");
 
         let inputs = [
             // Ctrl down
@@ -185,7 +382,52 @@ impl OutputManager {
             );
         }
 
-        debug!("Ctrl+V paste simulated successfully");
+        debug!("Ctrl+V paste simulated successfully (Windows)");
+        Ok(())
+    }
+
+    /// Simulate Ctrl+V on Linux using the cached detected tool (xdotool or ydotool).
+    #[cfg(target_os = "linux")]
+    fn linux_paste(&self) -> Result<()> {
+        use std::process::Command;
+
+        let status = check_paste_tool();
+
+        match status.detected_tool {
+            LinuxPasteTool::Xdotool => {
+                debug!("Simulating Ctrl+V paste via xdotool (Linux/X11)");
+                let result = Command::new("xdotool")
+                    .args(["key", "--clearmodifiers", "ctrl+v"])
+                    .status()
+                    .context("Failed to execute xdotool")?;
+
+                if !result.success() {
+                    anyhow::bail!("xdotool exited with non-zero status: {:?}", result.code());
+                }
+                debug!("Ctrl+V paste simulated successfully via xdotool");
+            }
+            LinuxPasteTool::Ydotool => {
+                debug!("Simulating Ctrl+V paste via ydotool (Linux)");
+                // 29 = KEY_LEFTCTRL, 47 = KEY_V
+                // :1 = key down, :0 = key up
+                let result = Command::new("ydotool")
+                    .args(["key", "29:1", "47:1", "47:0", "29:0"])
+                    .status()
+                    .context("Failed to execute ydotool")?;
+
+                if !result.success() {
+                    anyhow::bail!("ydotool exited with non-zero status: {:?}", result.code());
+                }
+                debug!("Ctrl+V paste simulated successfully via ydotool");
+            }
+            LinuxPasteTool::None => {
+                anyhow::bail!(
+                    "No paste tool available on this system.\n{}",
+                    status.setup_hint
+                );
+            }
+        }
+
         Ok(())
     }
 

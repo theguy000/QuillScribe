@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use crate::audio::{AudioDevice, AudioManager};
 use crate::config::{ConfigManager, Settings};
 use crate::hotkey;
-use crate::output::{OutputManager, OutputMode};
+use crate::output::{OutputManager, OutputMode, PasteToolStatus};
 use crate::sound::SoundManager;
 use crate::statistics::{HistoryEntry, StatisticsManager};
 use crate::whisper::{ModelInfo, WhisperManager};
@@ -369,6 +369,20 @@ pub fn copy_to_clipboard(state: tauri::State<AppState>, text: String) -> Result<
 pub fn test_clipboard(state: tauri::State<AppState>) -> Result<bool, String> {
     let output = state.output.lock().map_err(|e| e.to_string())?;
     output.test_clipboard().map_err(|e| e.to_string())
+}
+
+/// Check which paste tool is available on Linux (xdotool or ydotool).
+/// On Windows this returns a dummy status since paste tools are not applicable.
+/// The result is cached after the first call for the lifetime of the process.
+#[tauri::command]
+pub fn check_paste_tool_status() -> PasteToolStatus {
+    crate::output::check_paste_tool().clone()
+}
+
+/// Returns true if the current platform is Linux.
+#[tauri::command]
+pub fn is_linux() -> bool {
+    cfg!(target_os = "linux")
 }
 
 // ── Sound commands ───────────────────────────────────────────────────────────
