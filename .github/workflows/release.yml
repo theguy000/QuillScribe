@@ -24,6 +24,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Set version from git tag ───────────────────────────────────────
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting version to $VERSION"
+          node -e "
+            const fs = require('fs');
+            const p = 'src-tauri/tauri.conf.json';
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            j.version = '$VERSION';
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          "
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
       # ── Node.js ─────────────────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
