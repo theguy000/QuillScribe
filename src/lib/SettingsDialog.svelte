@@ -537,6 +537,13 @@
                     {/if}
                   </button>
                 </div>
+                <p class="field-hint">
+                  {#if localSettings.whisper.api_provider === 'groq'}
+                    Get your API key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="hint-link">console.groq.com/keys</a>
+                  {:else}
+                    Get your API key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" class="hint-link">platform.openai.com/api-keys</a>
+                  {/if}
+                </p>
               </div>
 
               <div class="field">
@@ -1273,6 +1280,15 @@
     font-size: 11.5px;
     color: var(--text-muted);
     margin: 0;
+  }
+
+  .hint-link {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .hint-link:hover {
+    text-decoration: underline;
   }
 
   /* Shortcut recording */
