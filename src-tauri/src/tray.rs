@@ -297,19 +297,138 @@ pub fn set_tray_theme(app: &AppHandle, theme: &str) {
 }
 
 /// Updates the window/taskbar icon to match the given theme.
-/// Uses the 256x256 taskbar icons (not the 32x32 tray icons) so that
-/// Windows can display a crisp icon in the taskbar, ALT+TAB, and title bar.
+/// Uses the Win32 API directly to set both ICON_BIG (taskbar / ALT+TAB)
+/// and ICON_SMALL (title bar) because Tauri's `set_icon` doesn't reliably
+/// update the taskbar icon on Windows with `decorations: false`.
 pub fn set_window_icon_theme(app: &AppHandle, theme: &str) {
-    if let Some(window) = app.get_webview_window("main") {
-        match tauri::image::Image::from_bytes(taskbar_icon_bytes_for_theme(theme)) {
-            Ok(icon) => {
-                if let Err(e) = window.set_icon(icon) {
-                    warn!("Failed to set window icon: {}", e);
-                } else {
-                    debug!("Window icon updated for theme: {}", theme);
-                }
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Gdi::{
+            CreateBitmap, CreateDIBSection, DeleteObject, GetDC, ReleaseDC, BITMAPINFO,
+            BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateIconIndirect, SendMessageW, ICONINFO, ICON_BIG, ICON_SMALL,
+            WM_SETICON,
+        };
+
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        let hwnd = match window.hwnd() {
+            Ok(h) => HWND(h.0 as *mut _),
+            Err(e) => {
+                warn!("Failed to get HWND: {}", e);
+                return;
             }
-            Err(e) => warn!("Failed to decode window icon for theme {}: {}", theme, e),
+        };
+
+        let png_bytes = taskbar_icon_bytes_for_theme(theme);
+        let image = match tauri::image::Image::from_bytes(png_bytes) {
+            Ok(img) => img,
+            Err(e) => {
+                warn!("Failed to decode taskbar icon for theme {}: {}", theme, e);
+                return;
+            }
+        };
+
+        let width = image.width() as i32;
+        let height = image.height() as i32;
+        let rgba = image.rgba();
+
+        // Convert RGBA → BGRA (Windows DIB byte order)
+        let mut bgra = vec![0u8; rgba.len()];
+        for (src, dst) in rgba.chunks_exact(4).zip(bgra.chunks_exact_mut(4)) {
+            dst[0] = src[2]; // B
+            dst[1] = src[1]; // G
+            dst[2] = src[0]; // R
+            dst[3] = src[3]; // A
+        }
+
+        unsafe {
+            let hdc = GetDC(hwnd);
+
+            let bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width,
+                    biHeight: -height, // negative = top-down
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0 as u32,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+            let color_bmp =
+                match CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0) {
+                    Ok(bmp) => {
+                        std::ptr::copy_nonoverlapping(bgra.as_ptr(), bits as *mut u8, bgra.len());
+                        bmp
+                    }
+                    Err(e) => {
+                        warn!("CreateDIBSection failed: {}", e);
+                        let _ = ReleaseDC(hwnd, hdc);
+                        return;
+                    }
+                };
+
+            let mask_bmp = CreateBitmap(width, height, 1, 1, None);
+            let _ = ReleaseDC(hwnd, hdc);
+
+            let icon_info = ICONINFO {
+                fIcon: true.into(),
+                xHotspot: 0,
+                yHotspot: 0,
+                hbmMask: mask_bmp,
+                hbmColor: color_bmp,
+            };
+
+            match CreateIconIndirect(&icon_info) {
+                Ok(hicon) => {
+                    // Set ICON_BIG (taskbar, ALT+TAB) and ICON_SMALL (title bar)
+                    SendMessageW(
+                        hwnd,
+                        WM_SETICON,
+                        windows::Win32::Foundation::WPARAM(ICON_BIG as usize),
+                        windows::Win32::Foundation::LPARAM(hicon.0 as isize),
+                    );
+                    SendMessageW(
+                        hwnd,
+                        WM_SETICON,
+                        windows::Win32::Foundation::WPARAM(ICON_SMALL as usize),
+                        windows::Win32::Foundation::LPARAM(hicon.0 as isize),
+                    );
+                    // NOTE: we intentionally leak the HICON — Windows holds a reference
+                    // to it for the lifetime of the window. The previous icon is orphaned
+                    // but this is a tiny, bounded leak (one per theme switch).
+                    debug!("Window/taskbar icon set via Win32 for theme: {}", theme);
+                }
+                Err(e) => warn!("CreateIconIndirect failed: {}", e),
+            }
+
+            let _ = DeleteObject(color_bmp);
+            let _ = DeleteObject(mask_bmp);
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        // Fallback: use Tauri's set_icon on non-Windows platforms
+        if let Some(window) = app.get_webview_window("main") {
+            match tauri::image::Image::from_bytes(taskbar_icon_bytes_for_theme(theme)) {
+                Ok(icon) => {
+                    if let Err(e) = window.set_icon(icon) {
+                        warn!("Failed to set window icon: {}", e);
+                    } else {
+                        debug!("Window icon updated for theme: {}", theme);
+                    }
+                }
+                Err(e) => warn!("Failed to decode window icon for theme {}: {}", theme, e),
+            }
         }
     }
 }
