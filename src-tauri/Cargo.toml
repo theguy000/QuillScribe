@@ -44,6 +44,9 @@ whisper-rs = "0.16"
 # Audio playback (notification sounds)
 rodio = "0.19"
 
+# Auto-updater
+tauri-plugin-updater = "2"
+
 # Config directories
 dirs = "6"
 

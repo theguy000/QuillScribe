@@ -45,7 +45,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "deb", "appimage"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -53,5 +54,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdFRDAzOEJBMzA1NkU2QTcKUldTbjVsWXd1ampRZnFPUFEzaENFbHFYYXJBS08rMDhBc1hQSHFPMGJpNTAxdjgwNUFaLzNON3kK",
+      "endpoints": [
+        "https://github.com/theguy000/QuillScribe/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
