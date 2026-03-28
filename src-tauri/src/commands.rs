@@ -161,7 +161,11 @@ pub async fn stop_recording(state: tauri::State<'_, AppState>) -> Result<Option<
         whisper
             .set_mode(&whisper_cfg.mode)
             .map_err(|e| e.to_string())?;
+        whisper
+            .set_api_provider(&whisper_cfg.api_provider)
+            .map_err(|e| e.to_string())?;
         whisper.set_api_key(&whisper_cfg.api_key);
+        whisper.set_groq_api_key(&whisper_cfg.groq_api_key);
         whisper
             .set_api_model(&whisper_cfg.api_model)
             .map_err(|e| e.to_string())?;
@@ -293,12 +297,14 @@ pub fn stop_mic_test(state: tauri::State<AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn get_available_models(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
     let config = state.config.lock().map_err(|e| e.to_string())?;
-    let mode = config.get_whisper_mode();
+    let whisper = config.get_whisper();
+    let mode = whisper.mode.clone();
+    let provider = whisper.api_provider.clone();
 
     let models = match mode.as_str() {
-        "api" => WhisperManager::get_available_api_models(),
+        "api" => WhisperManager::get_available_api_models_for_provider(&provider),
         "local" => WhisperManager::get_available_local_models(),
-        _ => WhisperManager::get_available_api_models(),
+        _ => WhisperManager::get_available_api_models_for_provider(&provider),
     };
 
     Ok(models)

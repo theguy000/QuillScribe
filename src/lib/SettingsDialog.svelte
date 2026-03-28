@@ -46,7 +46,7 @@
 
   const tabs = [
     { id: 'audio', label: 'Audio' },
-    { id: 'whisper', label: 'Whisper' },
+    { id: 'whisper', label: 'Engine' },
     { id: 'ui', label: 'UI' },
     { id: 'output', label: 'Output' },
     { id: 'keyboard', label: 'Keyboard' },
@@ -63,7 +63,17 @@
     { value: 3, label: 'Display Only', description: 'Shows the result in the app only' },
   ]
 
-  const apiModels = ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe']
+  const openaiModels = ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe']
+  const groqModels = ['whisper-large-v3-turbo', 'whisper-large-v3']
+
+  const apiProviders = [
+    { value: 'openai', label: 'OpenAI' },
+    { value: 'groq', label: 'Groq' },
+  ]
+
+  let apiModels = $derived(
+    localSettings?.whisper?.api_provider === 'groq' ? groqModels : openaiModels
+  )
 
   const modelCategories = ['All', 'Tiny', 'Base', 'Small', 'Medium', 'Large', 'Distilled']
 
@@ -94,7 +104,15 @@
 
   $effect(() => {
     if (show && settings) {
-      localSettings = JSON.parse(JSON.stringify(settings))
+      const cloned = JSON.parse(JSON.stringify(settings))
+      // Ensure fields exist for backward compatibility
+      if (!cloned.whisper.api_provider) {
+        cloned.whisper.api_provider = 'openai'
+      }
+      if (cloned.whisper.groq_api_key === undefined) {
+        cloned.whisper.groq_api_key = ''
+      }
+      localSettings = cloned
       loadInitialData()
     }
     return () => {
@@ -440,7 +458,7 @@
           </div>
         {/if}
 
-        <!-- Whisper Tab -->
+        <!-- Engine Tab -->
         {#if activeTab === 'whisper'}
           <div class="tab-panel">
             <div class="field">
@@ -454,7 +472,7 @@
                     checked={localSettings.whisper.mode === 'api'}
                     onchange={() => localSettings.whisper.mode = 'api'}
                   />
-                  <span>OpenAI API</span>
+                  <span>Online</span>
                 </label>
                 <label class="radio-label">
                   <input
@@ -464,21 +482,46 @@
                     checked={localSettings.whisper.mode === 'local'}
                     onchange={() => localSettings.whisper.mode = 'local'}
                   />
-                  <span>Local Model</span>
+                  <span>Offline</span>
                 </label>
               </div>
             </div>
 
             {#if localSettings.whisper.mode === 'api'}
               <div class="field">
+                <span class="field-label">Provider</span>
+                <select
+                  class="field-select"
+                  value={localSettings.whisper.api_provider}
+                  onchange={(e) => {
+                    const provider = getFieldValue(e)
+                    localSettings.whisper.api_provider = provider
+                    // Reset model to first available for the new provider
+                    const models = provider === 'groq' ? groqModels : openaiModels
+                    localSettings.whisper.api_model = models[0]
+                  }}
+                >
+                  {#each apiProviders as provider}
+                    <option value={provider.value}>{provider.label}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="field">
                 <span class="field-label">API Key</span>
                 <div class="field-row">
                   <input
                     class="field-input"
                     type={showApiKey ? 'text' : 'password'}
-                    value={localSettings.whisper.api_key}
-                    oninput={(e) => localSettings.whisper.api_key = getFieldValue(e)}
-                    placeholder="sk-..."
+                    value={localSettings.whisper.api_provider === 'groq' ? localSettings.whisper.groq_api_key : localSettings.whisper.api_key}
+                    oninput={(e) => {
+                      if (localSettings.whisper.api_provider === 'groq') {
+                        localSettings.whisper.groq_api_key = getFieldValue(e)
+                      } else {
+                        localSettings.whisper.api_key = getFieldValue(e)
+                      }
+                    }}
+                    placeholder={localSettings.whisper.api_provider === 'groq' ? 'gsk_...' : 'sk-...'}
                   />
                   <button class="icon-btn" onclick={() => showApiKey = !showApiKey} title={showApiKey ? 'Hide' : 'Show'}>
                     {#if showApiKey}

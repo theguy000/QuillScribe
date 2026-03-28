@@ -28,18 +28,28 @@ impl Default for AudioConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhisperConfig {
     pub mode: String,
+    #[serde(default = "default_api_provider")]
+    pub api_provider: String,
     pub api_key: String,
+    #[serde(default)]
+    pub groq_api_key: String,
     pub api_model: String,
     pub local_model: String,
     pub local_model_path: String,
     pub api_language: String,
 }
 
+fn default_api_provider() -> String {
+    "openai".to_string()
+}
+
 impl Default for WhisperConfig {
     fn default() -> Self {
         Self {
             mode: "api".to_string(),
+            api_provider: "openai".to_string(),
             api_key: String::new(),
+            groq_api_key: String::new(),
             api_model: "gpt-4o-transcribe".to_string(),
             local_model: "base".to_string(),
             local_model_path: String::new(),
@@ -229,9 +239,9 @@ impl ConfigManager {
 
     // ── Validation ───────────────────────────────────────────────────────
 
-    /// Returns `true` if `key` looks like a valid OpenAI API key.
+    /// Returns `true` if `key` looks like a valid API key (OpenAI or Groq).
     pub fn validate_api_key(key: &str) -> bool {
-        key.starts_with("sk-") && key.len() > 20
+        (key.starts_with("sk-") || key.starts_with("gsk_")) && key.len() > 20
     }
 
     // ── Audio getters ────────────────────────────────────────────────────

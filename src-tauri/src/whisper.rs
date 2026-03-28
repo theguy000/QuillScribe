@@ -18,7 +18,9 @@ pub struct ModelInfo {
 #[derive(Clone)]
 pub struct WhisperManager {
     mode: String,
+    api_provider: String,
     api_key: String,
+    groq_api_key: String,
     api_model: String,
     api_language: String,
     local_model: String,
@@ -35,7 +37,9 @@ impl WhisperManager {
     pub fn new() -> Self {
         Self {
             mode: "api".to_string(),
+            api_provider: "openai".to_string(),
             api_key: String::new(),
+            groq_api_key: String::new(),
             api_model: "gpt-4o-transcribe".to_string(),
             api_language: "en".to_string(),
             local_model: "base".to_string(),
@@ -59,19 +63,37 @@ impl WhisperManager {
         }
     }
 
+    pub fn set_api_provider(&mut self, provider: &str) -> Result<()> {
+        match provider {
+            "openai" | "groq" => {
+                self.api_provider = provider.to_string();
+                Ok(())
+            }
+            _ => Err(anyhow!(
+                "Invalid API provider '{}'. Must be 'openai' or 'groq'.",
+                provider
+            )),
+        }
+    }
+
     pub fn set_api_key(&mut self, key: &str) {
         self.api_key = key.to_string();
     }
 
+    pub fn set_groq_api_key(&mut self, key: &str) {
+        self.groq_api_key = key.to_string();
+    }
+
     pub fn set_api_model(&mut self, model: &str) -> Result<()> {
-        let available = Self::get_available_api_models();
+        let available = Self::get_available_api_models_for_provider(&self.api_provider);
         if available.contains(&model.to_string()) {
             self.api_model = model.to_string();
             Ok(())
         } else {
             Err(anyhow!(
-                "Invalid API model '{}'. Available models: {:?}",
+                "Invalid API model '{}'. Available models for {}: {:?}",
                 model,
+                self.api_provider,
                 available
             ))
         }
@@ -137,8 +159,16 @@ impl WhisperManager {
     // ── API transcription ────────────────────────────────────────────────
 
     async fn transcribe_api(&self, audio_data: Vec<f32>, sample_rate: u32) -> Result<String> {
-        if self.api_key.is_empty() {
-            return Err(anyhow!("API key is not set."));
+        let active_key = match self.api_provider.as_str() {
+            "groq" => &self.groq_api_key,
+            _ => &self.api_key,
+        };
+
+        if active_key.is_empty() {
+            return Err(anyhow!("API key is not set for {}.", match self.api_provider.as_str() {
+                "groq" => "Groq",
+                _ => "OpenAI",
+            }));
         }
 
         let wav_bytes = Self::encode_wav(&audio_data, sample_rate)?;
@@ -155,10 +185,26 @@ impl WhisperManager {
             form = form.text("language", self.api_language.clone());
         }
 
+        // Groq API uses additional parameters
+        if self.api_provider == "groq" {
+            form = form.text("temperature", "0".to_string());
+            form = form.text("response_format", "json".to_string());
+        }
+
+        let api_url = match self.api_provider.as_str() {
+            "groq" => "https://api.groq.com/openai/v1/audio/transcriptions",
+            _ => "https://api.openai.com/v1/audio/transcriptions",
+        };
+
+        let provider_label = match self.api_provider.as_str() {
+            "groq" => "Groq",
+            _ => "OpenAI",
+        };
+
         let client = reqwest::Client::new();
         let response = client
-            .post("https://api.openai.com/v1/audio/transcriptions")
-            .bearer_auth(&self.api_key)
+            .post(api_url)
+            .bearer_auth(active_key)
             .multipart(form)
             .send()
             .await?;
@@ -167,7 +213,8 @@ impl WhisperManager {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow!(
-                "OpenAI API request failed with status {}: {}",
+                "{} API request failed with status {}: {}",
+                provider_label,
                 status,
                 body
             ));
@@ -441,6 +488,20 @@ impl WhisperManager {
         ]
     }
 
+    pub fn get_available_groq_models() -> Vec<String> {
+        vec![
+            "whisper-large-v3-turbo".to_string(),
+            "whisper-large-v3".to_string(),
+        ]
+    }
+
+    pub fn get_available_api_models_for_provider(provider: &str) -> Vec<String> {
+        match provider {
+            "groq" => Self::get_available_groq_models(),
+            _ => Self::get_available_api_models(),
+        }
+    }
+
     pub fn get_available_local_models() -> Vec<String> {
         vec![
             "tiny".to_string(),
@@ -529,6 +590,18 @@ impl WhisperManager {
                 memory: "N/A".to_string(),
                 speed: "Very Fast".to_string(),
                 quality: "High".to_string(),
+            },
+            "whisper-large-v3-turbo" => ModelInfo {
+                size: "Cloud".to_string(),
+                memory: "N/A".to_string(),
+                speed: "Very Fast".to_string(),
+                quality: "High".to_string(),
+            },
+            "whisper-large-v3" => ModelInfo {
+                size: "Cloud".to_string(),
+                memory: "N/A".to_string(),
+                speed: "Fast".to_string(),
+                quality: "Very High".to_string(),
             },
             _ => ModelInfo {
                 size: "Unknown".to_string(),

@@ -87,14 +87,19 @@ fn build_model_submenu(
     app: &AppHandle,
 ) -> Result<tauri::menu::Submenu<tauri::Wry>, Box<dyn std::error::Error>> {
     // Read whisper config from app state.
-    let (current_mode, current_api_model, current_local_model) = {
+    let (current_mode, current_api_provider, current_api_model, current_local_model) = {
         let state = app.state::<AppState>();
         let config = state.config.lock().map_err(|e| format!("{}", e))?;
         let whisper = config.get_whisper();
-        (whisper.mode, whisper.api_model, whisper.local_model)
+        (
+            whisper.mode,
+            whisper.api_provider,
+            whisper.api_model,
+            whisper.local_model,
+        )
     };
 
-    let api_models = WhisperManager::get_available_api_models();
+    let api_models = WhisperManager::get_available_api_models_for_provider(&current_api_provider);
     let downloaded_local_models = WhisperManager::get_downloaded_models();
 
     let mut submenu = SubmenuBuilder::new(app, "Use Model");
