@@ -37,6 +37,7 @@
   let deletingModel = $state(false)
   let recordingShortcut = $state(false)
   let shortcutInputEl = $state(null)
+  let superKeyPressed = $state(false)
 
   let appVersion = $state('')
 
@@ -309,6 +310,7 @@
 
   function startRecordingShortcut() {
     recordingShortcut = true
+    superKeyPressed = false
     onshortcutrecordingchange(true)
     // Focus the input on next tick so it receives key events
     requestAnimationFrame(() => {
@@ -318,6 +320,7 @@
 
   function stopRecordingShortcut() {
     recordingShortcut = false
+    superKeyPressed = false
     onshortcutrecordingchange(false)
   }
 
@@ -326,6 +329,12 @@
 
     e.preventDefault()
     e.stopPropagation()
+
+    // Track Super key state directly
+    if (e.key === 'Super' || e.code === 'OSLeft' || e.code === 'OSRight') {
+      superKeyPressed = e.type === 'keydown'
+      return
+    }
 
     // Escape cancels recording
     if (e.key === 'Escape') {
@@ -341,7 +350,8 @@
     if (e.ctrlKey) parts.push('Ctrl')
     if (e.altKey) parts.push('Alt')
     if (e.shiftKey) parts.push('Shift')
-    if (e.metaKey) parts.push('Meta')
+    // On Linux, Super key doesn't set metaKey, so use tracked state
+    if (e.metaKey || superKeyPressed) parts.push('Meta')
 
     // Require at least one modifier to avoid single-key global shortcuts
     // that would conflict with normal typing across the OS.
