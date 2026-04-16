@@ -24,6 +24,13 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Workaround for WebKitGTK DMA-BUF renderer blank screen on Linux + NVIDIA.
+    // See: https://github.com/tauri-apps/wry/issues/1366
+    #[cfg(target_os = "linux")]
+    {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     tauri::Builder::default()
         .manage(app_state())
         .plugin(tauri_plugin_updater::Builder::new().build())

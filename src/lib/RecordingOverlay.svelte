@@ -119,8 +119,19 @@
             noTransparency = event.payload.noTransparency;
             document.documentElement.style.setProperty(
               '--overlay-radius',
-              event.payload.noTransparency ? '4px' : '40px'
+              event.payload.noTransparency ? '0px' : '40px'
             );
+            if (event.payload.noTransparency) {
+              // On systems without a compositor the window is opaque, so
+              // match the html/body background to the overlay to avoid a
+              // visible "frame" of the default window colour.
+              const css = resolveOverlayCSS(overlayStyle, currentTheme, overlayOpacity);
+              document.documentElement.style.setProperty('background', css.background, 'important');
+              document.body.style.setProperty('background', css.background, 'important');
+            } else {
+              document.documentElement.style.setProperty('background', 'transparent', 'important');
+              document.body.style.setProperty('background', 'transparent', 'important');
+            }
           }
           const startFrom = typeof event.payload?.elapsed === 'number'
             ? event.payload.elapsed
@@ -343,7 +354,7 @@
 
   /* Rectangle fallback for systems without a compositor (e.g. Linux X11) */
   .overlay.no-transparency {
-    border-radius: 4px;
+    border-radius: 0;
     box-shadow: none !important;
   }
 </style>

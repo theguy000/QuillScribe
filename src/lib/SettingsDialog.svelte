@@ -55,6 +55,7 @@
 
   import { themes } from './themes.js'
   import { overlayStyles, styleSupportsOpacity } from './overlayStyles.js'
+  import CustomSelect from './CustomSelect.svelte'
 
   const outputModes = [
     { value: 0, label: 'Copy to Clipboard', description: 'Copies text to clipboard only' },
@@ -297,8 +298,9 @@
     loadModelInfo(value)
   }
 
+  /** Extract the value from a native input/select event or a CustomSelect synthetic event. */
   function getFieldValue(event) {
-    return /** @type {HTMLInputElement | HTMLSelectElement} */ (event.currentTarget).value
+    return /** @type {{ value: string }} */ (event.currentTarget).value
   }
 
   function getCheckedValue(event) {
@@ -394,16 +396,12 @@
             <div class="field">
               <span class="field-label">Microphone</span>
               <div class="field-row">
-                <select
+                <CustomSelect
                   class="field-select"
-                  value={localSettings.audio.device_id}
+                  value={localSettings.audio.device_id ?? ''}
+                  options={[{value: '', label: 'Default'}, ...audioDevices.map(d => ({value: d.id, label: d.name}))]}
                   onchange={(e) => localSettings.audio.device_id = getFieldValue(e) || null}
-                >
-                  <option value="">Default</option>
-                  {#each audioDevices as device}
-                    <option value={device.id}>{device.name}</option>
-                  {/each}
-                </select>
+                />
                 <button class="icon-btn" onclick={loadAudioDevices} disabled={loadingDevices} title="Refresh devices">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class:spinning={loadingDevices}>
                     <path d="M14 8A6 6 0 1 1 8 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -490,9 +488,10 @@
             {#if localSettings.whisper.mode === 'api'}
               <div class="field">
                 <span class="field-label">Provider</span>
-                <select
+                <CustomSelect
                   class="field-select"
                   value={localSettings.whisper.api_provider}
+                  options={apiProviders}
                   onchange={(e) => {
                     const provider = getFieldValue(e)
                     localSettings.whisper.api_provider = provider
@@ -500,11 +499,7 @@
                     const models = provider === 'groq' ? groqModels : openaiModels
                     localSettings.whisper.api_model = models[0]
                   }}
-                >
-                  {#each apiProviders as provider}
-                    <option value={provider.value}>{provider.label}</option>
-                  {/each}
-                </select>
+                />
               </div>
 
               <div class="field">
@@ -548,54 +543,42 @@
 
               <div class="field">
                 <span class="field-label">API Model</span>
-                <select
+                <CustomSelect
                   class="field-select"
                   value={localSettings.whisper.api_model}
+                  options={apiModels.map(m => ({value: m, label: m}))}
                   onchange={(e) => localSettings.whisper.api_model = getFieldValue(e)}
-                >
-                  {#each apiModels as model}
-                    <option value={model}>{model}</option>
-                  {/each}
-                </select>
+                />
               </div>
 
               <div class="field">
                 <span class="field-label">Language</span>
-                <select
+                <CustomSelect
                   class="field-select"
                   value={localSettings.whisper.api_language}
+                  options={languages.map(l => ({value: l.code, label: l.name}))}
                   onchange={(e) => localSettings.whisper.api_language = getFieldValue(e)}
-                >
-                  {#each languages as lang}
-                    <option value={lang.code}>{lang.name}</option>
-                  {/each}
-                </select>
+                />
               </div>
             {:else}
               <div class="field">
                 <span class="field-label">Category</span>
-                <select
+                <CustomSelect
                   class="field-select"
                   value={modelCategory}
+                  options={modelCategories.map(c => ({value: c, label: c}))}
                   onchange={(e) => modelCategory = getFieldValue(e)}
-                >
-                  {#each modelCategories as cat}
-                    <option value={cat}>{cat}</option>
-                  {/each}
-                </select>
+                />
               </div>
 
               <div class="field">
                 <span class="field-label">Model</span>
-                <select
+                <CustomSelect
                   class="field-select"
                   value={localSettings.whisper.local_model}
+                  options={filteredModels.map(m => ({value: m.id || m, label: m.name || m}))}
                   onchange={(e) => handleLocalModelChange(getFieldValue(e))}
-                >
-                  {#each filteredModels as model}
-                    <option value={model.id || model}>{model.name || model}</option>
-                  {/each}
-                </select>
+                />
               </div>
 
               <div class="field">
@@ -635,16 +618,12 @@
 
               <div class="field">
                 <span class="field-label">Language</span>
-                <select
+                <CustomSelect
                   class="field-select"
                   value={localSettings.whisper.api_language}
+                  options={[{value: 'auto', label: 'Auto-detect'}, ...languages.map(l => ({value: l.code, label: l.name}))]}
                   onchange={(e) => localSettings.whisper.api_language = getFieldValue(e)}
-                >
-                  <option value="auto">Auto-detect</option>
-                  {#each languages as lang}
-                    <option value={lang.code}>{lang.name}</option>
-                  {/each}
-                </select>
+                />
               </div>
 
               {#if modelInfo}
@@ -676,15 +655,12 @@
           <div class="tab-panel">
             <div class="field">
               <span class="field-label">Theme</span>
-              <select
+              <CustomSelect
                 class="field-select"
                 value={localSettings.ui.theme}
+                options={themes}
                 onchange={(e) => localSettings.ui.theme = getFieldValue(e)}
-              >
-                {#each themes as theme}
-                  <option value={theme.value}>{theme.label}</option>
-                {/each}
-              </select>
+              />
             </div>
 
             <div class="field">
@@ -712,28 +688,23 @@
 
             <div class="field">
               <span class="field-label">Recording Overlay Style</span>
-              <select
+              <CustomSelect
                 class="field-select"
                 value={localSettings.ui.overlay_mode ?? 'minimal'}
+                options={[{value: 'minimal', label: 'Minimal (bars only)'}, {value: 'full', label: 'Full (bars, timer, stop button)'}]}
                 onchange={(e) => localSettings.ui.overlay_mode = getFieldValue(e)}
-              >
-                <option value="minimal">Minimal (bars only)</option>
-                <option value="full">Full (bars, timer, stop button)</option>
-              </select>
+              />
               <p class="field-hint">Style of the floating overlay shown when recording and the app is unfocused.</p>
             </div>
 
             <div class="field">
               <span class="field-label">Overlay Visual Style</span>
-              <select
+              <CustomSelect
                 class="field-select"
                 value={localSettings.ui.overlay_style ?? 'default'}
+                options={overlayStyles.map(s => ({ value: s.value, label: s.label }))}
                 onchange={(e) => localSettings.ui.overlay_style = getFieldValue(e)}
-              >
-                {#each overlayStyles as style}
-                  <option value={style.value}>{style.label}</option>
-                {/each}
-              </select>
+              />
               <p class="field-hint">Visual appearance of the recording overlay (background, border, shadows).</p>
             </div>
 
@@ -1150,11 +1121,6 @@
     border-radius: 8px;
     outline: none;
     transition: border-color 0.15s, box-shadow 0.15s;
-  }
-
-  .field-select option {
-    background: var(--bg-secondary);
-    color: var(--text-primary);
   }
 
   .field-select:focus,

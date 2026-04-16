@@ -77,8 +77,7 @@
       await new Promise(r => setTimeout(r, 50));
       await overlay.setSize(new LogicalSize(ow, oh));
       await overlay.setFocusable(false);
-      await overlay.show();
-      // Position at bottom-center of the current monitor
+      // Position at bottom-center of the current monitor BEFORE showing
       try {
         const monitor = await currentMonitor();
         if (monitor) {
@@ -89,6 +88,7 @@
           await overlay.setPosition(new LogicalPosition(x, y));
         }
       } catch {}
+      await overlay.show();
       // WebView2 workaround: nudge size to force transparency to apply
       await overlay.setSize(new LogicalSize(ow + 1, oh + 1));
       await overlay.setSize(new LogicalSize(ow, oh));
