@@ -1,0 +1,87 @@
+name: Publish to AUR
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (without leading v), e.g. 0.1.3"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            v="${{ github.event.inputs.version }}"
+          else
+            v="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+
+      - name: Compute sha256 of source tarball
+        id: sha
+        run: |
+          url="https://github.com/${{ github.repository }}/archive/refs/tags/${{ steps.ver.outputs.tag }}.tar.gz"
+          echo "Downloading $url"
+          sha=$(curl -fsSL "$url" | sha256sum | awk '{print $1}')
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha"
+
+      - name: Update PKGBUILD
+        run: |
+          sed -i -E "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" PKGBUILD
+          sed -i -E "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i -E "s/^sha256sums=.*/sha256sums=('${{ steps.sha.outputs.sha }}')/" PKGBUILD
+          echo "--- updated PKGBUILD ---"
+          head -30 PKGBUILD
+
+      - name: Generate .SRCINFO (in Arch container)
+        run: |
+          docker run --rm -v "$PWD":/pkg -w /pkg archlinux:base-devel bash -c '
+            useradd -m builder &&
+            chown -R builder:builder /pkg &&
+            sudo -u builder makepkg --printsrcinfo > .SRCINFO
+          '
+          echo "--- .SRCINFO ---"
+          cat .SRCINFO
+
+      - name: Commit PKGBUILD/.SRCINFO updates back to main
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "No PKGBUILD changes to commit."
+          else
+            git commit -m "chore(aur): bump PKGBUILD to ${{ steps.ver.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: quillscribe
+          pkgbuild: ./PKGBUILD
+          assets: |
+            .SRCINFO
+          commit_username: Istiak
+          commit_email: istiakm30@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "upgpkg: quillscribe ${{ steps.ver.outputs.version }}-1"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
+          force_push: "false"
