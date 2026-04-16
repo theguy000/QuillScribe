@@ -38,6 +38,20 @@ jobs:
             fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
           "
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          sed -i "s/\"version\": \"[^"]*\"/\"version\": \"$VERSION\"/" package.json
+
+      - name: Commit version bump back to repo
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH=$(git remote show origin | grep 'HEAD branch' | awk '{print $NF}')
+          git checkout "$BRANCH"
+          git add src-tauri/tauri.conf.json src-tauri/Cargo.toml package.json
+          git diff --cached --quiet && echo "No version changes to commit" && exit 0
+          git commit -m "chore: bump version to ${{ github.ref_name }}"
+          git push origin "$BRANCH"
 
       # ── Node.js ─────────────────────────────────────────────────────────
       - name: Setup Node.js
