@@ -878,7 +878,12 @@
                   {#if updateAvailable.body}
                     <p class="update-notes">{stripMarkdown(updateAvailable.body)}</p>
                   {/if}
-                  {#if updateDownloading}
+                  {#if isLinuxPlatform}
+                    <p class="update-linux-note">
+                      Automatic updates aren't supported on Linux. Please update via your package manager, or download the latest release from
+                      <a href="https://github.com/theguy000/QuillScribe/releases" target="_blank" rel="noopener noreferrer" class="hint-link">GitHub Releases</a>.
+                    </p>
+                  {:else if updateDownloading}
                     <div class="update-progress-wrap">
                       <div class="update-progress-bar">
                         <div class="update-progress-fill" style="width: {updateProgress}%"></div>
@@ -1895,6 +1900,13 @@
 
   .update-btn {
     align-self: flex-start;
+  }
+
+  .update-linux-note {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
   }
 
   .update-progress-wrap {
