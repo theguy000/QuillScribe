@@ -398,34 +398,65 @@ pub fn is_linux() -> bool {
 /// Returns true when the OS supports transparent windows.
 ///
 /// - Windows / macOS / Wayland → always true (compositor is guaranteed).
-/// - Linux + X11 → true only if a compositor is running (`_NET_WM_CM_S0` atom is owned).
+/// - Linux + X11 → true if a compositor is detected via a composited
+///   desktop-environment env var or a running standalone compositor
+///   (picom / compton / xcompmgr).
+///
+/// Note: the canonical X11 check is selection ownership of `_NET_WM_CM_Sn`
+/// via `XGetSelectionOwner`, but `xprop -root` reads root-window *properties*,
+/// not selection owners, so it reports "not found" even when picom is running.
+/// We avoid pulling in an X11 binding crate by using cheap heuristics instead.
 #[tauri::command]
 pub fn has_compositor() -> bool {
     #[cfg(target_os = "linux")]
     {
-        // Check the XDG_SESSION_TYPE env var first — Wayland always composites.
-        if let Ok(session) = std::env::var("XDG_SESSION_TYPE") {
-            if session.eq_ignore_ascii_case("wayland") {
+        // Wayland always composites.
+        let is_wayland = std::env::var("XDG_SESSION_TYPE")
+            .map(|s| s.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false)
+            || std::env::var_os("WAYLAND_DISPLAY").is_some();
+        if is_wayland {
+            return true;
+        }
+
+        // Desktop environments that always composite.
+        if std::env::var_os("KDE_FULL_SESSION").is_some()
+            || std::env::var_os("GNOME_DESKTOP_SESSION_ID").is_some()
+        {
+            return true;
+        }
+        const COMPOSITED_DESKTOPS: &[&str] = &[
+            "kde",
+            "gnome",
+            "unity",
+            "cinnamon",
+            "deepin",
+            "pantheon",
+            "enlightenment",
+        ];
+        if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") {
+            let d = desktop.to_lowercase();
+            if COMPOSITED_DESKTOPS.iter().any(|de| d.contains(de)) {
                 return true;
             }
         }
 
-        // X11: check if a compositor owns the _NET_WM_CM_S0 selection atom.
-        // We shell out to xprop because pulling in x11-rb just for this is overkill.
-        match std::process::Command::new("xprop")
-            .args(["-root", "-notype", "_NET_WM_CM_S0"])
-            .output()
-        {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                // If a compositor is running the output contains a window id, not "not found".
-                !stdout.contains("not found")
-            }
-            Err(_) => {
-                // xprop not available — assume no compositor.
-                false
+        // Well-known standalone X11 compositors.
+        for name in ["picom", "compton", "xcompmgr"] {
+            if std::process::Command::new("pgrep")
+                .args(["-x", name])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return true;
             }
         }
+
+        // Unknown: assume no compositor so the overlay falls back to a
+        // rectangle rather than rendering a pill with an opaque "frame"
+        // around its rounded corners.
+        false
     }
 
     #[cfg(not(target_os = "linux"))]

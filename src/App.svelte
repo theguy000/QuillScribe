@@ -75,6 +75,11 @@
         : 0;
       await emit('overlay-show', { theme: currentTheme, elapsed: elapsedSecs, mode: overlayMode, overlayStyle, overlayOpacity, noTransparency: noCompositor });
       await new Promise(r => setTimeout(r, 50));
+      // Clear any WM size hints that would refuse the small overlay size.
+      // Required on Linux (e.g. xfwm4) where undecorated GTK windows are
+      // otherwise clamped to a ~200x200 minimum.
+      try { await overlay.setMinSize(new LogicalSize(1, 1)); } catch {}
+      try { await overlay.setMaxSize(null); } catch {}
       await overlay.setSize(new LogicalSize(ow, oh));
       await overlay.setFocusable(false);
       // Position at bottom-center of the current monitor BEFORE showing
