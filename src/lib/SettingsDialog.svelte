@@ -1152,6 +1152,11 @@
     transition: border-color 0.15s, box-shadow 0.15s;
   }
 
+  .field-select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
   .field-select:focus,
   .field-input:focus {
     border-color: var(--accent);
