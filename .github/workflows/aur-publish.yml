@@ -61,15 +61,38 @@ jobs:
           cat .SRCINFO
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
-        with:
-          pkgname: quillscribe
-          pkgbuild: ./PKGBUILD
-          assets: |
-            .SRCINFO
-          commit_username: Istiak
-          commit_email: istiakm30@gmail.com
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "upgpkg: quillscribe ${{ steps.ver.outputs.version }}-1"
-          ssh_keyscan_types: rsa,ecdsa,ed25519
-          force_push: "false"
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # --- SSH setup --------------------------------------------------
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            IdentitiesOnly yes
+            User aur
+          EOF
+          chmod 600 ~/.ssh/config
+
+          # --- Git identity ----------------------------------------------
+          git config --global user.name  "Istiak"
+          git config --global user.email "istiakm30@gmail.com"
+
+          # --- Clone, update, push ---------------------------------------
+          workdir="$(mktemp -d)"
+          git clone ssh://aur@aur.archlinux.org/quillscribe.git "$workdir/aur"
+          cp PKGBUILD .SRCINFO "$workdir/aur/"
+          cd "$workdir/aur"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "No changes to push."
+          else
+            git commit -m "upgpkg: quillscribe ${VERSION}-1"
+            git push origin master
+          fi
