@@ -60,18 +60,6 @@ jobs:
           echo "--- .SRCINFO ---"
           cat .SRCINFO
 
-      - name: Commit PKGBUILD/.SRCINFO updates back to main
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add PKGBUILD .SRCINFO
-          if git diff --cached --quiet; then
-            echo "No PKGBUILD changes to commit."
-          else
-            git commit -m "chore(aur): bump PKGBUILD to ${{ steps.ver.outputs.version }}"
-            git push origin HEAD:main
-          fi
-
       - name: Publish to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
         with:
