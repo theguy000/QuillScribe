@@ -1,11 +1,12 @@
 # Maintainer: Istiak <istiakm30@gmail.com>
 pkgname=quillscribe
-pkgver=0.1.2
+pkgver=0.1.3
 pkgrel=1
 pkgdesc="Beautiful Voice-to-Text Transcription App with local and cloud speech-to-text support"
 arch=('x86_64')
 url="https://github.com/theguy000/QuillScribe"
 license=('MIT')
+options=('!lto')
 depends=(
   'webkit2gtk-4.1'
   'gtk3'
@@ -24,13 +25,19 @@ makedepends=(
   'librsvg'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/theguy000/QuillScribe/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('b6c4d4d7b780a8b221a94c727784cd00f904463fa25de87f171f34dd28d5e3c4')
+sha256sums=('b8882dabee782de6d1ee4c24d03db71f1e6228430495214f7f3d77357bb8ac10')
 
 build() {
   cd "QuillScribe-$pkgver"
 
+  # Force the system linker (gcc/ld) instead of the bundled rust-lld,
+  # which fails to resolve native C symbols embedded in rlibs
+  # (e.g. ring, whisper-rs) with Arch's default toolchain flags.
+  export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc
+  export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=bfd"
+
   npm install
-  npx tauri build --bundles none
+  npx tauri build --no-bundle
 }
 
 package() {
