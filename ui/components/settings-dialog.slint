@@ -1,32 +1,193 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
 
+component TabButton inherits Rectangle {
+    in property <string> tab-id;
+    in property <string> label;
+    in property <ThemeColors> theme-colors;
+    in-out property <string> active-tab;
+    clickable := TouchArea { clicked => { active-tab = tab-id; } }
+    background: clickable.has-hover ? theme-colors.bg_tertiary : transparent;
+
+    VerticalLayout {
+        // Tab label area
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-top: 10px;
+            padding-bottom: 8px;
+
+            Text {
+                text: label;
+                color: active-tab == tab-id ? theme-colors.accent : (clickable.has-hover ? theme-colors.text_primary : theme-colors.text_secondary);
+                font-size: 12.5px;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+        }
+
+        // Active indicator line
+        Rectangle {
+            height: 2px;
+            background: active-tab == tab-id ? theme-colors.accent : transparent;
+        }
+    }
+}
+
 export component SettingsDialog {
     in property <ThemeColors> theme-colors;
+    in-out property <string> active-tab: "audio";
 
     Rectangle {
         background: theme-colors.bg_primary;
 
         VerticalLayout {
-        padding: 24px;
-        spacing: 16px;
+            spacing: 0px;
 
-        Text {
-            text: "Settings";
-            color: theme-colors.text_primary;
-            font-size: 20px;
-            font-weight: 700;
-        }
+            // ── Header ──────────────────────────────────────────────────
+            Rectangle {
+                background: theme-colors.bg_primary;
 
-        Rectangle {
-            height: 1px;
-            background: theme-colors.border;
-        }
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 16px;
+                    padding-bottom: 12px;
 
-        Text {
-            text: "Settings panel will be implemented here.";
-            color: theme-colors.text_secondary;
-            font-size: 14px;
+                    Text {
+                        text: "Settings";
+                        color: theme-colors.text_primary;
+                        font-size: 16px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Bottom border
+                Rectangle {
+                    height: 1px;
+                    background: theme-colors.border_light;
+                    y: parent.height - 1px;
+                    x: 0px;
+                    width: parent.width;
+                }
+            }
+
+            // ── Tab bar ─────────────────────────────────────────────────
+            Rectangle {
+                background: theme-colors.bg_primary;
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 2px;
+
+                    TabButton { tab-id: "audio"; label: "Audio"; active-tab: active-tab; theme-colors: theme-colors; }
+                    TabButton { tab-id: "whisper"; label: "Engine"; active-tab: active-tab; theme-colors: theme-colors; }
+                    TabButton { tab-id: "ui"; label: "UI"; active-tab: active-tab; theme-colors: theme-colors; }
+                    TabButton { tab-id: "output"; label: "Output"; active-tab: active-tab; theme-colors: theme-colors; }
+                    TabButton { tab-id: "keyboard"; label: "Keyboard"; active-tab: active-tab; theme-colors: theme-colors; }
+                    TabButton { tab-id: "about"; label: "About"; active-tab: active-tab; theme-colors: theme-colors; }
+                }
+
+                // Bottom border (behind the active indicator)
+                Rectangle {
+                    height: 1px;
+                    background: theme-colors.border_light;
+                    y: parent.height - 1px;
+                    x: 0px;
+                    width: parent.width;
+                }
+            }
+
+            // ── Tab content ─────────────────────────────────────────────
+            Rectangle {
+                background: theme-colors.bg_primary;
+                clip: true;
+
+                if active-tab == "audio": VerticalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 16px;
+                    padding-bottom: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Audio settings will be implemented here.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                    }
+                }
+
+                if active-tab == "whisper": VerticalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 16px;
+                    padding-bottom: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Engine settings will be implemented here.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                    }
+                }
+
+                if active-tab == "ui": VerticalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 16px;
+                    padding-bottom: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "UI settings will be implemented here.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                    }
+                }
+
+                if active-tab == "output": VerticalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 16px;
+                    padding-bottom: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Output settings will be implemented here.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                    }
+                }
+
+                if active-tab == "keyboard": VerticalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 16px;
+                    padding-bottom: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Keyboard settings will be implemented here.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                    }
+                }
+
+                if active-tab == "about": VerticalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    padding-top: 16px;
+                    padding-bottom: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "About information will be implemented here.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                    }
+                }
+            }
         }
-    }
     }
 }
