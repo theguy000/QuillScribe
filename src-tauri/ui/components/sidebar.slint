@@ -1,33 +1,88 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
 
+component MicIcon {
+    in property <color> icon-color: #000000;
+    width: 16px; height: 16px;
+    Image {
+        source: @image-url("mic.svg");
+        colorize: icon-color;
+        width: 16px; height: 16px;
+    }
+}
+
+component GearIcon {
+    in property <color> icon-color: #000000;
+    width: 16px; height: 16px;
+    Image {
+        source: @image-url("gear.svg");
+        colorize: icon-color;
+        width: 16px; height: 16px;
+    }
+}
+
+component ClockIcon {
+    in property <color> icon-color: #000000;
+    width: 16px; height: 16px;
+    Image {
+        source: @image-url("clock.svg");
+        colorize: icon-color;
+        width: 16px; height: 16px;
+    }
+}
+
+component UserIcon {
+    in property <color> icon-color: #000000;
+    width: 14px; height: 14px;
+    Image {
+        source: @image-url("user.svg");
+        colorize: icon-color;
+        width: 14px; height: 14px;
+    }
+}
+
 component SidebarButton {
     in property <ThemeColors> theme-colors;
     in property <string> text;
     in property <bool> active;
-
+    in property <bool> show-dot: false;
     callback clicked();
-
-    height: 36px;
+    height: 38px;
 
     Rectangle {
         background: active ? theme-colors.accent_glow : transparent;
         border-radius: 8px;
 
         HorizontalLayout {
-            padding-left: 12px;
+            padding-left: 10px;
+            padding-right: 10px;
+            spacing: 10px;
             alignment: start;
+
+            Rectangle {
+                width: 24px; height: 24px; border-radius: 4px; background: transparent;
+                y: (parent.height - self.height) / 2;
+                if text == "Record": MicIcon { icon-color: active ? theme-colors.accent : theme-colors.text_secondary; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                if text == "Settings": GearIcon { icon-color: active ? theme-colors.accent : theme-colors.text_secondary; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                if text == "History": ClockIcon { icon-color: active ? theme-colors.accent : theme-colors.text_secondary; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+            }
 
             Text {
                 text: text;
                 color: active ? theme-colors.accent : theme-colors.text_secondary;
-                font-size: 14px;
+                font-size: 13px;
+                font-weight: active ? 600 : 500;
                 vertical-alignment: center;
+                y: (parent.height - self.height) / 2;
+            }
+
+            if show-dot: Rectangle {
+                width: 8px; height: 8px; border-radius: 4px;
+                background: theme-colors.accent;
+                y: (parent.height - self.height) / 2;
             }
         }
 
-        TouchArea {
-            clicked => { clicked(); }
-        }
+        TouchArea { clicked => { clicked(); } }
     }
 }
 
@@ -35,49 +90,155 @@ export component Sidebar {
     in property <ThemeColors> theme-colors;
     in-out property <string> active-panel;
     in property <bool> has-update;
+    in property <int> session-count: 0;
 
     callback navigate(string);
 
-    width: 180px;
+    width: 220px;
 
     Rectangle {
         background: theme-colors.bg_secondary;
+        border-radius: 22px;
+        border-width: 1px;
+        border-color: theme-colors.border_light;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: theme-colors.shadow_lg;
+        drop-shadow-offset-y: 8px;
 
         VerticalLayout {
-        padding: 16px;
-        spacing: 8px;
+            padding: 20px;
+            padding-bottom: 16px;
+            spacing: 0px;
 
-        Text {
-            text: "QuillScribe";
-            color: theme-colors.text_primary;
-            font-size: 16px;
-            font-weight: 700;
-        }
+            // ── Header: Logo + Title ──────────────────────────────
+            VerticalLayout {
+                spacing: 0px;
+                padding-bottom: 16px;
 
-        VerticalLayout {
-            spacing: 4px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
 
-            SidebarButton {
-                theme-colors: theme-colors;
-                text: "Record";
-                active: active-panel == "record";
-                clicked => { navigate("record"); }
+                    // Logo icon container
+                    Rectangle {
+                        width: 34px; height: 34px; border-radius: 10px;
+                        background: theme-colors.accent_glow;
+
+                        Text {
+                            text: "Q";
+                            color: theme-colors.accent;
+                            font-size: 16px;
+                            font-weight: 700;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+
+                    // Title + tagline
+                    VerticalLayout {
+                        spacing: 0px;
+                        padding-top: 1px;
+
+                        HorizontalLayout {
+                            spacing: 0px;
+                            Text { text: "Quill"; color: theme-colors.accent; font-size: 17px; font-weight: 700; }
+                            Text { text: "Scribe"; color: theme-colors.text_primary; font-size: 17px; font-weight: 700; }
+                        }
+
+                        Text {
+                            text: "Voice Workspace";
+                            color: theme-colors.text_muted;
+                            font-size: 11px;
+                            font-weight: 500;
+                        }
+                    }
+                }
+
+                // Divider
+                Rectangle {
+                    height: 17px;
+                    background: transparent;
+                }
+                Rectangle {
+                    height: 1px;
+                    background: theme-colors.border_light;
+                }
             }
 
-            SidebarButton {
-                theme-colors: theme-colors;
-                text: "History";
-                active: active-panel == "history";
-                clicked => { navigate("history"); }
+            // ── Navigation section ────────────────────────────────
+            VerticalLayout {
+                spacing: 2px;
+                padding-top: 4px;
+
+                Text {
+                    text: "NAVIGATION";
+                    color: theme-colors.text_muted;
+                    font-size: 10px;
+                    font-weight: 600;
+                }
+
+                SidebarButton {
+                    theme-colors: theme-colors;
+                    text: "Record";
+                    active: active-panel == "record";
+                    clicked => { navigate("record"); }
+                }
+
+                SidebarButton {
+                    theme-colors: theme-colors;
+                    text: "Settings";
+                    active: active-panel == "settings";
+                    show-dot: has-update;
+                    clicked => { navigate("settings"); }
+                }
+
+                SidebarButton {
+                    theme-colors: theme-colors;
+                    text: "History";
+                    active: active-panel == "history";
+                    clicked => { navigate("history"); }
+                }
             }
 
-            SidebarButton {
-                theme-colors: theme-colors;
-                text: "Settings";
-                active: active-panel == "settings";
-                clicked => { navigate("settings"); }
+            // ── Spacer ────────────────────────────────────────────
+            Rectangle { vertical-stretch: 1; }
+
+            // ── User section ───────────────────────────────────────
+            VerticalLayout {
+                spacing: 0px;
+
+                // Divider
+                Rectangle {
+                    height: 1px;
+                    background: theme-colors.border_light;
+                }
+
+                Rectangle { height: 10px; background: transparent; }
+
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+
+                    // Avatar
+                    Rectangle {
+                        width: 30px; height: 30px; border-radius: 15px;
+                        background: theme-colors.accent_glow;
+
+                        UserIcon {
+                            icon-color: theme-colors.accent;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+
+                    // User info
+                    VerticalLayout {
+                        spacing: 0px;
+                        Text { text: "User"; color: theme-colors.text_primary; font-size: 12px; font-weight: 600; }
+                        Text { text: session-count + " sessions"; color: theme-colors.text_muted; font-size: 10px; }
+                    }
+                }
             }
-        }
         }
     }
 }

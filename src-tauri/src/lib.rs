@@ -271,8 +271,11 @@ pub fn run() {
 
     let shared_load = Arc::clone(&shared);
     app.on_load_history(move || {
-        let _history = shared_load.state.statistics.get_recent_history(30);
-        // TODO: feed history into UI
+        let history = shared_load.state.statistics.get_recent_history(30);
+        let count = history.len() as i32;
+        shared_load.with_ui(|app| {
+            app.set_session_count(count);
+        });
     });
 
     let shared_update = Arc::clone(&shared);

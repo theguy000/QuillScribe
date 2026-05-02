@@ -20,6 +20,7 @@ export component App inherits Window {
     in-out property <string> active-panel: "record";
     in-out property <bool> custom-titlebar: true;
     in-out property <bool> has-update: false;
+    in-out property <int> session-count: 0;
 
     // Callbacks — wired from Rust
     callback request-navigate(string);
@@ -51,6 +52,7 @@ export component App inherits Window {
                     theme-colors: theme-colors;
                     active-panel: active-panel;
                     has-update: has-update;
+                    session-count: session-count;
                     navigate(panel) => { request-navigate(panel); }
                 }
 
