@@ -115,38 +115,36 @@ fn build_tray_menu(
     Ok(menu)
 }
 
+fn with_app<F: FnOnce(crate::App)>(app_weak: &slint::Weak<crate::App>, f: F) {
+    if let Some(app) = app_weak.upgrade() {
+        f(app);
+    }
+}
+
 fn handle_menu_event(
     id: &str,
     app_weak: &slint::Weak<crate::App>,
 ) {
     match id {
-        "Show QuillScribe" => {
-            if let Some(app) = app_weak.upgrade() {
-                app.window().show().ok();
-            }
-        }
-        "Start Recording" => {
-            if let Some(app) = app_weak.upgrade() {
+        "Show QuillScribe" => with_app(app_weak, |app| {
+            app.window().set_minimized(false);
+            app.window().show().ok();
+        }),
+        "Start Recording" => with_app(app_weak, |app| {
+            app.invoke_toggle_recording();
+        }),
+        "Stop Recording" => with_app(app_weak, |app| {
+            if app.get_is_recording() {
                 app.invoke_toggle_recording();
             }
-        }
-        "Stop Recording" => {
-            if let Some(app) = app_weak.upgrade() {
-                if app.get_is_recording() {
-                    app.invoke_toggle_recording();
-                }
-            }
-        }
-        "Settings" => {
-            if let Some(app) = app_weak.upgrade() {
-                app.set_active_panel("settings".into());
-                app.window().show().ok();
-            }
-        }
-        "Exit" => {
-            info!("Quit requested from tray");
-            std::process::exit(0);
-        }
+        }),
+        "Settings" => with_app(app_weak, |app| {
+            app.set_active_panel("settings".into());
+            app.window().show().ok();
+        }),
+        "Exit" => with_app(app_weak, |app| {
+            crate::window::close_window(&app);
+        }),
         _ => {}
     }
 }
@@ -170,13 +168,7 @@ pub fn set_tray_theme(theme: &str) {
 }
 
 fn icon_from_png_bytes(png_bytes: &[u8]) -> Result<Icon, String> {
-    let decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
-    let mut reader = decoder.read_info()
-        .map_err(|e| format!("PNG decode error: {}", e))?;
-    let mut buf = vec![0; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf)
-        .map_err(|e| format!("PNG frame error: {}", e))?;
-    buf.resize(info.buffer_size(), 0);
-    Icon::from_rgba(buf, info.width, info.height)
+    let (rgba, w, h) = crate::window::decode_png_to_rgba(png_bytes)?;
+    Icon::from_rgba(rgba, w, h)
         .map_err(|e| format!("Icon from RGBA error: {}", e))
 }

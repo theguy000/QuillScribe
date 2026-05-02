@@ -3,21 +3,139 @@ import { ThemeColors } from "../themes/theme-definitions.slint";
 export component TitleBar {
     in property <ThemeColors> theme-colors;
 
+    callback drag-window();
+    callback minimize-window();
+    callback close-window();
+
     height: 36px;
 
     Rectangle {
         background: theme-colors.titlebar_bg;
 
+        // Bottom border matching original
+        Rectangle {
+            height: 1px;
+            background: theme-colors.border_light;
+            y: parent.height - 1px;
+        }
+
+        property <bool> drag-active: false;
+        
+        // Workaround for X11/Wayland window drag grab bug: 
+        // When winit hands over the window drag to the OS window manager, the OS swallows
+        // the mouse release event. This leaves the TouchArea stuck in an active "grab" state,
+        // making the entire window draggable on subsequent clicks. By briefly disabling the 
+        // TouchArea, we force Slint to cancel the pointer grab internally.
+        Timer {
+            interval: 500ms;
+            running: drag-active;
+            triggered => {
+                drag-active = false;
+            }
+        }
+
+        // Drag region covers the entire titlebar (behind buttons so they take priority)
+        drag-touch := TouchArea {
+            enabled: !drag-active;
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    drag-window();
+                    drag-active = true;
+                }
+            }
+        }
+
         HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 12px;
+            padding-left: 14px;
+            padding-right: 0px;
             alignment: space-between;
 
-            Text {
-                text: "QuillScribe";
-                color: theme-colors.titlebar_text;
-                font-size: 13px;
-                vertical-alignment: center;
+            HorizontalLayout {
+                alignment: start;
+                spacing: 10px;
+
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 8px;
+                    background: theme-colors.accent.with-alpha(0.10);
+                    y: (parent.height - self.height) / 2;
+
+                    Image {
+                        source: @image-url("quill.svg");
+                        colorize: theme-colors.accent;
+                        width: 16px;
+                        height: 16px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                Text {
+                    text: "QUILLSCRIBE";
+                    color: theme-colors.titlebar_text;
+                    font-size: 12px;
+                    font-weight: 700;
+                    letter-spacing: 0.08rem;
+                    vertical-alignment: center;
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 0px;
+
+                // Minimize button — SVG-like thin horizontal bar
+                Rectangle {
+                    width: 44px;
+                    height: 36px;
+
+                    Rectangle {
+                        width: 10px;
+                        height: 1px;
+                        background: theme-colors.titlebar_text;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    ta-min := TouchArea {
+                        clicked => { minimize-window(); }
+                    }
+
+                    background: ta-min.has-hover ? theme-colors.bg_tertiary.with-alpha(0.78) : transparent;
+                }
+
+                // Close button — × character matching original SVG X
+                Rectangle {
+                    width: 44px;
+                    height: 36px;
+
+                    property <color> close-foreground: theme-colors.titlebar_text;
+
+                    Text {
+                        text: "×";
+                        color: close-foreground;
+                        font-size: 20px;
+                        font-weight: 300;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    ta-close := TouchArea {
+                        clicked => { close-window(); }
+                    }
+
+                    background: ta-close.has-hover ? theme-colors.danger : transparent;
+
+                    animate background { duration: 150ms; }
+                    animate close-foreground { duration: 150ms; }
+
+                    states [
+                        hovered when ta-close.has-hover: {
+                            close-foreground: #ffffff;
+                        }
+                    ]
+                }
             }
         }
     }

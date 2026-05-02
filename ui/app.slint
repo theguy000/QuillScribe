@@ -12,6 +12,9 @@ export { ThemeColors }
 export component App inherits Window {
     in-out property <ThemeColors> theme-colors <=> Theme.current;
     in-out property <string> current-theme: "white";
+    changed current-theme => {
+        set-window-icon-theme(self.current-theme);
+    }
     in-out property <bool> is-recording: false;
     in-out property <bool> is-transcribing: false;
     in-out property <string> transcription-text: "";
@@ -30,6 +33,10 @@ export component App inherits Window {
     callback load-history();
     callback check-for-update();
     callback install-update();
+    callback drag-window();
+    callback minimize-window();
+    callback close-window();
+    callback set-window-icon-theme(string);
 
     title: "QuillScribe";
     min-width: 800px;
@@ -45,6 +52,9 @@ export component App inherits Window {
         VerticalLayout {
             if custom-titlebar: TitleBar {
                 theme-colors: theme-colors;
+                drag-window => { drag-window(); }
+                minimize-window => { minimize-window(); }
+                close-window => { close-window(); }
             }
 
             HorizontalLayout {

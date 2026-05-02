@@ -88,12 +88,6 @@ pub fn run() {
         *lock = Some(app.as_weak());
     }
 
-    // Apply initial theme
-    let _theme = initial_theme.clone();
-    let _ = slint::invoke_from_event_loop(move || {
-        // Theme is set via the theme-colors property
-    });
-
     // ── Wire Slint callbacks ───────────────────────────────────────────
 
     let shared_toggle = Arc::clone(&shared);
@@ -290,6 +284,35 @@ pub fn run() {
         // TODO: implement self_update install
     });
 
+    // Window management callbacks
+    let app_weak_drag = app.as_weak();
+    app.on_drag_window(move || {
+        if let Some(app) = app_weak_drag.upgrade() {
+            window::drag_window(&app);
+        }
+    });
+
+    let app_weak_min = app.as_weak();
+    app.on_minimize_window(move || {
+        if let Some(app) = app_weak_min.upgrade() {
+            window::minimize_window(&app);
+        }
+    });
+
+    let app_weak_close = app.as_weak();
+    app.on_close_window(move || {
+        if let Some(app) = app_weak_close.upgrade() {
+            window::close_window(&app);
+        }
+    });
+
+    let app_weak_icon = app.as_weak();
+    app.on_set_window_icon_theme(move |theme: slint::SharedString| {
+        if let Some(app) = app_weak_icon.upgrade() {
+            window::set_window_icon_theme(&app, &theme.to_string());
+        }
+    });
+
     // Initialize GTK on Linux (required by tray-icon for menu support)
     #[cfg(target_os = "linux")]
     {
@@ -305,6 +328,9 @@ pub fn run() {
 
     // Set up global hotkey
     hotkey::register_record_toggle(&app.as_weak());
+
+    // Set initial window (taskbar) icon to match theme
+    window::set_window_icon_theme(&app, &initial_theme);
 
     // Audio level polling timer
     let shared_audio = Arc::clone(&shared);
