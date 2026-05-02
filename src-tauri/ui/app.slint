@@ -1,0 +1,97 @@
+import { Theme, ThemeColors } from "themes/theme-definitions.slint";
+import { TitleBar } from "components/titlebar.slint";
+import { Sidebar } from "components/sidebar.slint";
+import { RecordPanel } from "components/record-panel.slint";
+import { TranscriptionPanel } from "components/transcription-panel.slint";
+import { SettingsDialog } from "components/settings-dialog.slint";
+import { HistoryPanel } from "components/history-panel.slint";
+import { ToastContainer } from "components/toast.slint";
+
+export { ThemeColors }
+
+export component App inherits Window {
+    in-out property <ThemeColors> theme-colors <=> Theme.current;
+    in-out property <string> current-theme: "white";
+    in-out property <bool> is-recording: false;
+    in-out property <bool> is-transcribing: false;
+    in-out property <string> transcription-text: "";
+    in-out property <string> status-message: "Ready";
+    in-out property <float> audio-level: 0;
+    in-out property <string> active-panel: "record";
+    in-out property <bool> custom-titlebar: true;
+    in-out property <bool> has-update: false;
+
+    // Callbacks — wired from Rust
+    callback request-navigate(string);
+    callback toggle-recording();
+    callback save-settings(string);
+    callback copy-to-clipboard(string);
+    callback load-history();
+    callback check-for-update();
+    callback install-update();
+
+    title: "QuillScribe";
+    min-width: 800px;
+    min-height: 480px;
+    preferred-width: 960px;
+    preferred-height: 560px;
+    background: theme-colors.bg_primary;
+    no-frame: true;
+
+    Rectangle {
+        background: theme-colors.bg_primary;
+
+        VerticalLayout {
+            if custom-titlebar: TitleBar {
+                theme-colors: theme-colors;
+            }
+
+            HorizontalLayout {
+                Sidebar {
+                    theme-colors: theme-colors;
+                    active-panel: active-panel;
+                    has-update: has-update;
+                    navigate(panel) => { request-navigate(panel); }
+                }
+
+                Rectangle {
+                    background: theme-colors.bg_primary;
+                    clip: true;
+
+                    if active-panel == "record": HorizontalLayout {
+                        padding: 22px;
+                        spacing: 18px;
+
+                        RecordPanel {
+                            theme-colors: theme-colors;
+                            is-recording: is-recording;
+                            is-transcribing: is-transcribing;
+                            status-message: status-message;
+                            audio-level: audio-level;
+                            toggle-recording => { toggle-recording(); }
+                        }
+
+                        TranscriptionPanel {
+                            theme-colors: theme-colors;
+                            text: transcription-text;
+                            copy(text) => { copy-to-clipboard(text); }
+                        }
+                    }
+
+                    if active-panel == "settings": SettingsDialog {
+                        theme-colors: theme-colors;
+                    }
+
+                    if active-panel == "history": HistoryPanel {
+                        theme-colors: theme-colors;
+                        refresh => { load-history(); }
+                    }
+                }
+            }
+        }
+
+        ToastContainer {
+            theme-colors: theme-colors;
+        }
+    }
+}

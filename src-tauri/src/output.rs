@@ -439,6 +439,7 @@ impl OutputManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn test_clipboard(&self) -> Result<bool> {
         let test_text = "quillscribe_clipboard_test";
 

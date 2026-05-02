@@ -1,0 +1,43 @@
+import { ThemeColors } from "../themes/theme-definitions.slint";
+
+export struct ToastData {
+    id: int,
+    message: string,
+    toast-type: string,
+}
+
+export component ToastContainer {
+    in property <ThemeColors> theme-colors;
+    in-out property <[ToastData]> toasts: [];
+
+    VerticalLayout {
+        spacing: 8px;
+
+        for toast[idx] in toasts: Rectangle {
+            height: 40px;
+            background: toast.toast-type == "error"
+                ? theme-colors.danger
+                : toast.toast-type == "success"
+                    ? theme-colors.success
+                    : theme-colors.accent;
+            border-radius: 8px;
+            opacity: 1.0;
+
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                alignment: center;
+
+                Text {
+                    text: toast.message;
+                    color: theme-colors.on_accent;
+                    font-size: 13px;
+                }
+            }
+
+            animate opacity {
+                duration: 200ms;
+            }
+        }
+    }
+}

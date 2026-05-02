@@ -9,155 +9,323 @@ mod tray;
 mod whisper;
 mod window;
 
-use commands::{
-    app_state, check_paste_tool_status, copy_to_clipboard, delete_model, download_model,
-    get_always_on_top, get_audio_devices, get_audio_level, get_available_languages,
-    get_available_local_models, get_available_models, get_downloaded_models, get_model_info,
-    get_recent_history, get_settings, get_sounds_enabled, has_compositor, is_linux,
-    is_model_downloaded, play_start_sound, play_stop_sound, process_transcription,
-    rebuild_tray_menu, save_settings, set_always_on_top, set_audio_device, set_sounds_enabled,
-    set_taskbar_icon_theme, set_tray_theme, start_mic_test, start_monitoring, start_recording,
-    stop_mic_test, stop_monitoring, stop_recording, test_clipboard, test_microphone,
-    validate_api_key,
-};
-use tauri::Manager;
+use log::warn;
+use std::sync::{Arc, Mutex};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+use commands::AppState;
+
+slint::include_modules!();
+
+/// Shared application state for Slint callbacks.
+struct SharedAppState {
+    state: AppState,
+    app_weak: Mutex<Option<slint::Weak<App>>>,
+}
+
+impl SharedAppState {
+    fn with_ui<F>(&self, f: F)
+    where
+        F: FnOnce(App),
+    {
+        if let Ok(lock) = self.app_weak.lock() {
+            if let Some(weak) = lock.as_ref() {
+                if let Some(app) = weak.upgrade() {
+                    f(app);
+                }
+            }
+        }
+    }
+}
+
 pub fn run() {
-    // Workaround for WebKitGTK DMA-BUF renderer blank screen on Linux + NVIDIA.
-    // See: https://github.com/tauri-apps/wry/issues/1366
     #[cfg(target_os = "linux")]
     {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        std::env::set_var("SLINT_BACKEND", "winit-femtovg");
     }
 
-    tauri::Builder::default()
-        .manage(app_state())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
+    // Initialize logging
+    env_logger::init();
+
+    // Create a Tokio runtime for async tasks (Slint's event loop is not a Tokio runtime)
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+
+    let app_state = AppState::new();
+    let initial_theme = {
+        let config = app_state.config.lock().unwrap();
+        config.get_settings().ui.theme.clone()
+    };
+
+    // Set up audio device from config
+    {
+        let config = app_state.config.lock().unwrap();
+        let device_id = config.get_audio_device_id();
+        let _custom_titlebar = config.get_custom_titlebar();
+        let _always_on_top = config.get_always_on_top();
+        let sounds_enabled = config.get_sounds_enabled();
+        let max_history = config.get_max_history_entries();
+        drop(config);
+
+        app_state.sound.set_sounds_enabled(sounds_enabled);
+        app_state.statistics.set_max_history_entries(max_history);
+
+        if let Ok(mut audio) = app_state.audio.lock() {
+            if let Err(e) = audio.set_input_device(device_id) {
+                log::warn!("Failed to set audio device from config: {}", e);
             }
+        }
+    }
 
-            // Set up system tray with the saved theme
-            let handle = app.handle().clone();
-            let initial_theme = {
-                let state: tauri::State<commands::AppState> = app.state();
-                state
-                    .config
-                    .lock()
-                    .ok()
-                    .map(|c| c.get_settings().ui.theme)
-                    .unwrap_or_else(|| "white".to_string())
-            };
-            if let Err(e) = tray::setup_tray(&handle, &initial_theme) {
-                log::warn!("Failed to set up system tray: {}", e);
+    let shared = Arc::new(SharedAppState {
+        state: app_state,
+        app_weak: Mutex::new(None),
+    });
+
+    let app = App::new().unwrap();
+
+    // Store weak handle for callbacks that need to update UI
+    {
+        let mut lock = shared.app_weak.lock().unwrap();
+        *lock = Some(app.as_weak());
+    }
+
+    // Apply initial theme
+    let _theme = initial_theme.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        // Theme is set via the theme-colors property
+    });
+
+    // ── Wire Slint callbacks ───────────────────────────────────────────
+
+    let shared_toggle = Arc::clone(&shared);
+    app.on_toggle_recording(move || {
+        let s = Arc::clone(&shared_toggle);
+        let ui = s.app_weak.lock().unwrap().clone();
+
+        // Read current state on the UI thread (callback runs on Slint event loop)
+        let is_recording = {
+            if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+                app.get_is_recording()
+            } else {
+                false
             }
-            tray::set_window_icon_theme(&handle, &initial_theme);
+        };
 
-            // Apply window settings
-            let state: tauri::State<commands::AppState> = app.state();
-            if let Ok(config) = state.config.lock() {
-                window::apply_always_on_top(&handle, config.get_always_on_top());
-
-                // Initialize sound enabled state from config
-                state.sound.set_sounds_enabled(config.get_sounds_enabled());
-
-                let custom_titlebar = config.get_custom_titlebar();
-                let device_id = config.get_audio_device_id();
-                drop(config);
-
-                window::apply_custom_titlebar(&handle, custom_titlebar);
-
-                if let Ok(mut audio) = state.audio.lock() {
-                    if let Err(e) = audio.set_input_device(device_id) {
-                        log::warn!("Failed to set audio device from config: {}", e);
-                    }
-                }
-            }
-
-            // Apply max history entries from config
-            if let Ok(config) = state.config.lock() {
-                state
-                    .statistics
-                    .set_max_history_entries(config.get_max_history_entries());
-            }
-
-            // Register global hotkeys
-            hotkey::register_record_toggle(&handle);
-
-            Ok(())
-        })
-        .on_window_event(|window, event| {
-            use tauri::WindowEvent;
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                let label = window.label();
-                if label == "overlay" {
-                    // Overlay: just hide, never truly close
-                    api.prevent_close();
-                    let _ = window.hide();
+        if !is_recording {
+            // Start recording — synchronous, on UI thread
+            s.state.sound.play_start_sound();
+            if let Ok(mut audio) = s.state.audio.lock() {
+                if let Err(e) = audio.start_recording() {
+                    log::error!("Failed to start recording: {}", e);
                     return;
                 }
-
-                // Main window: minimize to tray on close
-                api.prevent_close();
-                let _ = window.hide();
             }
-        })
-        .invoke_handler(tauri::generate_handler![
-            // Config
-            get_settings,
-            save_settings,
-            validate_api_key,
-            // Audio
-            get_audio_devices,
-            set_audio_device,
-            start_monitoring,
-            stop_monitoring,
-            start_recording,
-            stop_recording,
-            get_audio_level,
-            test_microphone,
-            start_mic_test,
-            stop_mic_test,
-            // Whisper
-            get_available_models,
-            get_available_local_models,
-            get_model_info,
-            get_available_languages,
-            download_model,
-            is_model_downloaded,
-            delete_model,
-            get_downloaded_models,
-            // Output
-            process_transcription,
-            copy_to_clipboard,
-            test_clipboard,
-            check_paste_tool_status,
-            is_linux,
-            has_compositor,
-            // Sound
-            play_start_sound,
-            play_stop_sound,
-            set_sounds_enabled,
-            get_sounds_enabled,
-            // Statistics
-            get_recent_history,
-            // Window
-            set_always_on_top,
-            get_always_on_top,
-            // Tray
-            set_tray_theme,
-            set_taskbar_icon_theme,
-            rebuild_tray_menu,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+            if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+                app.set_is_recording(true);
+                app.set_status_message("Recording...".into());
+            }
+        } else {
+            // Stop recording — synchronous UI update on UI thread
+            if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+                app.set_is_recording(false);
+                app.set_is_transcribing(true);
+                app.set_status_message("Transcribing...".into());
+            }
+
+            let (audio_data, sample_rate) = {
+                let mut audio = s.state.audio.lock().unwrap();
+                match audio.stop_recording() {
+                    Ok(Some((data, sr))) => (data, sr),
+                    Ok(None) => {
+                        if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+                            app.set_is_transcribing(false);
+                            app.set_status_message("No speech detected".into());
+                        }
+                        return;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to stop recording: {}", e);
+                        if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+                            app.set_is_transcribing(false);
+                            app.set_status_message(format!("Error: {}", e).into());
+                        }
+                        return;
+                    }
+                }
+            };
+
+            // Apply whisper settings
+            let whisper_cfg = {
+                let config = s.state.config.lock().unwrap();
+                config.get_whisper()
+            };
+
+            {
+                let mut whisper = s.state.whisper.lock().unwrap();
+                let _ = whisper.set_mode(&whisper_cfg.mode);
+                let _ = whisper.set_api_provider(&whisper_cfg.api_provider);
+                whisper.set_api_key(&whisper_cfg.api_key);
+                whisper.set_groq_api_key(&whisper_cfg.groq_api_key);
+                let _ = whisper.set_api_model(&whisper_cfg.api_model);
+                let _ = whisper.set_api_language(&whisper_cfg.api_language);
+                let _ = whisper.set_local_model(&whisper_cfg.local_model);
+                whisper.set_local_model_path(&whisper_cfg.local_model_path);
+            }
+
+            let whisper_clone = {
+                let whisper = s.state.whisper.lock().unwrap();
+                whisper.clone()
+            };
+
+            let audio_duration = audio_data.len() as f64 / sample_rate as f64;
+            let start_time = std::time::Instant::now();
+
+            // Spawn async transcription on Tokio runtime
+            let s_async = Arc::clone(&s);
+            let ui_async = ui.clone();
+            rt.spawn(async move {
+                let result = whisper_clone.transcribe_audio(audio_data, sample_rate).await;
+                let transcription_time = start_time.elapsed().as_secs_f64();
+                let whisper_mode = {
+                    let config = s_async.state.config.lock().unwrap();
+                    config.get_whisper_mode()
+                };
+
+                match result {
+                    Ok(text) => {
+                        s_async.state.statistics.record_transcription_result(
+                            true,
+                            &whisper_mode,
+                            audio_duration,
+                            transcription_time,
+                            &text,
+                            1.0,
+                        );
+
+                        s_async.state.sound.play_stop_sound();
+
+                        // Process output
+                        {
+                            let config = s_async.state.config.lock().unwrap();
+                            let output_cfg = config.get_output();
+                            let output = s_async.state.output.lock().unwrap();
+                            let _ = output.process_transcription(&text, output::OutputMode::from(output_cfg.mode));
+                        }
+
+                        // Update UI from the Slint event loop thread
+                        let text_for_ui = text.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(app) = ui_async.as_ref().and_then(|w| w.upgrade()) {
+                                app.set_is_transcribing(false);
+                                app.set_transcription_text(text_for_ui.into());
+                                app.set_status_message("Transcription complete".into());
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        s_async.state.statistics.record_transcription_result(
+                            false,
+                            &whisper_mode,
+                            audio_duration,
+                            transcription_time,
+                            "",
+                            0.0,
+                        );
+                        let err_msg = format!("Error: {}", e);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(app) = ui_async.as_ref().and_then(|w| w.upgrade()) {
+                                app.set_is_transcribing(false);
+                                app.set_status_message(err_msg.into());
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    });
+
+    let shared_nav = Arc::clone(&shared);
+    app.on_request_navigate(move |panel: slint::SharedString| {
+        // Update active panel so the UI switches views
+        shared_nav.with_ui(|app| {
+            app.set_active_panel(panel.clone());
+        });
+        let panel_str = panel.to_string();
+        if panel_str == "history" {
+            let _history = shared_nav.state.statistics.get_recent_history(7);
+            // TODO: feed history into UI
+        }
+    });
+
+    let shared_copy = Arc::clone(&shared);
+    app.on_copy_to_clipboard(move |text: slint::SharedString| {
+        let output = shared_copy.state.output.lock().unwrap();
+        let _ = output.copy_to_clipboard(&text.to_string());
+    });
+
+    let shared_settings = Arc::clone(&shared);
+    app.on_save_settings(move |settings_json: slint::SharedString| {
+        // TODO: Parse settings JSON and save
+        let _ = settings_json;
+        let _ = shared_settings;
+    });
+
+    let shared_load = Arc::clone(&shared);
+    app.on_load_history(move || {
+        let _history = shared_load.state.statistics.get_recent_history(30);
+        // TODO: feed history into UI
+    });
+
+    let shared_update = Arc::clone(&shared);
+    app.on_check_for_update(move || {
+        let _ = shared_update;
+        // TODO: implement self_update check
+    });
+
+    let shared_install = Arc::clone(&shared);
+    app.on_install_update(move || {
+        let _ = shared_install;
+        // TODO: implement self_update install
+    });
+
+    // Initialize GTK on Linux (required by tray-icon for menu support)
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(e) = gtk::init() {
+            warn!("Failed to initialize GTK: {}", e);
+        }
+    }
+
+    // Set up system tray
+    if let Err(e) = tray::setup_tray(&initial_theme, &app.as_weak()) {
+        warn!("Failed to set up system tray: {}", e);
+    }
+
+    // Set up global hotkey
+    hotkey::register_record_toggle(&app.as_weak());
+
+    // Audio level polling timer
+    let shared_audio = Arc::clone(&shared);
+    let timer = slint::Timer::default();
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(50),
+        move || {
+            let level = {
+                if let Ok(audio) = shared_audio.state.audio.lock() {
+                    audio.get_audio_level()
+                } else {
+                    0.0
+                }
+            };
+            shared_audio.with_ui(|app| {
+                app.set_audio_level(level);
+            });
+        },
+    );
+
+    // Run the Slint event loop
+    app.run().unwrap();
+
+    // Clean up tray
+    tray::cleanup_tray();
 }

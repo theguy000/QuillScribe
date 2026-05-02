@@ -43,6 +43,7 @@ impl AudioState {
 
 // ── Commands sent to the dedicated audio thread ─────────────────────────────
 
+#[allow(dead_code)]
 enum AudioCommand {
     GetDevices {
         reply: mpsc::Sender<Vec<AudioDevice>>,
@@ -107,6 +108,7 @@ impl AudioManager {
     }
 
     /// Enumerate all available audio input devices.
+    #[allow(dead_code)]
     pub fn get_available_devices(&self) -> Vec<AudioDevice> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let tx = self.command_tx.lock().unwrap();
@@ -142,6 +144,7 @@ impl AudioManager {
 
     /// Start audio monitoring. The audio level will be updated continuously
     /// and can be retrieved via `get_audio_level()`.
+    #[allow(dead_code)]
     pub fn start_monitoring(&mut self) -> Result<()> {
         {
             let mut state = self.state.lock().unwrap();
@@ -162,6 +165,7 @@ impl AudioManager {
     }
 
     /// Stop audio monitoring.
+    #[allow(dead_code)]
     pub fn stop_monitoring(&mut self) {
         {
             let mut state = self.state.lock().unwrap();
@@ -246,6 +250,7 @@ impl AudioManager {
 
     /// Test whether a microphone is working by briefly opening a stream and
     /// checking if any non-silent audio is captured.
+    #[allow(dead_code)]
     pub fn test_microphone(&self, device_id: Option<String>) -> Result<bool> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let tx = self.command_tx.lock().unwrap();

@@ -56,16 +56,23 @@ jobs:
       - name: Run cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
-  # ── Frontend build ───────────────────────────────────────────────────
-  frontend:
-    name: Frontend Build
+  # ── Slint build check ───────────────────────────────────────────────
+  slint:
+    name: Slint Build Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
 
-      - run: npm ci
-      - run: npm run build
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libgl1-mesa-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Run cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml

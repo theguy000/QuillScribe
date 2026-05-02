@@ -1,0 +1,437 @@
+// QuillScribe Theme Definitions
+// All 12 themes with complete color palettes
+
+export struct ThemeColors {
+    bg_primary: color,
+    bg_secondary: color,
+    bg_tertiary: color,
+    text_primary: color,
+    text_secondary: color,
+    text_muted: color,
+    accent: color,
+    accent_hover: color,
+    accent_glow: color,
+    border: color,
+    border_light: color,
+    shadow: color,
+    shadow_lg: color,
+    danger: color,
+    danger_hover: color,
+    success: color,
+    warning: color,
+    warning_hover: color,
+    on_accent: color,
+    on_danger: color,
+    highlight: color,
+    recording_glow: color,
+    scrollbar_track: color,
+    scrollbar_thumb: color,
+    titlebar_bg: color,
+    titlebar_text: color,
+}
+
+export global Theme {
+    in-out property <ThemeColors> current: white-theme();
+
+    // ── White (default light) ───────────────────────────────────────────
+    pure function white-theme() -> ThemeColors {
+        {
+            bg_primary: #f6f8fb,
+            bg_secondary: #eef2f7,
+            bg_tertiary: #e4eaf2,
+            text_primary: #162033,
+            text_secondary: #5a667c,
+            text_muted: #8c97aa,
+            accent: #2563eb,
+            accent_hover: #1d4ed8,
+            accent_glow: #2563eb33,
+            border: #ccd6e3,
+            border_light: #dde5ef,
+            shadow: #0f172a14,
+            shadow_lg: #0f172a24,
+            danger: #e81123,
+            danger_hover: #c82333,
+            success: #34c759,
+            warning: #e5a000,
+            warning_hover: #cc8f00,
+            on_accent: #ffffff,
+            on_danger: #ffffff,
+            highlight: #ffffff52,
+            recording_glow: #e74c3c66,
+            scrollbar_track: #e8edf5,
+            scrollbar_thumb: #b4c0d0,
+            titlebar_bg: #f7f9fc,
+            titlebar_text: #22304a,
+        }
+    }
+
+    // ── Warm Gray ───────────────────────────────────────────────────────
+    pure function warm-gray-theme() -> ThemeColors {
+        {
+            bg_primary: #f5f5f4,
+            bg_secondary: #e7e5e4,
+            bg_tertiary: #d6d3d1,
+            text_primary: #1c1917,
+            text_secondary: #57534e,
+            text_muted: #a8a29e,
+            accent: #6366f1,
+            accent_hover: #4f46e5,
+            accent_glow: #6366f133,
+            border: #c8c5c2,
+            border_light: #d9d6d3,
+            shadow: #1c191714,
+            shadow_lg: #1c191724,
+            danger: #e81123,
+            danger_hover: #c82333,
+            success: #34c759,
+            warning: #e5a000,
+            warning_hover: #cc8f00,
+            on_accent: #ffffff,
+            on_danger: #ffffff,
+            highlight: #ffffff52,
+            recording_glow: #e74c3c66,
+            scrollbar_track: #e7e5e4,
+            scrollbar_thumb: #b8b5b1,
+            titlebar_bg: #f7f7f6,
+            titlebar_text: #292524,
+        }
+    }
+
+    // ── Soft Beige ──────────────────────────────────────────────────────
+    pure function soft-beige-theme() -> ThemeColors {
+        {
+            bg_primary: #faf8f5,
+            bg_secondary: #f0ebe4,
+            bg_tertiary: #e5ddd2,
+            text_primary: #2c1e0e,
+            text_secondary: #6b5c4c,
+            text_muted: #a09585,
+            accent: #d97706,
+            accent_hover: #b45309,
+            accent_glow: #d9770633,
+            border: #d4cabb,
+            border_light: #e3dace,
+            shadow: #2c1e0e14,
+            shadow_lg: #2c1e0e24,
+            danger: #e81123,
+            danger_hover: #c82333,
+            success: #34c759,
+            warning: #e5a000,
+            warning_hover: #cc8f00,
+            on_accent: #ffffff,
+            on_danger: #ffffff,
+            highlight: #ffffff52,
+            recording_glow: #e74c3c66,
+            scrollbar_track: #f0ebe4,
+            scrollbar_thumb: #c4b8a8,
+            titlebar_bg: #fcfaf8,
+            titlebar_text: #3d2e1e,
+        }
+    }
+
+    // ── Blue Gray ───────────────────────────────────────────────────────
+    pure function blue-gray-theme() -> ThemeColors {
+        {
+            bg_primary: #f0f4f8,
+            bg_secondary: #dfe7ef,
+            bg_tertiary: #cdd8e4,
+            text_primary: #0f172a,
+            text_secondary: #475569,
+            text_muted: #94a3b8,
+            accent: #3b82f6,
+            accent_hover: #2563eb,
+            accent_glow: #3b82f633,
+            border: #bcc8d8,
+            border_light: #cfd9e6,
+            shadow: #0f172a14,
+            shadow_lg: #0f172a24,
+            danger: #e81123,
+            danger_hover: #c82333,
+            success: #34c759,
+            warning: #e5a000,
+            warning_hover: #cc8f00,
+            on_accent: #ffffff,
+            on_danger: #ffffff,
+            highlight: #ffffff52,
+            recording_glow: #e74c3c66,
+            scrollbar_track: #dfe7ef,
+            scrollbar_thumb: #a9b7c9,
+            titlebar_bg: #f4f7fa,
+            titlebar_text: #1e293b,
+        }
+    }
+
+    // ── Warm Taupe ─────────────────────────────────────────────────────
+    pure function warm-taupe-theme() -> ThemeColors {
+        {
+            bg_primary: #f7f5f3,
+            bg_secondary: #ebe5df,
+            bg_tertiary: #ddd5cb,
+            text_primary: #231c16,
+            text_secondary: #635850,
+            text_muted: #9e9188,
+            accent: #9333ea,
+            accent_hover: #7e22ce,
+            accent_glow: #9333ea33,
+            border: #cec4b8,
+            border_light: #dfd7cc,
+            shadow: #231c1614,
+            shadow_lg: #231c1624,
+            danger: #e81123,
+            danger_hover: #c82333,
+            success: #34c759,
+            warning: #e5a000,
+            warning_hover: #cc8f00,
+            on_accent: #ffffff,
+            on_danger: #ffffff,
+            highlight: #ffffff52,
+            recording_glow: #e74c3c66,
+            scrollbar_track: #ebe5df,
+            scrollbar_thumb: #bdb3a7,
+            titlebar_bg: #f9f7f5,
+            titlebar_text: #342b23,
+        }
+    }
+
+    // ── Soft Sage ──────────────────────────────────────────────────────
+    pure function soft-sage-theme() -> ThemeColors {
+        {
+            bg_primary: #f3f7f5,
+            bg_secondary: #e0ece5,
+            bg_tertiary: #cddfd5,
+            text_primary: #0f1f17,
+            text_secondary: #4a6358,
+            text_muted: #8da69a,
+            accent: #059669,
+            accent_hover: #047857,
+            accent_glow: #05966933,
+            border: #b8d1c5,
+            border_light: #cbdfd3,
+            shadow: #0f1f1714,
+            shadow_lg: #0f1f1724,
+            danger: #e81123,
+            danger_hover: #c82333,
+            success: #34c759,
+            warning: #e5a000,
+            warning_hover: #cc8f00,
+            on_accent: #ffffff,
+            on_danger: #ffffff,
+            highlight: #ffffff52,
+            recording_glow: #e74c3c66,
+            scrollbar_track: #e0ece5,
+            scrollbar_thumb: #a4bfb2,
+            titlebar_bg: #f6f9f7,
+            titlebar_text: #1a3028,
+        }
+    }
+
+    // ── Dark Charcoal ──────────────────────────────────────────────────
+    pure function dark-charcoal-theme() -> ThemeColors {
+        {
+            bg_primary: #18181b,
+            bg_secondary: #27272a,
+            bg_tertiary: #3f3f46,
+            text_primary: #fafafa,
+            text_secondary: #a1a1aa,
+            text_muted: #71717a,
+            accent: #a78bfa,
+            accent_hover: #c4b5fd,
+            accent_glow: #a78bfa47,
+            border: #3f3f46,
+            border_light: #52525b,
+            shadow: #0000006b,
+            shadow_lg: #00000099,
+            danger: #f87171,
+            danger_hover: #ff4d5e,
+            success: #4ade80,
+            warning: #f5b800,
+            warning_hover: #dba300,
+            on_accent: #0a0a0f,
+            on_danger: #0a0a0f,
+            highlight: #ffffff0d,
+            recording_glow: #f8717166,
+            scrollbar_track: #27272a,
+            scrollbar_thumb: #52525b,
+            titlebar_bg: #1a1a1e,
+            titlebar_text: #f0f0f2,
+        }
+    }
+
+    // ── Dark Blue ──────────────────────────────────────────────────────
+    pure function dark-blue-theme() -> ThemeColors {
+        {
+            bg_primary: #111827,
+            bg_secondary: #182132,
+            bg_tertiary: #23304a,
+            text_primary: #edf3ff,
+            text_secondary: #a4b1c7,
+            text_muted: #72809a,
+            accent: #60a5fa,
+            accent_hover: #93c5fd,
+            accent_glow: #60a5fa47,
+            border: #2b3a57,
+            border_light: #364867,
+            shadow: #0206176b,
+            shadow_lg: #02061799,
+            danger: #f87171,
+            danger_hover: #ff4d5e,
+            success: #4ade80,
+            warning: #f5b800,
+            warning_hover: #dba300,
+            on_accent: #0a1628,
+            on_danger: #0a1628,
+            highlight: #ffffff0d,
+            recording_glow: #f8717166,
+            scrollbar_track: #182132,
+            scrollbar_thumb: #3d516f,
+            titlebar_bg: #152033,
+            titlebar_text: #e5edfb,
+        }
+    }
+
+    // ── Dark Purple ────────────────────────────────────────────────────
+    pure function dark-purple-theme() -> ThemeColors {
+        {
+            bg_primary: #1a1025,
+            bg_secondary: #261638,
+            bg_tertiary: #36244f,
+            text_primary: #f0e8ff,
+            text_secondary: #b8a4d4,
+            text_muted: #7f6b9e,
+            accent: #c084fc,
+            accent_hover: #d8b4fe,
+            accent_glow: #c084fc47,
+            border: #3d2a5c,
+            border_light: #4f3873,
+            shadow: #0a04146b,
+            shadow_lg: #0a041499,
+            danger: #fb7185,
+            danger_hover: #ff4d6a,
+            success: #4ade80,
+            warning: #f5b800,
+            warning_hover: #dba300,
+            on_accent: #110a1e,
+            on_danger: #110a1e,
+            highlight: #ffffff0d,
+            recording_glow: #fb718566,
+            scrollbar_track: #261638,
+            scrollbar_thumb: #4f3873,
+            titlebar_bg: #1c1228,
+            titlebar_text: #e8dff8,
+        }
+    }
+
+    // ── Dark Forest ───────────────────────────────────────────────────
+    pure function dark-forest-theme() -> ThemeColors {
+        {
+            bg_primary: #0f1a14,
+            bg_secondary: #162b1e,
+            bg_tertiary: #213d2c,
+            text_primary: #e8f5ee,
+            text_secondary: #9dbfab,
+            text_muted: #6a917a,
+            accent: #4ade80,
+            accent_hover: #86efac,
+            accent_glow: #4ade8047,
+            border: #2a4a36,
+            border_light: #385e47,
+            shadow: #040c086b,
+            shadow_lg: #040c0899,
+            danger: #fb7185,
+            danger_hover: #ff4d6a,
+            success: #4ade80,
+            warning: #f5b800,
+            warning_hover: #dba300,
+            on_accent: #0a1810,
+            on_danger: #0a1810,
+            highlight: #ffffff0d,
+            recording_glow: #fb718566,
+            scrollbar_track: #162b1e,
+            scrollbar_thumb: #385e47,
+            titlebar_bg: #111d16,
+            titlebar_text: #dff0e6,
+        }
+    }
+
+    // ── Dark Burgundy ──────────────────────────────────────────────────
+    pure function dark-burgundy-theme() -> ThemeColors {
+        {
+            bg_primary: #1c0f14,
+            bg_secondary: #2d1520,
+            bg_tertiary: #441e30,
+            text_primary: #fce8ef,
+            text_secondary: #d4a0b4,
+            text_muted: #9e6b82,
+            accent: #fb7185,
+            accent_hover: #fda4af,
+            accent_glow: #fb718547,
+            border: #5a2840,
+            border_light: #6e3450,
+            shadow: #0e04086b,
+            shadow_lg: #0e040899,
+            danger: #f87171,
+            danger_hover: #ff4d5e,
+            success: #4ade80,
+            warning: #f5b800,
+            warning_hover: #dba300,
+            on_accent: #1a0c12,
+            on_danger: #1a0c12,
+            highlight: #ffffff0d,
+            recording_glow: #f8717166,
+            scrollbar_track: #2d1520,
+            scrollbar_thumb: #6e3450,
+            titlebar_bg: #1e1116,
+            titlebar_text: #f8e0ea,
+        }
+    }
+
+    // ── Obsidian ──────────────────────────────────────────────────────
+    pure function obsidian-theme() -> ThemeColors {
+        {
+            bg_primary: #0a0a0a,
+            bg_secondary: #141414,
+            bg_tertiary: #1f1f1f,
+            text_primary: #e8e8e8,
+            text_secondary: #a0a0a0,
+            text_muted: #6a6a6a,
+            accent: #94a3b8,
+            accent_hover: #b0bfcf,
+            accent_glow: #94a3b838,
+            border: #2a2a2a,
+            border_light: #363636,
+            shadow: #00000085,
+            shadow_lg: #000000b8,
+            danger: #f87171,
+            danger_hover: #ff4d5e,
+            success: #4ade80,
+            warning: #f5b800,
+            warning_hover: #dba300,
+            on_accent: #0a0a0a,
+            on_danger: #0a0a0a,
+            highlight: #ffffff0a,
+            recording_glow: #f8717159,
+            scrollbar_track: #141414,
+            scrollbar_thumb: #363636,
+            titlebar_bg: #0c0c0c,
+            titlebar_text: #d8d8d8,
+        }
+    }
+
+    // ── Theme lookup by name ──────────────────────────────────────────
+    pure function get-theme(name: string) -> ThemeColors {
+        if name == "white" { return white-theme(); }
+        if name == "warm_gray" { return warm-gray-theme(); }
+        if name == "soft_beige" { return soft-beige-theme(); }
+        if name == "blue_gray" { return blue-gray-theme(); }
+        if name == "warm_taupe" { return warm-taupe-theme(); }
+        if name == "soft_sage" { return soft-sage-theme(); }
+        if name == "dark_charcoal" { return dark-charcoal-theme(); }
+        if name == "dark_blue" { return dark-blue-theme(); }
+        if name == "dark_purple" { return dark-purple-theme(); }
+        if name == "dark_forest" { return dark-forest-theme(); }
+        if name == "dark_burgundy" { return dark-burgundy-theme(); }
+        if name == "obsidian" { return obsidian-theme(); }
+        return white-theme();
+    }
+}
+

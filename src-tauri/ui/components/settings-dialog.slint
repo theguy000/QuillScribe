@@ -1,0 +1,32 @@
+import { ThemeColors } from "../themes/theme-definitions.slint";
+
+export component SettingsDialog {
+    in property <ThemeColors> theme-colors;
+
+    Rectangle {
+        background: theme-colors.bg_primary;
+
+        VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+
+        Text {
+            text: "Settings";
+            color: theme-colors.text_primary;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        Rectangle {
+            height: 1px;
+            background: theme-colors.border;
+        }
+
+        Text {
+            text: "Settings panel will be implemented here.";
+            color: theme-colors.text_secondary;
+            font-size: 14px;
+        }
+    }
+    }
+}

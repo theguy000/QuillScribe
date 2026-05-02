@@ -7,6 +7,7 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     pub size: String,
@@ -129,6 +130,7 @@ impl WhisperManager {
         self.local_model_path = path.to_string();
     }
 
+    #[allow(dead_code)]
     pub fn set_local_language(&mut self, lang: &str) -> Result<()> {
         // Handle corrupted values like "en,English" by extracting the code before the comma.
         let lang = lang.split(',').next().unwrap_or(lang).trim();
@@ -341,11 +343,13 @@ impl WhisperManager {
     }
 
     /// Check whether the model file exists on disk.
+    #[allow(dead_code)]
     pub fn is_model_downloaded(model_name: &str) -> bool {
         Self::get_model_path(model_name).exists()
     }
 
     /// List all model names that have been downloaded (by scanning the models dir).
+    #[allow(dead_code)]
     pub fn get_downloaded_models() -> Vec<String> {
         let dir = Self::models_dir();
         if !dir.exists() {
@@ -373,6 +377,7 @@ impl WhisperManager {
     }
 
     /// Delete a downloaded model file.
+    #[allow(dead_code)]
     pub fn delete_model(model_name: &str) -> Result<()> {
         let path = Self::get_model_path(model_name);
         if path.exists() {
@@ -388,6 +393,7 @@ impl WhisperManager {
     /// `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{model}.bin`
     ///
     /// Returns the path to the downloaded file.
+    #[allow(dead_code)]
     pub async fn download_model(model_name: &str) -> Result<String> {
         let url = Self::model_download_url(model_name);
         let dest = Self::get_model_path(model_name);
@@ -428,6 +434,7 @@ impl WhisperManager {
     }
 
     /// Construct the Hugging Face download URL for a model.
+    #[allow(dead_code)]
     fn model_download_url(model_name: &str) -> String {
         format!(
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
@@ -526,6 +533,7 @@ impl WhisperManager {
         ]
     }
 
+    #[allow(dead_code)]
     pub fn get_model_info(model_name: &str) -> ModelInfo {
         match model_name {
             "tiny" | "tiny.en" => ModelInfo {

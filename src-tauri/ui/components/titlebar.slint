@@ -1,0 +1,24 @@
+import { ThemeColors } from "../themes/theme-definitions.slint";
+
+export component TitleBar {
+    in property <ThemeColors> theme-colors;
+
+    height: 36px;
+
+    Rectangle {
+        background: theme-colors.titlebar_bg;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            alignment: space-between;
+
+            Text {
+                text: "QuillScribe";
+                color: theme-colors.titlebar_text;
+                font-size: 13px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

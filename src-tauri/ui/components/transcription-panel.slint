@@ -1,0 +1,69 @@
+import { ThemeColors } from "../themes/theme-definitions.slint";
+
+export component TranscriptionPanel {
+    in property <ThemeColors> theme-colors;
+    in-out property <string> text;
+
+    callback copy(string);
+
+    min-width: 300px;
+    min-height: 200px;
+
+    Rectangle {
+        background: theme-colors.bg_secondary;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: theme-colors.border;
+
+        VerticalLayout {
+        padding: 16px;
+
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: "Transcription";
+                color: theme-colors.text_primary;
+                font-size: 14px;
+                font-weight: 600;
+            }
+
+            if text != "": Rectangle {
+                width: 32px;
+                height: 32px;
+                background: theme-colors.accent_glow;
+                border-radius: 6px;
+
+                Text {
+                    text: "C";
+                    color: theme-colors.accent;
+                    font-size: 12px;
+                }
+
+                TouchArea {
+                    clicked => { copy(text); }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: theme-colors.border_light;
+        }
+
+        if text == "": Text {
+            text: "Transcription will appear here after recording...";
+            color: theme-colors.text_muted;
+            font-size: 13px;
+            wrap: word-wrap;
+        }
+
+        if text != "": Text {
+            text: text;
+            color: theme-colors.text_primary;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+        }
+    }
+}

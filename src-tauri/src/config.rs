@@ -224,6 +224,7 @@ impl ConfigManager {
     }
 
     /// Persists the current in-memory settings to disk.
+    #[allow(dead_code)]
     pub fn save_settings(&self) -> Result<()> {
         let guard = self.settings.lock().unwrap();
         Self::write_settings_to_disk(&guard)
@@ -232,6 +233,7 @@ impl ConfigManager {
     // ── Validation ───────────────────────────────────────────────────────
 
     /// Returns `true` if `key` looks like a valid API key (OpenAI or Groq).
+    #[allow(dead_code)]
     pub fn validate_api_key(key: &str) -> bool {
         (key.starts_with("sk-") || key.starts_with("gsk_")) && key.len() > 20
     }
@@ -277,12 +279,14 @@ impl ConfigManager {
         self.settings.lock().unwrap().ui.custom_titlebar
     }
 
+    #[allow(dead_code)]
     pub fn set_always_on_top(&self, on_top: bool) {
         self.settings.lock().unwrap().ui.always_on_top = on_top;
     }
 
     // ── Shortcuts getters ────────────────────────────────────────────────
 
+    #[allow(dead_code)]
     pub fn get_record_toggle(&self) -> String {
         self.settings
             .lock()
@@ -306,6 +310,7 @@ impl ConfigManager {
     }
 
     /// Replaces all settings with the provided value.
+    #[allow(dead_code)]
     pub fn set_settings(&self, settings: Settings) {
         *self.settings.lock().unwrap() = settings;
     }

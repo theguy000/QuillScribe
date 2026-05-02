@@ -1,0 +1,83 @@
+import { ThemeColors } from "../themes/theme-definitions.slint";
+
+component SidebarButton {
+    in property <ThemeColors> theme-colors;
+    in property <string> text;
+    in property <bool> active;
+
+    callback clicked();
+
+    height: 36px;
+
+    Rectangle {
+        background: active ? theme-colors.accent_glow : transparent;
+        border-radius: 8px;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            alignment: start;
+
+            Text {
+                text: text;
+                color: active ? theme-colors.accent : theme-colors.text_secondary;
+                font-size: 14px;
+                vertical-alignment: center;
+            }
+        }
+
+        TouchArea {
+            clicked => { clicked(); }
+        }
+    }
+}
+
+export component Sidebar {
+    in property <ThemeColors> theme-colors;
+    in-out property <string> active-panel;
+    in property <bool> has-update;
+
+    callback navigate(string);
+
+    width: 180px;
+
+    Rectangle {
+        background: theme-colors.bg_secondary;
+
+        VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+
+        Text {
+            text: "QuillScribe";
+            color: theme-colors.text_primary;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        VerticalLayout {
+            spacing: 4px;
+
+            SidebarButton {
+                theme-colors: theme-colors;
+                text: "Record";
+                active: active-panel == "record";
+                clicked => { navigate("record"); }
+            }
+
+            SidebarButton {
+                theme-colors: theme-colors;
+                text: "History";
+                active: active-panel == "history";
+                clicked => { navigate("history"); }
+            }
+
+            SidebarButton {
+                theme-colors: theme-colors;
+                text: "Settings";
+                active: active-panel == "settings";
+                clicked => { navigate("settings"); }
+            }
+        }
+        }
+    }
+}

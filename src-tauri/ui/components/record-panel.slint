@@ -1,0 +1,101 @@
+import { ThemeColors } from "../themes/theme-definitions.slint";
+
+component Dot {
+    in property <ThemeColors> theme-colors;
+    in property <duration> delay;
+
+    width: 8px;
+    height: 8px;
+    opacity: 0.4;
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: 4px;
+        background: theme-colors.accent;
+        opacity: root.opacity;
+
+        Timer {
+            interval: 600ms;
+            running: true;
+            triggered => {
+                root.opacity = root.opacity < 0.5 ? 1.0 : 0.4;
+            }
+        }
+
+        animate opacity {
+            duration: 300ms;
+        }
+    }
+}
+
+export component RecordPanel {
+    in property <ThemeColors> theme-colors;
+    in-out property <bool> is-recording;
+    in-out property <bool> is-transcribing;
+    in-out property <string> status-message;
+    in-out property <float> audio-level;
+
+    callback toggle-recording();
+
+    min-width: 300px;
+    min-height: 200px;
+
+    Rectangle {
+        background: theme-colors.bg_secondary;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: theme-colors.border;
+
+        VerticalLayout {
+            padding: 24px;
+            spacing: 24px;
+            alignment: center;
+
+            // Mic button
+            Rectangle {
+                property <float> mic-scale: 1.0 + (audio-level * 0.15);
+
+                width: 128px * mic-scale;
+                height: 128px * mic-scale;
+                border-radius: 64px * mic-scale;
+                background: is-recording ? theme-colors.danger : theme-colors.accent;
+                border-width: 3px;
+                border-color: is-recording ? theme-colors.danger : theme-colors.accent;
+
+                animate mic-scale {
+                    duration: 100ms;
+                }
+
+                Text {
+                    text: is-recording ? "Stop" : "Record";
+                    color: theme-colors.on_accent;
+                    font-size: 16px;
+                    font-weight: 600;
+                }
+
+                TouchArea {
+                    clicked => { toggle-recording(); }
+                }
+            }
+
+            // Status
+            Text {
+                text: status-message;
+                color: theme-colors.text_secondary;
+                font-size: 14px;
+                horizontal-alignment: center;
+            }
+
+            // Transcribing dots
+            if is-transcribing: HorizontalLayout {
+                spacing: 6px;
+                alignment: center;
+
+                Dot { theme-colors: theme-colors; delay: 0ms; }
+                Dot { theme-colors: theme-colors; delay: 200ms; }
+                Dot { theme-colors: theme-colors; delay: 400ms; }
+            }
+        }
+    }
+}

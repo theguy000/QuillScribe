@@ -1,82 +1,60 @@
-use log::{debug, error, info, warn};
-use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use log::{debug, error, info};
 
-use crate::commands::AppState;
+static HOTKEY_MANAGER: std::sync::Mutex<Option<GlobalHotKeyManager>> = std::sync::Mutex::new(None);
 
-/// Register the global hotkey for record toggle based on config settings.
-/// This should be called during setup and whenever the shortcut changes.
-pub fn register_record_toggle(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let shortcut_str = {
-        let config = match state.config.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                error!("Failed to lock config for hotkey registration: {}", e);
-                return;
-            }
-        };
-        config.get_record_toggle()
+pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>) {
+    let manager = match GlobalHotKeyManager::new() {
+        Ok(m) => m,
+        Err(e) => {
+            error!("Failed to create global hotkey manager: {}", e);
+            return;
+        }
     };
 
-    if shortcut_str.is_empty() {
-        info!("No record toggle shortcut configured, skipping registration");
-        return;
-    }
-
-    // Unregister any existing shortcuts first
-    if let Err(e) = app.global_shortcut().unregister_all() {
-        warn!("Failed to unregister existing shortcuts: {}", e);
-    }
-
-    // Convert the shortcut string format if needed
-    // Python format: "Meta+Shift+`" -> Tauri format: "Super+Shift+`"
-    let tauri_shortcut = convert_shortcut_format(&shortcut_str);
-
-    let parsed: Shortcut = match tauri_shortcut.parse() {
-        Ok(s) => s,
+    // Default shortcut: Super+Shift+Space
+    let shortcut_str = "Super+Shift+Space";
+    let hotkey = match parse_shortcut(shortcut_str) {
+        Ok(h) => h,
         Err(e) => {
-            error!(
-                "Failed to parse shortcut '{}': {}. Falling back to default.",
-                tauri_shortcut, e
-            );
-            match "Super+Shift+Space".parse() {
-                Ok(s) => s,
-                Err(e2) => {
-                    error!("Failed to parse fallback shortcut: {}", e2);
-                    return;
+            error!("Failed to parse shortcut '{}': {}", shortcut_str, e);
+            return;
+        }
+    };
+
+    match manager.register(hotkey) {
+        Ok(_id) => {
+            info!("Registered global shortcut: {}", shortcut_str);
+            let weak = app_weak.clone();
+            std::thread::spawn(move || {
+                let receiver = GlobalHotKeyEvent::receiver();
+                loop {
+                    if let Ok(event) = receiver.try_recv() {
+                        if event.state == HotKeyState::Pressed {
+                            debug!("Global hotkey triggered: record toggle");
+                            if let Some(app) = weak.upgrade() {
+                                app.invoke_toggle_recording();
+                            }
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
-            }
-        }
-    };
-
-    match app
-        .global_shortcut()
-        .on_shortcut(parsed, move |app, _shortcut, event| {
-            if event.state != ShortcutState::Pressed {
-                return;
-            }
-            debug!("Global hotkey triggered: record toggle");
-            let _ = app.emit("hotkey-record-toggle", ());
-        }) {
-        Ok(_) => {
-            info!(
-                "Registered global shortcut: {} (tauri: {})",
-                shortcut_str, tauri_shortcut
-            );
+            });
         }
         Err(e) => {
-            error!(
-                "Failed to register global shortcut '{}': {}",
-                tauri_shortcut, e
-            );
+            error!("Failed to register global shortcut '{}': {}", shortcut_str, e);
         }
     }
+
+    let mut guard = HOTKEY_MANAGER.lock().unwrap();
+    *guard = Some(manager);
 }
 
-/// Convert Python-style shortcut format to Tauri-compatible format.
-/// Python uses "Meta" for the Windows key, Tauri uses "Super".
-/// Python uses "Ctrl", Tauri uses "Control" or "Ctrl" (both work).
+fn parse_shortcut(shortcut: &str) -> Result<global_hotkey::hotkey::HotKey, String> {
+    let converted = convert_shortcut_format(shortcut);
+    converted.parse().map_err(|e| format!("{}", e))
+}
+
 fn convert_shortcut_format(shortcut: &str) -> String {
     shortcut
         .replace("Meta+", "Super+")

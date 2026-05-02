@@ -8,17 +8,14 @@ url="https://github.com/theguy000/QuillScribe"
 license=('MIT')
 options=('!lto')
 depends=(
-  'webkit2gtk-4.1'
-  'gtk3'
   'hicolor-icon-theme'
   'libappindicator-gtk3'
   'alsa-lib'
+  'libgl'
 )
 makedepends=(
   'rust'
   'cargo'
-  'nodejs'
-  'npm'
   'cmake'
   'clang'
   'patchelf'
@@ -36,8 +33,7 @@ build() {
   export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=bfd"
 
-  npm install
-  npx tauri build --no-bundle
+  cargo build --release --manifest-path src-tauri/Cargo.toml
 }
 
 package() {
