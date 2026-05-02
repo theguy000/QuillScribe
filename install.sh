@@ -99,6 +99,49 @@ if [[ "$INSTALL_DIR" == "$HOME/.local/bin" ]]; then
   fi
 fi
 
+# ── Desktop entry (application menu) ────────────────────────────────────────
+
+DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/128x128/apps"
+
+mkdir -p "$DESKTOP_DIR" "$ICON_DIR"
+
+# Download icon from the repo
+ICON_URL="https://raw.githubusercontent.com/${REPO}/main/src-tauri/icons/128x128.png"
+ICON_PATH="${ICON_DIR}/quillscribe.png"
+
+if [[ ! -f "$ICON_PATH" ]]; then
+  info "Downloading desktop icon…"
+  if command_exists curl; then
+    curl -fsSL -o "$ICON_PATH" "$ICON_URL" 2>/dev/null || warn "Could not download icon; desktop entry will use a generic icon."
+  else
+    wget -q -O "$ICON_PATH" "$ICON_URL" 2>/dev/null || warn "Could not download icon; desktop entry will use a generic icon."
+  fi
+fi
+
+DESKTOP_FILE="${DESKTOP_DIR}/quillscribe.desktop"
+
+cat > "$DESKTOP_FILE" <<EOF
+[Desktop Entry]
+Type=Application
+Name=QuillScribe
+Comment=AI-powered voice dictation
+Exec=${DEST}
+Icon=quillscribe
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=dictation;voice;speech;transcription;AI;
+EOF
+
+chmod 644 "$DESKTOP_FILE"
+
+# Refresh the desktop database if possible
+if command_exists update-desktop-database; then
+  update-desktop-database -q "$DESKTOP_DIR" 2>/dev/null || true
+fi
+
+ok "Desktop entry created: ${DESKTOP_FILE}"
+
 # ── Done ────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -112,4 +155,6 @@ echo ""
 echo "To uninstall, simply delete:"
 echo "    ${DEST}"
 echo "    ${SYMLINK}"
+echo "    ${DESKTOP_FILE}"
+echo "    ${ICON_PATH}"
 echo ""
