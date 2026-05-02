@@ -39,45 +39,44 @@ curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.
 
 ## Tech Stack
 
-Svelte 5 · Tauri 2 · Rust · whisper.cpp · cpal
+Slint · Rust · whisper.cpp · cpal
 
 ## Development
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v22+
 - [Rust](https://www.rust-lang.org/tools/install) ≥ 1.77.2
-- [Tauri 2 system deps](https://v2.tauri.app/start/prerequisites/)
+- System deps: `libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libgl1-mesa-dev` (Linux)
+- CMake & Clang (for whisper.cpp build)
 
 ### Quick Start
 
 ```bash
-npm install
-npx tauri dev
+cargo run
 ```
 
 ### Build
 
 ```bash
-npx tauri build          # NSIS (Windows) · deb / AppImage (Linux)
+cargo build --release
 ```
 
 ### Lint
 
 ```bash
-cargo fmt --check --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+cargo fmt --check
+cargo clippy -- -D warnings
 ```
 
 ## Architecture
 
-Tauri two-process model — Svelte 5 frontend in a WebView, Rust backend for audio, transcription, and system integration. IPC via `invoke()` commands and Tauri events.
+Slint UI rendered via FemtoVG, Rust backend for audio, transcription, and system integration. Direct Rust callbacks (no IPC layer).
 
 | Module | Role |
 |---|---|
 | `audio.rs` | Microphone capture, device enumeration |
 | `whisper.rs` | Model management, transcription |
-| `commands.rs` | IPC command handlers |
+| `commands.rs` | Command handlers |
 | `config.rs` | Settings persistence |
 | `output.rs` | Clipboard & auto-type |
 | `tray.rs` | System tray |

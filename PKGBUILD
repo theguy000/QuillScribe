@@ -33,19 +33,19 @@ build() {
   export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=gcc
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=bfd"
 
-  cargo build --release --manifest-path src-tauri/Cargo.toml
+  cargo build --release
 }
 
 package() {
   cd "QuillScribe-$pkgver"
 
   # Binary
-  install -Dm755 "src-tauri/target/release/quillscribe" "$pkgdir/usr/bin/quillscribe"
+  install -Dm755 "target/release/quillscribe" "$pkgdir/usr/bin/quillscribe"
 
   # Icons
-  install -Dm644 "src-tauri/icons/32x32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/quillscribe.png"
-  install -Dm644 "src-tauri/icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/quillscribe.png"
-  install -Dm644 "src-tauri/icons/128x128@2x.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/quillscribe.png"
+  install -Dm644 "icons/32x32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/quillscribe.png"
+  install -Dm644 "icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/quillscribe.png"
+  install -Dm644 "icons/128x128@2x.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/quillscribe.png"
 
   # Desktop entry
   install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/quillscribe.desktop" <<EOF

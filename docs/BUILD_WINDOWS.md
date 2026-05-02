@@ -12,17 +12,9 @@ winget install Rustlang.Rustup
 
 Ensure the `stable-x86_64-pc-windows-msvc` target is installed (default on Windows).
 
-### 2. Node.js
+### 2. Visual Studio Build Tools
 
-Install Node.js 18+ (LTS recommended):
-
-```powershell
-winget install OpenJS.NodeJS.LTS
-```
-
-### 3. Visual Studio Build Tools
-
-Install Visual Studio Build Tools with the C++ workload. This provides the MSVC compiler required by both Tauri and whisper.cpp:
+Install Visual Studio Build Tools with the C++ workload. This provides the MSVC compiler required by whisper.cpp:
 
 ```powershell
 winget install Microsoft.VisualStudio.2022.BuildTools
@@ -30,7 +22,7 @@ winget install Microsoft.VisualStudio.2022.BuildTools
 
 During installation, select **"Desktop development with C++"**.
 
-### 4. LLVM / Clang
+### 3. LLVM / Clang
 
 Required by `bindgen` to generate Rust bindings for whisper.cpp:
 
@@ -44,7 +36,7 @@ Then set the environment variable permanently:
 [Environment]::SetEnvironmentVariable('LIBCLANG_PATH', 'C:\Program Files\LLVM\bin', 'User')
 ```
 
-### 5. CMake
+### 4. CMake
 
 CMake is required to compile whisper.cpp from source. If you have Visual Studio Build Tools installed, CMake is bundled at:
 
@@ -65,13 +57,9 @@ Alternatively, install CMake standalone and add it to PATH:
 winget install Kitware.CMake
 ```
 
-### 6. Tauri CLI
+### 5. Slint system dependencies
 
-```bash
-npm install
-```
-
-This installs all frontend dependencies including the Tauri CLI.
+No additional dependencies needed on Windows — Slint uses the system's Direct3D or Vulkan via wgpu.
 
 ## Environment Variables Summary
 
@@ -96,18 +84,18 @@ You can verify they are set correctly:
 ### Development
 
 ```bash
-npx tauri dev
+cargo run
 ```
 
-This starts the Vite dev server for the Svelte frontend and compiles/runs the Rust backend. The first build will take several minutes as it compiles whisper.cpp from source.
+The first build will take several minutes as it compiles whisper.cpp from source.
 
 ### Production
 
 ```bash
-npx tauri build
+cargo build --release
 ```
 
-This produces an installer in `src-tauri/target/release/bundle/`.
+This produces the binary at `target/release/quillscribe.exe`.
 
 ## Troubleshooting
 

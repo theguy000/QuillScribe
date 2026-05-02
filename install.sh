@@ -107,7 +107,7 @@ ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/128x128/apps"
 mkdir -p "$DESKTOP_DIR" "$ICON_DIR"
 
 # Download icon from the repo
-ICON_URL="https://raw.githubusercontent.com/${REPO}/main/src-tauri/icons/128x128.png"
+ICON_URL="https://raw.githubusercontent.com/${REPO}/main/icons/128x128.png"
 ICON_PATH="${ICON_DIR}/quillscribe.png"
 
 if [[ ! -f "$ICON_PATH" ]]; then
