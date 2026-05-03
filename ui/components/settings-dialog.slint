@@ -1,10 +1,18 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
+import { AudioTab } from "settings/audio-tab.slint";
+import { WhisperTab } from "settings/whisper-tab.slint";
+import { UiTab } from "settings/ui-tab.slint";
+import { OutputTab } from "settings/output-tab.slint";
+import { KeyboardTab } from "settings/keyboard-tab.slint";
+import { AboutTab } from "settings/about-tab.slint";
 
 component TabButton inherits Rectangle {
     in property <string> tab-id;
     in property <string> label;
     in property <ThemeColors> theme-colors;
     in-out property <string> active-tab;
+
+    horizontal-stretch: 0;
 
     clickable := TouchArea {
         width: 100%;
@@ -19,7 +27,7 @@ component TabButton inherits Rectangle {
             padding-left: 14px;
             padding-right: 14px;
             padding-top: 10px;
-            padding-bottom: 8px;
+            padding-bottom: 10px;
 
             Text {
                 text: label;
@@ -38,111 +46,297 @@ component TabButton inherits Rectangle {
 }
 
 
-component TabContentPlaceholder inherits VerticalLayout {
-    in property <string> message;
-    in property <ThemeColors> theme-colors;
-
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 16px;
-    padding-bottom: 16px;
-    spacing: 14px;
-
-    Text {
-        text: message;
-        color: theme-colors.text_secondary;
-        font-size: 13px;
-    }
-}
-
-export component SettingsDialog {
+export component SettingsDialog inherits Rectangle {
     in property <ThemeColors> theme-colors;
     in-out property <string> active-tab: "audio";
 
-    Rectangle {
-        background: theme-colors.bg_primary;
-        border-radius: 22px;
-        border-width: 1px;
-        border-color: theme-colors.border_light;
-        clip: true;
+    // Audio tab properties
+    in-out property <string> audio-device-id;
+    in-out property <bool> sounds-enabled: true;
+    in property <[string]> audio-devices: ["Default"];
+    in property <bool> loading-devices: false;
 
-        VerticalLayout {
-            spacing: 0px;
+    // Whisper tab properties
+    in-out property <string> whisper-mode: "api";
+    in-out property <string> api-provider: "openai";
+    in-out property <string> api-key;
+    in-out property <string> groq-api-key;
+    in-out property <string> api-model: "gpt-4o-transcribe";
+    in-out property <string> api-language: "en";
+    in-out property <bool> show-api-key: false;
+    in-out property <string> local-model: "base";
+    in-out property <string> local-model-category: "General";
+    in-out property <bool> model-downloaded: false;
+    in-out property <bool> downloading-model: false;
+    in-out property <bool> deleting-model: false;
+    in-out property <string> download-error;
+    in property <string> model-size;
+    in property <string> model-memory;
+    in property <string> model-speed;
+    in property <string> model-quality;
+    in property <[string]> api-providers: ["OpenAI", "Groq"];
+    in property <[string]> api-models: ["gpt-4o-transcribe", "whisper-1"];
+    in property <[string]> local-model-categories: ["General", "Tiny", "Base", "Small", "Medium", "Large"];
+    in property <[string]> local-models: ["tiny", "base", "small", "medium", "large"];
+    in property <[string]> languages: ["Auto-detect", "English", "Spanish", "French", "German", "Japanese", "Chinese"];
 
-            // Header
+    // UI tab properties
+    in-out property <string> theme: "white";
+    in-out property <bool> custom-titlebar: true;
+    in-out property <bool> always-on-top: false;
+    in-out property <string> overlay-mode: "minimal";
+    in-out property <string> overlay-style: "default";
+    in-out property <float> overlay-opacity: 0.85;
+    in-out property <int> max-history-entries: 100;
+    in property <[string]> themes: ["White", "Warm Gray", "Soft Beige", "Blue Gray", "Warm Taupe", "Soft Sage", "Dark Charcoal", "Dark Blue", "Dark Purple", "Dark Forest", "Dark Burgundy", "Obsidian"];
+    in property <[string]> overlay-modes: ["Minimal (bars only)", "Full (bars, timer, stop button)"];
+    in property <[string]> overlay-styles: ["Default", "Glass", "Neon", "Pill"];
+
+    // Output tab properties
+    in-out property <int> output-mode: 2;
+    in-out property <bool> show-paste-tool-warning: false;
+    in-out property <string> paste-tool-hint;
+
+    // Keyboard tab properties
+    in-out property <string> record-toggle-shortcut: "Meta+Shift+`";
+    in-out property <bool> recording-shortcut: false;
+
+    // About tab properties
+    in property <string> app-version;
+    in-out property <bool> has-update: false;
+    in-out property <string> update-version;
+    in-out property <string> update-notes;
+    in-out property <bool> update-checking: false;
+    in-out property <bool> update-downloading: false;
+    in-out property <float> update-progress: 0;
+    in-out property <bool> is-linux: false;
+
+    // Callbacks
+    callback refresh-audio-devices();
+    callback start-mic-test();
+    callback stop-mic-test();
+    callback audio-device-changed(string);
+    callback mode-changed(string);
+    callback provider-changed(string);
+    callback api-key-changed(string);
+    callback api-model-changed(string);
+    callback language-changed(string);
+    callback local-model-changed(string);
+    callback category-changed(string);
+    callback download-model();
+    callback delete-model();
+    callback toggle-api-key-visibility();
+    callback theme-changed(string);
+    callback overlay-mode-changed(string);
+    callback overlay-style-changed(string);
+    callback output-mode-changed(int);
+    callback start-recording-shortcut();
+    callback stop-recording-shortcut();
+    callback check-for-update();
+    callback install-update();
+
+    background: theme-colors.bg_primary;
+    border-radius: 22px;
+    border-width: 1px;
+    border-color: theme-colors.border_light;
+    clip: true;
+
+    VerticalLayout {
+        width: 100%;
+        height: 100%;
+        spacing: 0px;
+
+        // Header
+        Rectangle {
+            vertical-stretch: 0;
+            background: theme-colors.bg_primary;
+
+            HorizontalLayout {
+                padding-left: 26px;
+                padding-right: 26px;
+                padding-top: 24px;
+                padding-bottom: 18px;
+
+                Text {
+                    text: "Settings";
+                    color: theme-colors.text_primary;
+                    font-size: 22px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
             Rectangle {
-                background: theme-colors.bg_primary;
+                height: 1px;
+                background: theme-colors.border_light;
+                y: parent.height - 1px;
+                width: parent.width;
+            }
+        }
 
-                HorizontalLayout {
-                    padding-left: 26px;
-                    padding-right: 26px;
-                    padding-top: 24px;
-                    padding-bottom: 18px;
+        // Tab bar
+        Rectangle {
+            vertical-stretch: 0;
+            background: theme-colors.bg_primary;
 
-                    Text {
-                        text: "Settings";
-                        color: theme-colors.text_primary;
-                        font-size: 22px;
-                        font-weight: 600;
-                        vertical-alignment: center;
+            HorizontalLayout {
+                padding-left: 26px;
+                padding-right: 26px;
+                spacing: 2px;
+
+                TabButton { tab-id: "audio"; label: "Audio"; active-tab <=> active-tab; theme-colors: theme-colors; }
+                TabButton { tab-id: "whisper"; label: "Engine"; active-tab <=> active-tab; theme-colors: theme-colors; }
+                TabButton { tab-id: "ui"; label: "UI"; active-tab <=> active-tab; theme-colors: theme-colors; }
+                TabButton { tab-id: "output"; label: "Output"; active-tab <=> active-tab; theme-colors: theme-colors; }
+                TabButton { tab-id: "keyboard"; label: "Keyboard"; active-tab <=> active-tab; theme-colors: theme-colors; }
+                TabButton { tab-id: "about"; label: "About"; active-tab <=> active-tab; theme-colors: theme-colors; }
+
+                Rectangle {}
+            }
+
+            Rectangle {
+                height: 1px;
+                background: theme-colors.border_light;
+                y: parent.height - 1px;
+                width: parent.width;
+            }
+        }
+
+        // Tab content
+        Rectangle {
+            background: theme-colors.bg_primary;
+            clip: true;
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                width: 100%;
+                height: 100%;
+                padding-left: 26px;
+                padding-right: 26px;
+                padding-top: 16px;
+                padding-bottom: 16px;
+
+                Rectangle {
+                    background: theme-colors.bg_secondary;
+                    border-radius: 12px;
+                    clip: true;
+                    vertical-stretch: 1;
+
+                    flick := Flickable {
+                        width: 100%;
+                        height: 100%;
+                        viewport-height: content.preferred-height;
+                        viewport-width: flick.width;
+
+                        content := VerticalLayout {
+                            width: 100%;
+                            padding: 16px;
+
+                            if active-tab == "audio": AudioTab {
+                                theme-colors: theme-colors;
+                                audio-device-id: audio-device-id;
+                                sounds-enabled: sounds-enabled;
+                                audio-devices: audio-devices;
+                                loading-devices: loading-devices;
+                                refresh-audio-devices => { refresh-audio-devices(); }
+                                start-mic-test => { start-mic-test(); }
+                                stop-mic-test => { stop-mic-test(); }
+                                audio-device-changed(val) => { audio-device-changed(val); }
+                            }
+
+                            if active-tab == "whisper": WhisperTab {
+                                theme-colors: theme-colors;
+                                whisper-mode: whisper-mode;
+                                api-provider: api-provider;
+                                api-key: api-key;
+                                groq-api-key: groq-api-key;
+                                api-model: api-model;
+                                api-language: api-language;
+                                show-api-key: show-api-key;
+                                local-model: local-model;
+                                local-model-category: local-model-category;
+                                model-downloaded: model-downloaded;
+                                downloading-model: downloading-model;
+                                deleting-model: deleting-model;
+                                download-error: download-error;
+                                model-size: model-size;
+                                model-memory: model-memory;
+                                model-speed: model-speed;
+                                model-quality: model-quality;
+                                api-providers: api-providers;
+                                api-models: api-models;
+                                local-model-categories: local-model-categories;
+                                local-models: local-models;
+                                languages: languages;
+                                mode-changed(val) => { mode-changed(val); }
+                                provider-changed(val) => { provider-changed(val); }
+                                api-key-changed(val) => { api-key-changed(val); }
+                                api-model-changed(val) => { api-model-changed(val); }
+                                language-changed(val) => { language-changed(val); }
+                                local-model-changed(val) => { local-model-changed(val); }
+                                category-changed(val) => { category-changed(val); }
+                                download-model => { download-model(); }
+                                delete-model => { delete-model(); }
+                                toggle-api-key-visibility => { toggle-api-key-visibility(); }
+                            }
+
+                            if active-tab == "ui": UiTab {
+                                theme-colors: theme-colors;
+                                theme: theme;
+                                custom-titlebar: custom-titlebar;
+                                always-on-top: always-on-top;
+                                overlay-mode: overlay-mode;
+                                overlay-style: overlay-style;
+                                overlay-opacity: overlay-opacity;
+                                max-history-entries: max-history-entries;
+                                themes: themes;
+                                overlay-modes: overlay-modes;
+                                overlay-styles: overlay-styles;
+                                theme-changed(val) => { theme-changed(val); }
+                                overlay-mode-changed(val) => { overlay-mode-changed(val); }
+                                overlay-style-changed(val) => { overlay-style-changed(val); }
+                            }
+
+                            if active-tab == "output": OutputTab {
+                                theme-colors: theme-colors;
+                                output-mode: output-mode;
+                                show-paste-tool-warning: show-paste-tool-warning;
+                                paste-tool-hint: paste-tool-hint;
+                                output-mode-changed(val) => { output-mode-changed(val); }
+                            }
+
+                            if active-tab == "keyboard": KeyboardTab {
+                                theme-colors: theme-colors;
+                                record-toggle-shortcut: record-toggle-shortcut;
+                                recording-shortcut: recording-shortcut;
+                                start-recording-shortcut => { start-recording-shortcut(); }
+                                stop-recording-shortcut => { stop-recording-shortcut(); }
+                            }
+
+                            if active-tab == "about": AboutTab {
+                                theme-colors: theme-colors;
+                                app-version: app-version;
+                                has-update: has-update;
+                                update-version: update-version;
+                                update-notes: update-notes;
+                                update-checking: update-checking;
+                                update-downloading: update-downloading;
+                                update-progress: update-progress;
+                                is-linux: is-linux;
+                                check-for-update => { check-for-update(); }
+                                install-update => { install-update(); }
+                            }
+                        }
                     }
-                }
 
-                Rectangle {
-                    height: 1px;
-                    background: theme-colors.border_light;
-                    y: parent.height - 1px;
-                    width: parent.width;
-                }
-            }
-
-            // Tab bar
-            Rectangle {
-                background: theme-colors.bg_primary;
-
-                HorizontalLayout {
-                    padding-left: 26px;
-                    padding-right: 26px;
-                    spacing: 2px;
-
-                    TabButton { tab-id: "audio"; label: "Audio"; active-tab: active-tab; theme-colors: theme-colors; }
-                    TabButton { tab-id: "whisper"; label: "Engine"; active-tab: active-tab; theme-colors: theme-colors; }
-                    TabButton { tab-id: "ui"; label: "UI"; active-tab: active-tab; theme-colors: theme-colors; }
-                    TabButton { tab-id: "output"; label: "Output"; active-tab: active-tab; theme-colors: theme-colors; }
-                    TabButton { tab-id: "keyboard"; label: "Keyboard"; active-tab: active-tab; theme-colors: theme-colors; }
-                    TabButton { tab-id: "about"; label: "About"; active-tab: active-tab; theme-colors: theme-colors; }
-                }
-
-                Rectangle {
-                    height: 1px;
-                    background: theme-colors.border_light;
-                    y: parent.height - 1px;
-                    width: parent.width;
-                }
-            }
-
-            // Tab content
-            Rectangle {
-                background: theme-colors.bg_primary;
-                clip: true;
-
-                VerticalLayout {
-                    padding-left: 26px;
-                    padding-right: 26px;
-                    padding-top: 16px;
-                    padding-bottom: 16px;
-
-                    Rectangle {
-                        background: theme-colors.bg_secondary;
-                        border-radius: 12px;
-                        clip: true;
-
-                        if active-tab == "audio": TabContentPlaceholder { message: "Audio settings will be implemented here."; theme-colors: theme-colors; }
-                        if active-tab == "whisper": TabContentPlaceholder { message: "Engine settings will be implemented here."; theme-colors: theme-colors; }
-                        if active-tab == "ui": TabContentPlaceholder { message: "UI settings will be implemented here."; theme-colors: theme-colors; }
-                        if active-tab == "output": TabContentPlaceholder { message: "Output settings will be implemented here."; theme-colors: theme-colors; }
-                        if active-tab == "keyboard": TabContentPlaceholder { message: "Keyboard settings will be implemented here."; theme-colors: theme-colors; }
-                        if active-tab == "about": TabContentPlaceholder { message: "About information will be implemented here."; theme-colors: theme-colors; }
+                    // Custom Scrollbar
+                    if flick.viewport-height > flick.height: Rectangle {
+                        width: 5px;
+                        height: flick.height * (flick.height / flick.viewport-height);
+                        y: (-flick.viewport-y) * (flick.height / flick.viewport-height);
+                        x: parent.width - 8px;
+                        background: theme-colors.scrollbar_thumb;
+                        border-radius: 3px;
                     }
                 }
             }

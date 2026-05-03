@@ -1,0 +1,70 @@
+import { ThemeColors } from "../../themes/theme-definitions.slint";
+import { SettingsField, SettingsHint, SettingsButton } from "shared.slint";
+
+export component KeyboardTab inherits VerticalLayout {
+    in property <ThemeColors> theme-colors;
+    in-out property <string> record-toggle-shortcut;
+    in-out property <bool> recording-shortcut;
+
+    callback start-recording-shortcut();
+    callback stop-recording-shortcut();
+
+    spacing: 16px;
+
+    // Record Toggle Shortcut
+    SettingsField {
+        label: "Record Toggle Shortcut";
+        theme-colors: theme-colors;
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            // Shortcut display / recording input
+            Rectangle {
+                width: 180px;
+                height: 32px;
+                border-radius: 6px;
+                background: recording-shortcut ? theme-colors.accent_glow : theme-colors.bg_tertiary;
+                border-width: 1px;
+                border-color: recording-shortcut ? theme-colors.accent : theme-colors.border_light;
+
+                Text {
+                    text: recording-shortcut ? "Press a key combination..." : record-toggle-shortcut;
+                    color: recording-shortcut ? theme-colors.accent : theme-colors.text_primary;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    x: 10px;
+                }
+
+                TouchArea {
+                    clicked => {
+                        if !recording-shortcut {
+                            start-recording-shortcut();
+                        }
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+
+            if recording-shortcut: SettingsButton {
+                theme-colors: theme-colors;
+                label: "Cancel";
+                width: 70px;
+                clicked => { stop-recording-shortcut(); }
+            }
+
+            if !recording-shortcut: SettingsButton {
+                theme-colors: theme-colors;
+                label: "Record";
+                primary: true;
+                width: 70px;
+                clicked => { start-recording-shortcut(); }
+            }
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Click Record, then press the key combination you want to use. At least one modifier key (Ctrl, Alt, Shift, Meta) is required.";
+    }
+}

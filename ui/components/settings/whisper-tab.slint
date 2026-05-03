@@ -1,0 +1,281 @@
+import { ThemeColors } from "../../themes/theme-definitions.slint";
+import { SettingsField, SettingsHint, SettingsSelect, SettingsInput, SettingsRadioOption, SettingsButton } from "shared.slint";
+
+export component WhisperTab inherits VerticalLayout {
+    in property <ThemeColors> theme-colors;
+
+    // Whisper mode
+    in-out property <string> whisper-mode; // "api" or "local"
+
+    // API settings
+    in-out property <string> api-provider;
+    in-out property <string> api-key;
+    in-out property <string> groq-api-key;
+    in-out property <string> api-model;
+    in-out property <string> api-language;
+    in-out property <bool> show-api-key;
+
+    // Local model settings
+    in-out property <string> local-model;
+    in-out property <string> local-model-category;
+    in-out property <bool> model-downloaded;
+    in-out property <bool> downloading-model;
+    in-out property <bool> deleting-model;
+    in-out property <string> download-error;
+
+    // Model info
+    in property <string> model-size;
+    in property <string> model-memory;
+    in property <string> model-speed;
+    in property <string> model-quality;
+
+    // Options
+    in property <[string]> api-providers;
+    in property <[string]> api-models;
+    in property <[string]> local-model-categories;
+    in property <[string]> local-models;
+    in property <[string]> languages;
+
+    callback mode-changed(string);
+    callback provider-changed(string);
+    callback api-key-changed(string);
+    callback api-model-changed(string);
+    callback language-changed(string);
+    callback local-model-changed(string);
+    callback category-changed(string);
+    callback download-model();
+    callback delete-model();
+    callback toggle-api-key-visibility();
+
+    spacing: 16px;
+
+    // Mode selection
+    SettingsField {
+        label: "Mode";
+        theme-colors: theme-colors;
+
+        VerticalLayout {
+            spacing: 4px;
+
+            SettingsRadioOption {
+                theme-colors: theme-colors;
+                label: "Online";
+                description: "Use OpenAI or Groq cloud API for transcription";
+                selected: whisper-mode == "api";
+                selected-changed => { mode-changed("api"); }
+            }
+
+            SettingsRadioOption {
+                theme-colors: theme-colors;
+                label: "Offline";
+                description: "Use a local Whisper model for transcription";
+                selected: whisper-mode == "local";
+                selected-changed => { mode-changed("local"); }
+            }
+        }
+    }
+
+    // ── API (Online) settings ──────────────────────────────────────
+    if whisper-mode == "api": VerticalLayout {
+        spacing: 16px;
+
+        // Provider
+        SettingsField {
+            label: "Provider";
+            theme-colors: theme-colors;
+
+            SettingsSelect {
+                theme-colors: theme-colors;
+                options: api-providers;
+                current-value <=> api-provider;
+                value-changed(val) => { provider-changed(val); }
+            }
+        }
+
+        // API Key
+        SettingsField {
+            label: "API Key";
+            theme-colors: theme-colors;
+
+            HorizontalLayout {
+                spacing: 6px;
+
+                SettingsInput {
+                    theme-colors: theme-colors;
+                    input-type: show-api-key ? InputType.text : InputType.password;
+                    text <=> api-key;
+                    placeholder-text: api-provider == "groq" ? "gsk_..." : "sk-...";
+                    horizontal-stretch: 1;
+                }
+
+                // Toggle visibility
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 6px;
+                    background: touch.has-hover ? theme-colors.bg_tertiary : transparent;
+
+                    Text {
+                        text: show-api-key ? "🙈" : "👁";
+                        color: theme-colors.text_secondary;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    touch := TouchArea {
+                        clicked => { toggle-api-key-visibility(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+
+        SettingsHint {
+            theme-colors: theme-colors;
+            text: api-provider == "groq"
+                ? "Get your API key at console.groq.com/keys"
+                : "Get your API key at platform.openai.com/api-keys";
+        }
+
+        // API Model
+        SettingsField {
+            label: "API Model";
+            theme-colors: theme-colors;
+
+            SettingsSelect {
+                theme-colors: theme-colors;
+                options: api-models;
+                current-value <=> api-model;
+                value-changed(val) => { api-model-changed(val); }
+            }
+        }
+
+    }
+
+    // ── Local (Offline) settings ───────────────────────────────────
+    if whisper-mode == "local": VerticalLayout {
+        spacing: 16px;
+
+        // Category
+        SettingsField {
+            label: "Category";
+            theme-colors: theme-colors;
+
+            SettingsSelect {
+                theme-colors: theme-colors;
+                options: local-model-categories;
+                current-value <=> local-model-category;
+                value-changed(val) => { category-changed(val); }
+            }
+        }
+
+        // Model
+        SettingsField {
+            label: "Model";
+            theme-colors: theme-colors;
+
+            SettingsSelect {
+                theme-colors: theme-colors;
+                options: local-models;
+                current-value <=> local-model;
+                value-changed(val) => { local-model-changed(val); }
+            }
+        }
+
+        // Model status
+        SettingsField {
+            label: "Status";
+            theme-colors: theme-colors;
+
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                // Badge
+                Rectangle {
+                    height: 22px;
+                    border-radius: 5px;
+                    background: model-downloaded ? theme-colors.success : theme-colors.warning;
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+
+                        Text {
+                            text: model-downloaded ? "Downloaded" : "Not Downloaded";
+                            color: theme-colors.on_accent;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if model-downloaded: SettingsButton {
+                    theme-colors: theme-colors;
+                    label: deleting-model ? "Deleting..." : "Delete Model";
+                    danger: true;
+                    disabled: deleting-model;
+                    width: 110px;
+                    clicked => { delete-model(); }
+                }
+
+                if !model-downloaded: SettingsButton {
+                    theme-colors: theme-colors;
+                    label: downloading-model ? "Downloading..." : "Download Model";
+                    primary: true;
+                    disabled: downloading-model;
+                    width: 120px;
+                    clicked => { download-model(); }
+                }
+            }
+        }
+
+        if download-error != "": Text {
+            text: download-error;
+            color: theme-colors.danger;
+            font-size: 11px;
+        }
+
+        // Model info card
+        if model-size != "": Rectangle {
+            background: theme-colors.bg_tertiary;
+            border-radius: 8px;
+
+            VerticalLayout {
+                spacing: 6px;
+                padding: 12px;
+
+                Text {
+                    text: "Model Info";
+                    color: theme-colors.text_primary;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    Text { text: "Size: " + model-size; color: theme-colors.text_secondary; font-size: 11px; }
+                    Text { text: "Memory: " + model-memory; color: theme-colors.text_secondary; font-size: 11px; }
+                    Text { text: "Speed: " + model-speed; color: theme-colors.text_secondary; font-size: 11px; }
+                    Text { text: "Quality: " + model-quality; color: theme-colors.text_secondary; font-size: 11px; }
+                }
+            }
+        }
+    }
+
+    // Language (shared by both modes)
+    SettingsField {
+        label: "Language";
+        theme-colors: theme-colors;
+
+        SettingsSelect {
+            theme-colors: theme-colors;
+            options: languages;
+            current-value <=> api-language;
+            value-changed(val) => { language-changed(val); }
+        }
+    }
+}

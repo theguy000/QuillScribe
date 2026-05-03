@@ -1,0 +1,160 @@
+import { ThemeColors } from "../../themes/theme-definitions.slint";
+import { SettingsField, SettingsHint, SettingsSelect, SettingsCheckbox, SettingsSlider, StepButton } from "shared.slint";
+
+export component UiTab inherits VerticalLayout {
+    in property <ThemeColors> theme-colors;
+
+    in-out property <string> theme;
+    in-out property <bool> custom-titlebar;
+    in-out property <bool> always-on-top;
+    in-out property <string> overlay-mode;
+    in-out property <string> overlay-style;
+    in-out property <float> overlay-opacity;
+    in-out property <int> max-history-entries;
+
+    in property <[string]> themes;
+    in property <[string]> overlay-modes;
+    in property <[string]> overlay-styles;
+
+    callback theme-changed(string);
+    callback overlay-mode-changed(string);
+    callback overlay-style-changed(string);
+
+    spacing: 16px;
+
+    // Theme
+    SettingsField {
+        label: "Theme";
+        theme-colors: theme-colors;
+
+        SettingsSelect {
+            theme-colors: theme-colors;
+            options: themes;
+            current-value <=> theme;
+            value-changed(val) => { theme-changed(val); }
+        }
+    }
+
+    // Custom titlebar
+    SettingsCheckbox {
+        theme-colors: theme-colors;
+        label: "Custom titlebar";
+        checked <=> custom-titlebar;
+    }
+
+    // Always on top
+    SettingsCheckbox {
+        theme-colors: theme-colors;
+        label: "Always on top";
+        checked <=> always-on-top;
+    }
+
+    // Recording Overlay Style
+    SettingsField {
+        label: "Recording Overlay Style";
+        theme-colors: theme-colors;
+
+        SettingsSelect {
+            theme-colors: theme-colors;
+            options: overlay-modes;
+            current-value <=> overlay-mode;
+            value-changed(val) => { overlay-mode-changed(val); }
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Style of the floating overlay shown when recording and the app is unfocused.";
+    }
+
+    // Overlay Visual Style
+    SettingsField {
+        label: "Overlay Visual Style";
+        theme-colors: theme-colors;
+
+        SettingsSelect {
+            theme-colors: theme-colors;
+            options: overlay-styles;
+            current-value <=> overlay-style;
+            value-changed(val) => { overlay-style-changed(val); }
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Visual appearance of the recording overlay (background, border, shadows).";
+    }
+
+    // Overlay Opacity
+    SettingsField {
+        label: "Overlay Opacity — " + Math.round(overlay-opacity * 100) + "%";
+        theme-colors: theme-colors;
+
+        SettingsSlider {
+            theme-colors: theme-colors;
+            value <=> overlay-opacity;
+            minimum: 0.3;
+            maximum: 1.0;
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Controls the background transparency of the glass overlay. Lower values are more transparent.";
+    }
+
+    // Max Recent History
+    SettingsField {
+        label: "Maximum Recent History";
+        theme-colors: theme-colors;
+
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+
+            StepButton {
+                symbol: "−";
+                theme-colors: theme-colors;
+                clicked => {
+                    if max-history-entries > 1 {
+                        max-history-entries = max-history-entries - 10;
+                        if max-history-entries < 1 { max-history-entries = 1; }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 60px;
+                height: 28px;
+                border-radius: 6px;
+                background: theme-colors.bg_tertiary;
+                border-width: 1px;
+                border-color: theme-colors.border_light;
+
+                Text {
+                    text: max-history-entries;
+                    color: theme-colors.text_primary;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            StepButton {
+                symbol: "+";
+                theme-colors: theme-colors;
+                clicked => {
+                    if max-history-entries < 1000 {
+                        max-history-entries = max-history-entries + 10;
+                        if max-history-entries > 1000 { max-history-entries = 1000; }
+                    }
+                }
+            }
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Maximum number of transcription history entries to keep (1–1000).";
+    }
+}

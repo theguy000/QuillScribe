@@ -1,0 +1,99 @@
+import { ThemeColors } from "../../themes/theme-definitions.slint";
+import { SettingsField, SettingsHint, SettingsRadioOption } from "shared.slint";
+
+export component OutputTab inherits VerticalLayout {
+    in property <ThemeColors> theme-colors;
+    in-out property <int> output-mode; // 0=clipboard, 1=type, 2=copy+type, 3=display-only
+    in-out property <bool> show-paste-tool-warning;
+    in-out property <string> paste-tool-hint;
+
+    callback output-mode-changed(int);
+
+    spacing: 16px;
+
+    // Output Mode
+    SettingsField {
+        label: "Output Mode";
+        theme-colors: theme-colors;
+
+        VerticalLayout {
+            spacing: 4px;
+
+            SettingsRadioOption {
+                theme-colors: theme-colors;
+                label: "Copy to Clipboard";
+                description: "Copy transcription text to the clipboard";
+                selected: output-mode == 0;
+                selected-changed => { output-mode-changed(0); }
+            }
+
+            SettingsRadioOption {
+                theme-colors: theme-colors;
+                label: "Type to Active Window";
+                description: "Simulate typing into the currently focused window";
+                selected: output-mode == 1;
+                selected-changed => { output-mode-changed(1); }
+            }
+
+            SettingsRadioOption {
+                theme-colors: theme-colors;
+                label: "Copy & Type";
+                description: "Copy to clipboard and type to the active window";
+                selected: output-mode == 2;
+                selected-changed => { output-mode-changed(2); }
+            }
+
+            SettingsRadioOption {
+                theme-colors: theme-colors;
+                label: "Display Only";
+                description: "Show transcription in the app without copying or typing";
+                selected: output-mode == 3;
+                selected-changed => { output-mode-changed(3); }
+            }
+        }
+    }
+
+    // Paste tool warning (Linux)
+    if show-paste-tool-warning: Rectangle {
+        border-radius: 8px;
+        clip: true;
+
+        // Semi-transparent warning background
+        Rectangle {
+            background: theme-colors.warning;
+            opacity: 0.15;
+            width: 100%;
+            height: 100%;
+        }
+
+        VerticalLayout {
+            spacing: 6px;
+            padding: 12px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                Text {
+                    text: "⚠";
+                    color: theme-colors.warning;
+                    font-size: 14px;
+                }
+
+                Text {
+                    text: "Paste tool required for typing modes on Linux";
+                    color: theme-colors.warning;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+            }
+
+            Text {
+                text: paste-tool-hint;
+                color: theme-colors.warning;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

@@ -1,0 +1,382 @@
+import { ThemeColors } from "../../themes/theme-definitions.slint";
+
+// ── Reusable settings field components ──────────────────────────────────────
+
+export component SettingsField inherits VerticalLayout {
+    in property <ThemeColors> theme-colors;
+    in property <string> label;
+    spacing: 6px;
+
+    Text {
+        text: label;
+        color: theme-colors.text_primary;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    // Children go here (the actual input control)
+}
+
+export component SettingsHint inherits Text {
+    in property <ThemeColors> theme-colors;
+    color: theme-colors.text_muted;
+    font-size: 11px;
+    wrap: word-wrap;
+}
+
+export component SettingsSelect inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in-out property <string> current-value;
+    in property <[string]> options;
+    callback value-changed(string);
+
+    width: 100%;
+    height: 32px;
+
+    function pick-value() -> string {
+        if current-value != "" {
+            return current-value;
+        }
+        if options.length > 0 {
+            return options[0];
+        }
+        return "";
+    }
+
+    Rectangle {
+        width: 100%;
+        height: 32px;
+        border-radius: 6px;
+        background: theme-colors.bg_tertiary;
+        border-width: 1px;
+        border-color: theme-colors.border_light;
+
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            alignment: space-between;
+
+            Text {
+                text: root.pick-value();
+                color: theme-colors.text_primary;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+
+            // Dropdown arrow
+            Text {
+                text: "▾";
+                color: theme-colors.text_muted;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+
+        touch_main := TouchArea {
+            clicked => {
+                popup.show();
+            }
+            mouse-cursor: pointer;
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0px;
+        y: 34px;
+        width: root.width;
+        height: options.length * 30px;
+        close-policy: close-on-click;
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+            background: theme-colors.bg_secondary;
+            border-width: 1px;
+            border-color: theme-colors.border;
+            drop-shadow-blur: 8px;
+            drop-shadow-color: theme-colors.shadow_lg;
+            drop-shadow-offset-y: 4px;
+            clip: true;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 0px;
+
+                for option[idx] in options: Rectangle {
+                    width: 100%;
+                    height: 26px;
+                    border-radius: 4px;
+                    background: option == root.pick-value() ? theme-colors.accent_glow : (touch_option.has-hover ? theme-colors.bg_tertiary : transparent);
+
+                    Text {
+                        text: option;
+                        color: option == root.pick-value() ? theme-colors.accent : theme-colors.text_primary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        x: 10px;
+                    }
+
+                    touch_option := TouchArea {
+                        clicked => {
+                            current-value = option;
+                            value-changed(option);
+                        }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component SettingsCheckbox inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in property <string> label;
+    in-out property <bool> checked;
+    callback toggled();
+
+    height: 28px;
+    width: 100%;
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+
+        // Checkbox indicator
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: checked ? theme-colors.accent : theme-colors.border;
+            background: checked ? theme-colors.accent : transparent;
+            y: (parent.height - self.height) / 2;
+
+            Text {
+                text: "✓";
+                color: theme-colors.on_accent;
+                font-size: 12px;
+                visible: checked;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+
+        Text {
+            text: label;
+            color: theme-colors.text_primary;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            checked = !checked;
+            toggled();
+        }
+        mouse-cursor: pointer;
+    }
+}
+
+export component SettingsRadioOption inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in property <string> label;
+    in property <string> description;
+    in property <bool> selected;
+    callback selected-changed();
+
+    height: description != "" ? 44px : 28px;
+    width: 100%;
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+
+        // Radio indicator
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            border-width: 2px;
+            border-color: selected ? theme-colors.accent : theme-colors.border;
+            y: 4px;
+
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: theme-colors.accent;
+                visible: selected;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+
+        VerticalLayout {
+            spacing: 2px;
+
+            Text {
+                text: label;
+                color: selected ? theme-colors.text_primary : theme-colors.text_secondary;
+                font-size: 12px;
+                font-weight: selected ? 600 : 400;
+            }
+
+            if description != "": Text {
+                text: description;
+                color: theme-colors.text_muted;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => { selected-changed(); }
+        mouse-cursor: pointer;
+    }
+}
+
+export component SettingsButton inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> disabled: false;
+    callback clicked();
+
+    height: 30px;
+    width: 100%;
+    border-radius: 6px;
+
+    background: disabled ? theme-colors.bg_tertiary
+              : danger ? theme-colors.danger
+              : primary ? theme-colors.accent
+              : theme-colors.bg_tertiary;
+
+    border-width: 1px;
+    border-color: disabled ? theme-colors.border_light
+                 : danger ? theme-colors.danger
+                 : primary ? theme-colors.accent
+                 : theme-colors.border;
+
+    Text {
+        text: label;
+        color: disabled ? theme-colors.text_muted
+             : (primary || danger) ? theme-colors.on_accent
+             : theme-colors.text_primary;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        clicked => { if !disabled { clicked(); } }
+        mouse-cursor: disabled ? not-allowed : pointer;
+    }
+}
+
+export component SettingsInput inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in-out property <string> text;
+    in property <string> placeholder-text;
+    in property <InputType> input-type: InputType.text;
+
+    height: 32px;
+    width: 100%;
+    border-radius: 6px;
+    background: theme-colors.bg_tertiary;
+    border-width: 1px;
+    border-color: field.has-focus ? theme-colors.accent : theme-colors.border_light;
+
+    field := TextInput {
+        text <=> root.text;
+        color: theme-colors.text_primary;
+        font-size: 12px;
+        x: 10px;
+        width: parent.width - 20px;
+        height: parent.height;
+        vertical-alignment: center;
+        input-type: root.input-type;
+    }
+}
+
+export component StepButton inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in property <string> symbol;
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: theme-colors.bg_tertiary;
+    border-width: 1px;
+    border-color: theme-colors.border_light;
+
+    Text {
+        text: symbol;
+        color: theme-colors.text_primary;
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        clicked => { clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+export component SettingsSlider inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in-out property <float> value;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+
+    height: 24px;
+    width: 100%;
+
+    Rectangle {
+        y: 10px;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: theme-colors.bg_tertiary;
+
+        Rectangle {
+            width: parent.width * (value - minimum) / (maximum - minimum);
+            height: 100%;
+            border-radius: 2px;
+            background: theme-colors.accent;
+        }
+    }
+
+    // Thumb
+    Rectangle {
+        x: parent.width * (value - minimum) / (maximum - minimum) - 7px;
+        y: 5px;
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        background: theme-colors.accent;
+    }
+
+    function update-value(mouse-x: length) {
+        value = minimum + mouse-x / self.width * (maximum - minimum);
+        if value < minimum { value = minimum; }
+        if value > maximum { value = maximum; }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        moved => {
+            if self.pressed { root.update-value(self.mouse-x); }
+        }
+        clicked => {
+            root.update-value(self.mouse-x);
+        }
+    }
+}

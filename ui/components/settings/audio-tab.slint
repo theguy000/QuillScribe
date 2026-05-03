@@ -1,0 +1,132 @@
+import { ThemeColors } from "../../themes/theme-definitions.slint";
+import { SettingsField, SettingsHint, SettingsSelect, SettingsCheckbox, SettingsButton } from "shared.slint";
+
+export component AudioTab inherits VerticalLayout {
+    in property <ThemeColors> theme-colors;
+    in-out property <string> audio-device-id;
+    in-out property <bool> sounds-enabled;
+    in property <[string]> audio-devices;
+    in property <bool> loading-devices;
+
+    callback refresh-audio-devices();
+    callback start-mic-test();
+    callback stop-mic-test();
+    callback audio-device-changed(string);
+
+    spacing: 16px;
+
+    // Microphone
+    SettingsField {
+        label: "Microphone";
+        theme-colors: theme-colors;
+
+        HorizontalLayout {
+            spacing: 8px;
+
+            SettingsSelect {
+                theme-colors: theme-colors;
+                options: audio-devices;
+                current-value <=> audio-device-id;
+                value-changed(val) => { audio-device-changed(val); }
+            }
+
+            // Refresh button
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 6px;
+                background: touch.has-hover ? theme-colors.bg_tertiary : transparent;
+
+                Text {
+                    text: "↻";
+                    color: loading-devices ? theme-colors.text_muted : theme-colors.text_secondary;
+                    font-size: 16px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                touch := TouchArea {
+                    clicked => { refresh-audio-devices(); }
+                    mouse-cursor: pointer;
+                }
+            }
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Select the microphone device for recording. Use the refresh button to detect new devices.";
+    }
+
+    // Test Microphone
+    SettingsField {
+        label: "Test Microphone";
+        theme-colors: theme-colors;
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+
+            SettingsButton {
+                theme-colors: theme-colors;
+                label: "Test";
+                primary: true;
+                width: 70px;
+                clicked => { start-mic-test(); }
+            }
+
+            // Level indicator track
+            Rectangle {
+                width: 200px;
+                height: 22px;
+                border-radius: 11px;
+                background: theme-colors.bg_tertiary;
+                border-width: 1px;
+                border-color: theme-colors.border_light;
+                clip: true;
+
+                // Fill (static placeholder — real level needs Rust callback)
+                Rectangle {
+                    width: 0px;
+                    height: 100%;
+                    border-radius: 11px;
+                    background: theme-colors.success;
+                }
+            }
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Click Test, then speak into your mic. The bar should glow green.";
+    }
+
+    // Sounds
+    SettingsCheckbox {
+        theme-colors: theme-colors;
+        label: "Enable sounds";
+        checked <=> sounds-enabled;
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Play a sound effect when recording starts and stops.";
+    }
+
+    // Microphone Blocklist
+    SettingsField {
+        label: "Microphone Blocklist";
+        theme-colors: theme-colors;
+
+        SettingsButton {
+            theme-colors: theme-colors;
+            label: "Manage Blocklist";
+            width: 140px;
+        }
+    }
+
+    SettingsHint {
+        theme-colors: theme-colors;
+        text: "Manage ignored microphone devices.";
+    }
+}
