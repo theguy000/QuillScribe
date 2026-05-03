@@ -236,21 +236,56 @@ export component RecordPanel {
                         }
                     }
 
-                    if !is-transcribing: Text {
-                        text: is-recording ? "Recording in progress" : is-error ? "Something went wrong" : "Ready to record";
-                        color: theme-colors.text_primary;
-                        font-size: 23px;
-                        font-weight: 700;
-                        horizontal-alignment: center;
+                    if !is-transcribing: HorizontalLayout {
+                        alignment: center;
+                        if is-recording: Text {
+                            text: "Recording in progress";
+                            color: theme-colors.text_primary;
+                            font-size: 23px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        if !is-recording && is-error: Text {
+                            text: "Something went wrong";
+                            color: theme-colors.text_primary;
+                            font-size: 23px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        if !is-recording && !is-error: Text {
+                            text: "Ready to record";
+                            color: theme-colors.text_primary;
+                            font-size: 23px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
                     }
                 }
 
                 // Status Description
-                Text {
-                    text: is-transcribing ? "Processing your audio. This may take a moment depending on the length of the recording."
-                        : is-recording ? "Click the microphone again to stop and send the captured audio for transcription."
-                        : is-error ? status-message
-                        : "Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.";
+                if is-transcribing: Text {
+                    text: "Processing your audio. This may take a moment depending on the length of the recording.";
+                    color: theme-colors.text_secondary;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                if !is-transcribing && is-recording: Text {
+                    text: "Click the microphone again to stop and send the captured audio for transcription.";
+                    color: theme-colors.text_secondary;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                if !is-transcribing && !is-recording && is-error: Text {
+                    text: status-message;
+                    color: theme-colors.text_secondary;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                if !is-transcribing && !is-recording && !is-error: Text {
+                    text: "Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.";
                     color: theme-colors.text_secondary;
                     font-size: 14px;
                     horizontal-alignment: center;

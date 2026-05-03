@@ -16,6 +16,7 @@ component SidebarButton {
     in property <ThemeColors> theme-colors;
     in property <string> text;
     in property <bool> active;
+    in property <image> icon-source;
     in property <bool> show-dot: false;
     callback clicked();
     height: 38px;
@@ -33,20 +34,9 @@ component SidebarButton {
             Rectangle {
                 width: 24px; height: 24px; border-radius: 4px; background: transparent;
                 y: (parent.height - self.height) / 2;
-                if text == "Record": SidebarIcon {
-                    icon-source: @image-url("mic.svg");
-                    icon-color: active ? theme-colors.accent : theme-colors.text_secondary;
-                    width: 16px; height: 16px;
-                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
-                }
-                if text == "Settings": SidebarIcon {
-                    icon-source: @image-url("gear.svg");
-                    icon-color: active ? theme-colors.accent : theme-colors.text_secondary;
-                    width: 16px; height: 16px;
-                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
-                }
-                if text == "History": SidebarIcon {
-                    icon-source: @image-url("clock.svg");
+                
+                SidebarIcon {
+                    icon-source: icon-source;
                     icon-color: active ? theme-colors.accent : theme-colors.text_secondary;
                     width: 16px; height: 16px;
                     x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
@@ -166,6 +156,7 @@ export component Sidebar {
                 SidebarButton {
                     theme-colors: theme-colors;
                     text: "Record";
+                    icon-source: @image-url("mic.svg");
                     active: active-panel == "record";
                     clicked => { navigate("record"); }
                 }
@@ -173,6 +164,7 @@ export component Sidebar {
                 SidebarButton {
                     theme-colors: theme-colors;
                     text: "Settings";
+                    icon-source: @image-url("gear.svg");
                     active: active-panel == "settings";
                     show-dot: has-update;
                     clicked => { navigate("settings"); }
@@ -181,6 +173,7 @@ export component Sidebar {
                 SidebarButton {
                     theme-colors: theme-colors;
                     text: "History";
+                    icon-source: @image-url("clock.svg");
                     active: active-panel == "history";
                     clicked => { navigate("history"); }
                 }

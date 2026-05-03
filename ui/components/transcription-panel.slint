@@ -3,6 +3,7 @@ import { ThemeColors } from "../themes/theme-definitions.slint";
 export component TranscriptionPanel {
     in property <ThemeColors> theme-colors;
     in-out property <string> text;
+    property <bool> is-editing: false;
 
     callback copy(string);
 
@@ -26,31 +27,64 @@ export component TranscriptionPanel {
                     color: theme-colors.text_primary;
                     font-size: 14px;
                     font-weight: 600;
+                    vertical-alignment: center;
                 }
 
-                if text != "": Rectangle {
-                    width: 32px;
-                    height: 32px;
-                    background: theme-colors.accent_glow;
-                    border-radius: 6px;
+                if text != "": HorizontalLayout {
+                    spacing: 6px;
 
-                    Text {
-                        text: "C";
-                        color: theme-colors.accent;
-                        font-size: 12px;
+                    // Copy Button
+                    Rectangle {
+                        width: 30px;
+                        height: 30px;
+                        background: touch-copy.has-hover ? theme-colors.accent_glow : transparent;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: touch-copy.has-hover ? theme-colors.accent : theme-colors.border_light;
+
+                        Image {
+                            source: @image-url("../icons/copy.svg");
+                            colorize: touch-copy.has-hover ? theme-colors.accent : theme-colors.text_secondary;
+                            width: 14px;
+                            height: 14px;
+                        }
+
+                        touch-copy := TouchArea {
+                            clicked => { copy(text); }
+                            mouse-cursor: pointer;
+                        }
                     }
 
-                    TouchArea {
-                        clicked => { copy(text); }
-                        mouse-cursor: pointer;
+                    // Edit Button
+                    Rectangle {
+                        width: 30px;
+                        height: 30px;
+                        background: is-editing ? theme-colors.accent_glow : (touch-edit.has-hover ? theme-colors.bg_tertiary : transparent);
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: is-editing ? theme-colors.accent : (touch-edit.has-hover ? theme-colors.accent : theme-colors.border_light);
+
+                        Image {
+                            source: @image-url("../icons/edit.svg");
+                            colorize: is-editing ? theme-colors.accent : (touch-edit.has-hover ? theme-colors.accent : theme-colors.text_secondary);
+                            width: 14px;
+                            height: 14px;
+                        }
+
+                        touch-edit := TouchArea {
+                            clicked => { is-editing = !is-editing; }
+                            mouse-cursor: pointer;
+                        }
                     }
                 }
             }
 
+            Rectangle { height: 12px; } // Top margin
             Rectangle {
                 height: 1px;
                 background: theme-colors.border_light;
             }
+            Rectangle { height: 12px; } // Bottom margin
 
             if text == "": Text {
                 text: "Transcription will appear here after recording...";
@@ -59,11 +93,21 @@ export component TranscriptionPanel {
                 wrap: word-wrap;
             }
 
-            if text != "": Text {
-                text: text;
-                color: theme-colors.text_primary;
-                font-size: 14px;
-                wrap: word-wrap;
+            if text != "": VerticalLayout {
+                if !is-editing: Text {
+                    text: text;
+                    color: theme-colors.text_primary;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+
+                if is-editing: TextInput {
+                    text <=> root.text;
+                    color: theme-colors.text_primary;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                    single-line: false;
+                }
             }
         }
     }
