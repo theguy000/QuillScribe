@@ -52,6 +52,66 @@ where
     }
 }
 
+/// Helper: refresh the blocklist model and audio device list in the UI.
+/// Also checks if the currently configured device is still visible (not blocklisted)
+/// and falls back to default if it isn't.
+fn refresh_blocklist_and_devices(shared: &SharedAppState) {
+    let (blocklist, current_device_id) = {
+        let config = shared.state.config.lock().unwrap();
+        (config.get_blocklist(), config.get_audio_device_id())
+    };
+
+    let devices = if let Ok(audio) = shared.state.audio.lock() {
+        audio.get_available_devices(blocklist.clone())
+    } else {
+        Vec::new()
+    };
+
+    // If the saved device is blocklisted, clear it and fall back to default
+    if let Some(ref dev_id) = current_device_id {
+        if !devices.iter().any(|d| &d.id == dev_id) {
+            save_config_field(shared, |s| {
+                s.audio.device_id = None;
+            });
+            if let Ok(mut audio) = shared.state.audio.lock() {
+                if let Err(e) = audio.set_input_device(None) {
+                    log::warn!("Failed to reset blocklisted device: {}", e);
+                }
+            }
+        }
+    }
+
+    // Resolve selected display name before consuming devices
+    let selected_name = match &current_device_id {
+        Some(dev_id) => devices
+            .iter()
+            .find(|d| &d.id == dev_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "Default".to_string()),
+        None => "Default".to_string(),
+    };
+
+    let blocklist_items: Vec<slint::SharedString> = blocklist
+        .iter()
+        .map(|s| slint::SharedString::from(s.as_str()))
+        .collect();
+    let blocklist_model = std::rc::Rc::new(slint::VecModel::from(blocklist_items));
+
+    let mut names: Vec<slint::SharedString> = vec!["Default".into()];
+    names.extend(
+        devices
+            .into_iter()
+            .map(|d| slint::SharedString::from(d.name.as_str())),
+    );
+    let device_model = std::rc::Rc::new(slint::VecModel::from(names));
+
+    shared.with_ui(|app| {
+        app.set_settings_audio_blocklist(slint::ModelRc::from(blocklist_model));
+        app.set_settings_audio_devices(slint::ModelRc::from(device_model));
+        app.set_settings_audio_device_id(selected_name.into());
+    });
+}
+
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
@@ -108,10 +168,39 @@ pub fn run() {
         let s = config.get_settings();
 
         // Audio
-        if let Some(ref dev) = s.audio.device_id {
-            app.set_settings_audio_device_id(dev.clone().into());
+        if let Some(ref dev_id) = s.audio.device_id {
+            let dev_name = if let Ok(audio) = shared.state.audio.lock() {
+                audio.get_available_devices(s.audio.blocklist.clone())
+                    .into_iter()
+                    .find(|d| &d.id == dev_id)
+                    .map(|d| d.name)
+                    .unwrap_or_else(|| dev_id.clone())
+            } else {
+                dev_id.clone()
+            };
+            app.set_settings_audio_device_id(dev_name.into());
+        } else {
+            app.set_settings_audio_device_id("Default".into());
         }
         app.set_settings_sounds_enabled(s.audio.sounds_enabled);
+        
+        let blocklist_items: Vec<slint::SharedString> = s.audio.blocklist.iter()
+            .map(|s| slint::SharedString::from(s.as_str()))
+            .collect();
+        let blocklist_model = std::rc::Rc::new(slint::VecModel::from(blocklist_items));
+        app.set_settings_audio_blocklist(slint::ModelRc::from(blocklist_model));
+
+        if let Ok(audio) = shared.state.audio.lock() {
+            let devices = audio.get_available_devices(s.audio.blocklist.clone());
+            let mut names: Vec<slint::SharedString> = vec!["Default".into()];
+            names.extend(
+                devices
+                    .into_iter()
+                    .map(|d| slint::SharedString::from(d.name.as_str()))
+            );
+            let model = std::rc::Rc::new(slint::VecModel::from(names));
+            app.set_settings_audio_devices(slint::ModelRc::from(model.clone()));
+        }
 
         // Whisper / Engine
         app.set_settings_whisper_mode(s.whisper.mode.clone().into());
@@ -350,18 +439,29 @@ pub fn run() {
 
     // Audio
     let shared_cb = Arc::clone(&shared);
-    app.on_settings_audio_device_changed(move |device_id: slint::SharedString| {
-        let dev = device_id.to_string();
-        let dev_opt = if dev.is_empty() || dev == "Default" {
+    app.on_settings_audio_device_changed(move |device_name: slint::SharedString| {
+        let dev_name = device_name.to_string();
+        let dev_id = if dev_name.is_empty() || dev_name == "Default" {
             None
         } else {
-            Some(dev.clone())
+            if let Ok(audio) = shared_cb.state.audio.lock() {
+                let blocklist = {
+                    let config = shared_cb.state.config.lock().unwrap();
+                    config.get_blocklist()
+                };
+                audio.get_available_devices(blocklist)
+                    .into_iter()
+                    .find(|d| d.name == dev_name)
+                    .map(|d| d.id)
+            } else {
+                Some(dev_name)
+            }
         };
         save_config_field(&shared_cb, |s| {
-            s.audio.device_id = dev_opt.clone();
+            s.audio.device_id = dev_id.clone();
         });
         if let Ok(mut audio) = shared_cb.state.audio.lock() {
-            if let Err(e) = audio.set_input_device(dev_opt) {
+            if let Err(e) = audio.set_input_device(dev_id) {
                 log::warn!("Failed to set audio device: {}", e);
             }
         }
@@ -369,33 +469,65 @@ pub fn run() {
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_refresh_audio_devices(move || {
-        if let Ok(audio) = shared_cb.state.audio.lock() {
-            let devices = audio.get_available_devices();
-            let names: Vec<slint::SharedString> = devices
-                .iter()
-                .map(|d| slint::SharedString::from(d.name.as_str()))
-                .collect();
-            let model = std::rc::Rc::new(slint::VecModel::from(names));
-            shared_cb.with_ui(|app| {
-                app.set_settings_audio_devices(slint::ModelRc::from(model.clone()));
-            });
-        }
+        refresh_blocklist_and_devices(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_start_mic_test(move || {
+        shared_cb.with_ui(|app| app.set_settings_testing_mic(true));
         if let Ok(mut audio) = shared_cb.state.audio.lock() {
-            if let Err(e) = audio.start_monitoring() {
+            if let Err(e) = audio.start_monitoring(true) {
                 log::warn!("Failed to start mic test: {}", e);
+                shared_cb.with_ui(|app| app.set_settings_testing_mic(false));
             }
         }
     });
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_stop_mic_test(move || {
+        shared_cb.with_ui(|app| app.set_settings_testing_mic(false));
         if let Ok(mut audio) = shared_cb.state.audio.lock() {
             audio.stop_monitoring();
         }
+    });
+
+    app.on_settings_manage_blocklist(move || {
+        // Popup is handled entirely in Slint; this callback is a no-op.
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_add_blocklist_item(move |item: slint::SharedString| {
+        let item_str = item.to_string();
+        if item_str.is_empty() { return; }
+        
+        save_config_field(&shared_cb, |s| {
+            if !s.audio.blocklist.contains(&item_str) {
+                s.audio.blocklist.push(item_str);
+            }
+        });
+        
+        refresh_blocklist_and_devices(&shared_cb);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_remove_blocklist_item(move |idx: i32| {
+        if idx < 0 { return; }
+        
+        save_config_field(&shared_cb, |s| {
+            if (idx as usize) < s.audio.blocklist.len() {
+                s.audio.blocklist.remove(idx as usize);
+            }
+        });
+        
+        refresh_blocklist_and_devices(&shared_cb);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_sounds_enabled_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| {
+            s.audio.sounds_enabled = enabled;
+        });
+        shared_cb.state.sound.set_sounds_enabled(enabled);
     });
 
     // Whisper / Engine

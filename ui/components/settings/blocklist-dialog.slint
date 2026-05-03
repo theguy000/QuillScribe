@@ -1,0 +1,147 @@
+import { ThemeColors } from "../../themes/theme-definitions.slint";
+import { SettingsField, SettingsHint, SettingsInput, SettingsButton } from "shared.slint";
+
+export component BlocklistDialog inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in property <[string]> blocklist;
+    
+    callback add-item(string);
+    callback remove-item(int);
+    callback close();
+
+    property <string> new-item-text;
+
+    width: 400px;
+    height: 450px;
+    background: theme-colors.bg_secondary;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: theme-colors.border;
+    drop-shadow-blur: 20px;
+    drop-shadow-color: theme-colors.shadow_lg;
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: "Manage Blocklist";
+                color: theme-colors.text_primary;
+                font-size: 16px;
+                font-weight: 600;
+            }
+            
+            // Close button
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 12px;
+                background: close-touch.has-hover ? theme-colors.bg_tertiary : transparent;
+                
+                Text {
+                    text: "✕";
+                    color: theme-colors.text_secondary;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                
+                close-touch := TouchArea {
+                    clicked => { root.close(); }
+                }
+            }
+        }
+
+        SettingsHint {
+            theme-colors: theme-colors;
+            text: "Devices containing any of these patterns will be hidden from the selection list.";
+        }
+
+        // Add new item
+        HorizontalLayout {
+            spacing: 8px;
+            SettingsInput {
+                theme-colors: theme-colors;
+                text <=> new-item-text;
+                placeholder-text: "Add pattern (e.g. Monitor)";
+            }
+            SettingsButton {
+                theme-colors: theme-colors;
+                label: "Add";
+                primary: true;
+                width: 60px;
+                disabled: new-item-text == "";
+                clicked => {
+                    root.add-item(new-item-text);
+                    new-item-text = "";
+                }
+            }
+        }
+
+        // List of items
+        Rectangle {
+            background: theme-colors.bg_tertiary;
+            border-radius: 8px;
+            vertical-stretch: 1;
+            clip: true;
+
+            Flickable {
+                viewport-height: list-content.preferred-height;
+                
+                list-content := VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+
+                    for item[idx] in blocklist: Rectangle {
+                        height: 36px;
+                        background: item-touch.has-hover ? theme-colors.bg_secondary : transparent;
+                        border-radius: 6px;
+
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 6px;
+                            alignment: space-between;
+
+                            Text {
+                                text: item;
+                                color: theme-colors.text_primary;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+
+                            // Remove button
+                            Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 4px;
+                                background: remove-touch.has-hover ? theme-colors.bg_tertiary : transparent;
+                                
+                                Text {
+                                    text: "✕"; 
+                                    color: remove-touch.has-hover ? theme-colors.danger : theme-colors.text_muted;
+                                    font-size: 14px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                remove-touch := TouchArea {
+                                    clicked => { root.remove-item(idx); }
+                                }
+                            }
+                        }
+
+                        item-touch := TouchArea {}
+                    }
+                }
+            }
+        }
+        
+        SettingsButton {
+            theme-colors: theme-colors;
+            label: "Done";
+            clicked => { root.close(); }
+        }
+    }
+}

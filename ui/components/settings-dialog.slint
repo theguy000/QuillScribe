@@ -55,6 +55,9 @@ export component SettingsDialog inherits Rectangle {
     in-out property <bool> sounds-enabled: true;
     in property <[string]> audio-devices: ["Default"];
     in property <bool> loading-devices: false;
+    in property <bool> testing-mic;
+    in property <float> audio-level;
+    in property <[string]> audio-blocklist: [];
 
     // Whisper tab properties
     in-out property <string> whisper-mode: "api";
@@ -116,6 +119,9 @@ export component SettingsDialog inherits Rectangle {
     callback start-mic-test();
     callback stop-mic-test();
     callback audio-device-changed(string);
+    callback manage-blocklist();
+    callback add-blocklist-item(string);
+    callback remove-blocklist-item(int);
     callback mode-changed(string);
     callback provider-changed(string);
     callback api-key-changed(string);
@@ -238,10 +244,16 @@ export component SettingsDialog inherits Rectangle {
                                 sounds-enabled: sounds-enabled;
                                 audio-devices: audio-devices;
                                 loading-devices: loading-devices;
+                                testing-mic: testing-mic;
+                                audio-level: audio-level;
                                 refresh-audio-devices => { refresh-audio-devices(); }
                                 start-mic-test => { start-mic-test(); }
                                 stop-mic-test => { stop-mic-test(); }
                                 audio-device-changed(val) => { audio-device-changed(val); }
+                                manage-blocklist => { manage-blocklist(); }
+                                blocklist: audio-blocklist;
+                                add-blocklist-item(val) => { add-blocklist-item(val); }
+                                remove-blocklist-item(idx) => { remove-blocklist-item(idx); }
                             }
 
                             if active-tab == "whisper": WhisperTab {

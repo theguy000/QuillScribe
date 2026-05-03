@@ -12,6 +12,19 @@ pub struct AudioConfig {
     pub sample_rate: u32,
     pub channels: u16,
     pub sounds_enabled: bool,
+    #[serde(default = "default_blocklist")]
+    pub blocklist: Vec<String>,
+}
+
+fn default_blocklist() -> Vec<String> {
+    vec![
+        "DEV=".into(),
+        "surround".into(),
+        "front:".into(),
+        "iec958:".into(),
+        "dmix".into(),
+        "hw:".into(),
+    ]
 }
 
 impl Default for AudioConfig {
@@ -21,6 +34,7 @@ impl Default for AudioConfig {
             sample_rate: 16_000,
             channels: 1,
             sounds_enabled: true,
+            blocklist: default_blocklist(),
         }
     }
 }
@@ -251,6 +265,10 @@ impl ConfigManager {
 
     pub fn get_sounds_enabled(&self) -> bool {
         self.settings.lock().unwrap().audio.sounds_enabled
+    }
+
+    pub fn get_blocklist(&self) -> Vec<String> {
+        self.settings.lock().unwrap().audio.blocklist.clone()
     }
 
     // ── Whisper getters ──────────────────────────────────────────────────

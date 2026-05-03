@@ -29,8 +29,14 @@ export component App inherits Window {
     // ── Settings: Audio ──────────────────────────────────────────────────
     in-out property <string> settings-audio-device-id;
     in-out property <bool> settings-sounds-enabled: true;
+    changed settings-sounds-enabled => {
+        settings-sounds-enabled-changed(self.settings-sounds-enabled);
+    }
     in property <[string]> settings-audio-devices: ["Default"];
     in-out property <bool> settings-loading-devices: false;
+    in-out property <bool> settings-testing-mic: false;
+    in-out property <[string]> settings-audio-blocklist: [];
+
 
     // ── Settings: Whisper / Engine ────────────────────────────────────────
     in-out property <string> settings-whisper-mode: "api";
@@ -103,6 +109,10 @@ export component App inherits Window {
     callback settings-start-mic-test();
     callback settings-stop-mic-test();
     callback settings-audio-device-changed(string);
+    callback settings-manage-blocklist();
+    callback settings-add-blocklist-item(string);
+    callback settings-remove-blocklist-item(int);
+    callback settings-sounds-enabled-changed(bool);
     callback settings-mode-changed(string);
     callback settings-provider-changed(string);
     callback settings-api-key-changed(string);
@@ -185,10 +195,16 @@ export component App inherits Window {
                         sounds-enabled <=> settings-sounds-enabled;
                         audio-devices: settings-audio-devices;
                         loading-devices: settings-loading-devices;
+                        testing-mic: settings-testing-mic;
+                        audio-level: audio-level;
                         refresh-audio-devices => { settings-refresh-audio-devices(); }
                         start-mic-test => { settings-start-mic-test(); }
                         stop-mic-test => { settings-stop-mic-test(); }
                         audio-device-changed(val) => { settings-audio-device-changed(val); }
+                        manage-blocklist => { settings-manage-blocklist(); }
+                        audio-blocklist: settings-audio-blocklist;
+                        add-blocklist-item(val) => { settings-add-blocklist-item(val); }
+                        remove-blocklist-item(idx) => { settings-remove-blocklist-item(idx); }
 
                         // Whisper / Engine
                         whisper-mode <=> settings-whisper-mode;
@@ -272,7 +288,7 @@ export component App inherits Window {
             }
         }
 
-        ToastContainer {
+        toast_container := ToastContainer {
             theme-colors: theme-colors;
         }
     }

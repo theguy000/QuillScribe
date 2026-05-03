@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -46,10 +47,12 @@ impl AudioState {
 #[allow(dead_code)]
 enum AudioCommand {
     GetDevices {
+        blocklist: Vec<String>,
         reply: mpsc::Sender<Vec<AudioDevice>>,
     },
     StartMonitoring {
         device_id: Option<String>,
+        reply: Option<mpsc::Sender<Result<()>>>,
     },
     StopMonitoring,
     StartRecording,
@@ -107,13 +110,14 @@ impl AudioManager {
         }
     }
 
-    /// Enumerate all available audio input devices.
-    #[allow(dead_code)]
-    pub fn get_available_devices(&self) -> Vec<AudioDevice> {
+    pub fn get_available_devices(&self, blocklist: Vec<String>) -> Vec<AudioDevice> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let tx = self.command_tx.lock().unwrap();
         if tx
-            .send(AudioCommand::GetDevices { reply: reply_tx })
+            .send(AudioCommand::GetDevices {
+                blocklist,
+                reply: reply_tx,
+            })
             .is_err()
         {
             return Vec::new();
@@ -144,8 +148,9 @@ impl AudioManager {
 
     /// Start audio monitoring. The audio level will be updated continuously
     /// and can be retrieved via `get_audio_level()`.
-    #[allow(dead_code)]
-    pub fn start_monitoring(&mut self) -> Result<()> {
+    /// If `wait_for_reply` is true, blocks until the audio thread confirms
+    /// the stream started (or returns an error).
+    pub fn start_monitoring(&mut self, wait_for_reply: bool) -> Result<()> {
         {
             let mut state = self.state.lock().unwrap();
             if state.is_monitoring {
@@ -155,11 +160,26 @@ impl AudioManager {
             state.audio_level = 0.0;
         }
 
+        let reply = if wait_for_reply {
+            let (reply_tx, reply_rx) = mpsc::channel();
+            Some((reply_tx, reply_rx))
+        } else {
+            None
+        };
+
         let tx = self.command_tx.lock().unwrap();
         tx.send(AudioCommand::StartMonitoring {
             device_id: self.selected_device_id.clone(),
+            reply: reply.as_ref().map(|(tx, _)| tx.clone()),
         })
         .map_err(|_| anyhow!("Audio thread is not running"))?;
+        drop(tx);
+
+        if let Some((_, reply_rx)) = reply {
+            reply_rx
+                .recv()
+                .map_err(|_| anyhow!("Audio thread did not respond"))??;
+        }
 
         Ok(())
     }
@@ -203,6 +223,7 @@ impl AudioManager {
         if need_stream {
             tx.send(AudioCommand::StartMonitoring {
                 device_id: self.selected_device_id.clone(),
+                reply: None,
             })
             .map_err(|_| anyhow!("Audio thread is not running"))?;
         }
@@ -298,8 +319,8 @@ fn audio_thread_fn(rx: mpsc::Receiver<AudioCommand>, state: Arc<Mutex<AudioState
         };
 
         match cmd {
-            AudioCommand::GetDevices { reply } => {
-                let devices = enumerate_devices(&host);
+            AudioCommand::GetDevices { blocklist, reply } => {
+                let devices = enumerate_devices(&host, &blocklist);
                 let _ = reply.send(devices);
             }
 
@@ -315,42 +336,34 @@ fn audio_thread_fn(rx: mpsc::Receiver<AudioCommand>, state: Arc<Mutex<AudioState
                 let _ = reply.send(result);
             }
 
-            AudioCommand::StartMonitoring { device_id } => {
+            AudioCommand::StartMonitoring { device_id, reply } => {
                 // Drop any existing stream first.
                 active_stream = None;
 
-                let device = match resolve_device(&host, device_id.as_deref()) {
-                    Ok(d) => d,
-                    Err(e) => {
-                        eprintln!("Failed to resolve audio device: {}", e);
-                        let mut s = state.lock().unwrap();
-                        s.is_monitoring = false;
-                        continue;
-                    }
-                };
+                let result = (|| -> Result<()> {
+                    let device = resolve_device(&host, device_id.as_deref())?;
 
-                // Store the actual device sample rate so the recorded audio
-                // is later encoded / resampled with the correct rate.
-                if let Ok(supported) = device.default_input_config() {
+                    // Store the actual device sample rate so the recorded audio
+                    // is later encoded / resampled with the correct rate.
+                    if let Ok(supported) = device.default_input_config() {
+                        let mut s = state.lock().unwrap();
+                        s.device_sample_rate = supported.sample_rate().0;
+                    }
+
+                    let stream = build_input_stream(&device, Arc::clone(&state))?;
+                    stream.play().map_err(|e| anyhow!("Failed to start audio stream: {}", e))?;
+                    active_stream = Some(stream);
+                    Ok(())
+                })();
+
+                if let Err(e) = &result {
+                    eprintln!("Failed to start monitoring: {}", e);
                     let mut s = state.lock().unwrap();
-                    s.device_sample_rate = supported.sample_rate().0;
+                    s.is_monitoring = false;
                 }
 
-                match build_input_stream(&device, Arc::clone(&state)) {
-                    Ok(stream) => {
-                        if let Err(e) = stream.play() {
-                            eprintln!("Failed to start audio stream: {}", e);
-                            let mut s = state.lock().unwrap();
-                            s.is_monitoring = false;
-                        } else {
-                            active_stream = Some(stream);
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to build audio stream: {}", e);
-                        let mut s = state.lock().unwrap();
-                        s.is_monitoring = false;
-                    }
+                if let Some(reply_tx) = reply {
+                    let _ = reply_tx.send(result);
                 }
             }
 
@@ -383,24 +396,57 @@ fn audio_thread_fn(rx: mpsc::Receiver<AudioCommand>, state: Arc<Mutex<AudioState
 
 // ── Helper functions (all run on the audio thread) ──────────────────────────
 
-fn enumerate_devices(host: &cpal::Host) -> Vec<AudioDevice> {
+fn enumerate_devices(host: &cpal::Host, blocklist: &[String]) -> Vec<AudioDevice> {
     let devices = match host.input_devices() {
         Ok(devs) => devs,
         Err(_) => return Vec::new(),
     };
 
-    devices
+    // First pass: collect devices with display names
+    let mut candidates: Vec<AudioDevice> = devices
         .filter_map(|device| {
             let name = device.name().ok()?;
+
+            if blocklist.iter().any(|pattern| name.contains(pattern)) {
+                return None;
+            }
+
+            let mut display_name = name.clone();
+            #[cfg(target_os = "linux")]
+            {
+                if name.starts_with("sysdefault:CARD=") {
+                    display_name = name.replace("sysdefault:CARD=", "");
+                } else if name == "pulse" {
+                    display_name = "PulseAudio".to_string();
+                } else if name == "pipewire" {
+                    display_name = "PipeWire".to_string();
+                } else if name == "default" {
+                    display_name = "System Default".to_string();
+                }
+            }
+
             let config = device.default_input_config().ok()?;
             Some(AudioDevice {
-                id: name.clone(),
-                name,
+                id: name,
+                name: display_name,
                 channels: config.channels(),
                 sample_rate: config.sample_rate().0,
             })
         })
-        .collect()
+        .collect();
+
+    // Disambiguate duplicate display names by appending the raw ID
+    let mut name_counts: HashMap<String, usize> = HashMap::new();
+    for dev in &candidates {
+        *name_counts.entry(dev.name.clone()).or_default() += 1;
+    }
+    for dev in &mut candidates {
+        if name_counts[&dev.name] > 1 {
+            dev.name = format!("{} [{}]", dev.name, dev.id);
+        }
+    }
+
+    candidates
 }
 
 fn find_device_by_id(host: &cpal::Host, id: &str) -> Option<cpal::Device> {

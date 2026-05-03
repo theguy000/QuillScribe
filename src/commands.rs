@@ -80,8 +80,12 @@ pub fn validate_api_key(key: String) -> bool {
 
 #[allow(dead_code)]
 pub fn get_audio_devices(state: &AppState) -> Result<Vec<AudioDevice>, String> {
+    let blocklist = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        config.get_blocklist()
+    };
     let audio = state.audio.lock().map_err(|e| e.to_string())?;
-    Ok(audio.get_available_devices())
+    Ok(audio.get_available_devices(blocklist))
 }
 
 #[allow(dead_code)]
@@ -96,7 +100,7 @@ pub fn set_audio_device(
 #[allow(dead_code)]
 pub fn start_monitoring(state: &AppState) -> Result<(), String> {
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
-    audio.start_monitoring().map_err(|e| e.to_string())
+    audio.start_monitoring(true).map_err(|e| e.to_string())
 }
 
 #[allow(dead_code)]
@@ -213,7 +217,7 @@ pub fn start_mic_test(
 ) -> Result<(), String> {
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.set_input_device(device_id.clone()).map_err(|e| e.to_string())?;
-    audio.start_monitoring().map_err(|e| e.to_string())
+    audio.start_monitoring(true).map_err(|e| e.to_string())
 }
 
 #[allow(dead_code)]
