@@ -4,22 +4,22 @@ component Dot {
     in property <ThemeColors> theme-colors;
     in property <duration> delay;
 
-    width: 8px;
-    height: 8px;
-    opacity: 0.4;
+    width: 5px;
+    height: 5px;
+    opacity: 0.3;
 
     Rectangle {
         width: 100%;
         height: 100%;
-        border-radius: 4px;
-        background: theme-colors.accent;
+        border-radius: 2.5px;
+        background: theme-colors.text_primary;
         opacity: root.opacity;
 
         Timer {
             interval: 600ms;
             running: true;
             triggered => {
-                root.opacity = root.opacity < 0.5 ? 1.0 : 0.4;
+                root.opacity = root.opacity < 0.5 ? 1.0 : 0.3;
             }
         }
 
@@ -35,67 +35,227 @@ export component RecordPanel {
     in-out property <bool> is-transcribing;
     in-out property <string> status-message;
     in-out property <float> audio-level;
+    in-out property <bool> show-burst: false;
 
     callback toggle-recording();
+
+    // Errors arrive as "Error: {msg}" (character-count > 6). We exclude every
+    // known non-error status. When a new non-error status is added in lib.rs,
+    // add it here too to prevent false error detection.
+    property <bool> is-error:
+        status-message.character-count > 6 &&
+        status-message != "Ready" &&
+        status-message != "Recording..." &&
+        status-message != "Transcribing..." &&
+        status-message != "Transcription complete" &&
+        status-message != "No speech detected" &&
+        status-message != "Ready to record";
 
     min-width: 300px;
     min-height: 200px;
 
     Rectangle {
-        background: theme-colors.bg_primary;
-        border-radius: 22px;
+        background: @linear-gradient(180deg, theme-colors.bg_primary 0%, theme-colors.bg_secondary 100%);
+        border-radius: 18px;
         border-width: 1px;
         border-color: theme-colors.border_light;
 
         VerticalLayout {
             padding: 30px;
-            spacing: 24px;
+            spacing: 16px;
             alignment: center;
 
             // Mic button
-            Rectangle {
-                property <float> mic-scale: 1.0 + (audio-level * 0.15);
-
-                width: 128px * mic-scale;
-                height: 128px * mic-scale;
-                border-radius: 64px * mic-scale;
-                background: is-recording ? theme-colors.danger : theme-colors.accent;
-                border-width: 3px;
-                border-color: is-recording ? theme-colors.danger : theme-colors.accent;
-
-                animate mic-scale {
-                    duration: 100ms;
-                }
-
-                Text {
-                    text: is-recording ? "Stop" : "Record";
-                    color: theme-colors.on_accent;
-                    font-size: 16px;
-                    font-weight: 600;
-                }
-
-                TouchArea {
-                    clicked => { toggle-recording(); }
-                    mouse-cursor: pointer;
-                }
-            }
-
-            // Status
-            Text {
-                text: status-message;
-                color: theme-colors.text_secondary;
-                font-size: 14px;
-                horizontal-alignment: center;
-            }
-
-            // Transcribing dots
-            if is-transcribing: HorizontalLayout {
-                spacing: 6px;
+            HorizontalLayout {
                 alignment: center;
+                
+                Rectangle {
+                    width: 128px;
+                    height: 128px;
 
-                Dot { theme-colors: theme-colors; delay: 0ms; }
-                Dot { theme-colors: theme-colors; delay: 200ms; }
-                Dot { theme-colors: theme-colors; delay: 400ms; }
+                    property <float> wave-time: 0;
+                    Timer {
+                        interval: 32ms;
+                        running: is-recording;
+                        triggered => {
+                            parent.wave-time = Math.mod(parent.wave-time + 32.0, 2400.0);
+                        }
+                    }
+                    // Reset wave when not recording
+                    Timer {
+                        interval: 1ms;
+                        running: !is-recording && parent.wave-time > 0;
+                        triggered => {
+                            parent.wave-time = 0;
+                        }
+                    }
+
+                    // Recording wave rings
+                    for i in [0, 1, 2]: Rectangle {
+                        property <float> local-time: Math.mod(parent.wave-time + i * 800.0, 2400.0);
+                        property <float> progress: self.local-time / 2400.0;
+                        property <float> wave-scale: 1.0 + self.progress * 1.2;
+
+                        width: 88px * self.wave-scale;
+                        height: 88px * self.wave-scale;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: self.width / 2;
+                        border-width: 2px;
+                        border-color: theme-colors.accent;
+                        opacity: is-recording ? 0.55 * (1.0 - self.progress) : 0;
+                    }
+
+                    // Completion burst rings
+                    property <float> burst-time: 0;
+                    property <bool> burst-active: show-burst;
+                    Timer {
+                        interval: 16ms;
+                        running: burst-active;
+                        triggered => {
+                            parent.burst-time = Math.min(parent.burst-time + 16.0, 700.0);
+                        }
+                    }
+                    // Reset burst time when not active
+                    Timer {
+                        interval: 1ms;
+                        running: !burst-active && parent.burst-time > 0;
+                        triggered => {
+                            parent.burst-time = 0;
+                        }
+                    }
+
+                    for j in [0, 1, 2]: Rectangle {
+                        property <float> ring-delay: j * 50.0;
+                        property <float> ring-elapsed: Math.max(parent.burst-time - self.ring-delay, 0.0);
+                        property <float> ring-progress: Math.min(self.ring-elapsed / 700.0, 1.0);
+                        property <float> ring-scale: 1.0 + self.ring-progress * 1.6;
+
+                        width: 80px * self.ring-scale;
+                        height: 80px * self.ring-scale;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: self.width / 2;
+                        border-width: 2px;
+                        border-color: theme-colors.accent;
+                        opacity: show-burst ? 0.7 * (1.0 - self.ring-progress) : 0;
+                    }
+
+                    // Completion burst flash (radial glow)
+                    Rectangle {
+                        property <float> flash-progress: Math.min(parent.burst-time / 600.0, 1.0);
+                        property <float> flash-scale: 1.0 + flash-progress * 0.8;
+
+                        width: 80px * flash-scale;
+                        height: 80px * flash-scale;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: self.width / 2;
+                        background: theme-colors.accent_glow;
+                        opacity: show-burst ? 0.6 * (1.0 - flash-progress) : 0;
+                    }
+
+                    Rectangle {
+                        property <float> mic-scale: is-recording ? (1.0 + (audio-level * 0.08)) : 1.0;
+
+                        width: 88px * mic-scale;
+                        height: 88px * mic-scale;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: self.width / 2;
+                        background: is-recording ? @linear-gradient(180deg, theme-colors.accent_hover 0%, theme-colors.accent 100%) : @linear-gradient(180deg, theme-colors.bg_primary 0%, theme-colors.bg_secondary 100%);
+                        border-width: 1px;
+                        border-color: is-recording ? theme-colors.accent : theme-colors.border;
+                        drop-shadow-color: is-recording ? theme-colors.accent_glow : theme-colors.shadow;
+                        drop-shadow-blur: is-recording ? 20px : 30px;
+                        drop-shadow-offset-y: is-recording ? 0px : 16px;
+                        opacity: is-transcribing ? 0.5 : 1.0;
+
+                        animate mic-scale {
+                            duration: 100ms;
+                        }
+                        animate background {
+                            duration: 200ms;
+                        }
+
+                        if is-recording: Rectangle {
+                            width: 24px;
+                            height: 24px;
+                            border-radius: 6px;
+                            background: theme-colors.on_accent;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+
+                        if !is-recording: Image {
+                            source: @image-url("../icons/mic.svg");
+                            width: 32px;
+                            height: 32px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            colorize: theme-colors.text_secondary;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            if !is-transcribing {
+                                toggle-recording();
+                            }
+                        }
+                        mouse-cursor: is-transcribing ? wait : pointer;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 4px;
+                alignment: start;
+
+                // Status Title
+                HorizontalLayout {
+                    alignment: center;
+                    
+                    if is-transcribing: HorizontalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: "Transcribing";
+                            color: theme-colors.text_primary;
+                            font-size: 23px;
+                            font-weight: 700;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                spacing: 4px;
+                                padding-bottom: 2px; // offset for baseline
+                                Dot { theme-colors: theme-colors; delay: 0ms; }
+                                Dot { theme-colors: theme-colors; delay: 200ms; }
+                                Dot { theme-colors: theme-colors; delay: 400ms; }
+                            }
+                        }
+                    }
+
+                    if !is-transcribing: Text {
+                        text: is-recording ? "Recording in progress" : is-error ? "Something went wrong" : "Ready to record";
+                        color: theme-colors.text_primary;
+                        font-size: 23px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Status Description
+                Text {
+                    text: is-transcribing ? "Processing your audio. This may take a moment depending on the length of the recording."
+                        : is-recording ? "Click the microphone again to stop and send the captured audio for transcription."
+                        : is-error ? status-message
+                        : "Tap the microphone to start a fresh recording. The transcription result will appear in the panel beside it.";
+                    color: theme-colors.text_secondary;
+                    font-size: 14px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
             }
         }
     }

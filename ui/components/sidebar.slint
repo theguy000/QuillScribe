@@ -1,42 +1,14 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
 
-component MicIcon {
+component SidebarIcon {
     in property <color> icon-color: #000000;
-    width: 16px; height: 16px;
-    Image {
-        source: @image-url("mic.svg");
-        colorize: icon-color;
-        width: 16px; height: 16px;
-    }
-}
+    in property <image> icon-source;
 
-component GearIcon {
-    in property <color> icon-color: #000000;
-    width: 16px; height: 16px;
     Image {
-        source: @image-url("gear.svg");
+        source: icon-source;
         colorize: icon-color;
-        width: 16px; height: 16px;
-    }
-}
-
-component ClockIcon {
-    in property <color> icon-color: #000000;
-    width: 16px; height: 16px;
-    Image {
-        source: @image-url("clock.svg");
-        colorize: icon-color;
-        width: 16px; height: 16px;
-    }
-}
-
-component UserIcon {
-    in property <color> icon-color: #000000;
-    width: 14px; height: 14px;
-    Image {
-        source: @image-url("user.svg");
-        colorize: icon-color;
-        width: 14px; height: 14px;
+        width: root.width;
+        height: root.height;
     }
 }
 
@@ -61,9 +33,24 @@ component SidebarButton {
             Rectangle {
                 width: 24px; height: 24px; border-radius: 4px; background: transparent;
                 y: (parent.height - self.height) / 2;
-                if text == "Record": MicIcon { icon-color: active ? theme-colors.accent : theme-colors.text_secondary; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
-                if text == "Settings": GearIcon { icon-color: active ? theme-colors.accent : theme-colors.text_secondary; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
-                if text == "History": ClockIcon { icon-color: active ? theme-colors.accent : theme-colors.text_secondary; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                if text == "Record": SidebarIcon {
+                    icon-source: @image-url("mic.svg");
+                    icon-color: active ? theme-colors.accent : theme-colors.text_secondary;
+                    width: 16px; height: 16px;
+                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                }
+                if text == "Settings": SidebarIcon {
+                    icon-source: @image-url("gear.svg");
+                    icon-color: active ? theme-colors.accent : theme-colors.text_secondary;
+                    width: 16px; height: 16px;
+                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                }
+                if text == "History": SidebarIcon {
+                    icon-source: @image-url("clock.svg");
+                    icon-color: active ? theme-colors.accent : theme-colors.text_secondary;
+                    width: 16px; height: 16px;
+                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                }
             }
 
             Text {
@@ -223,8 +210,10 @@ export component Sidebar {
                         width: 30px; height: 30px; border-radius: 15px;
                         background: theme-colors.accent_glow;
 
-                        UserIcon {
+                        SidebarIcon {
+                            icon-source: @image-url("user.svg");
                             icon-color: theme-colors.accent;
+                            width: 14px; height: 14px;
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                         }

@@ -10,61 +10,61 @@ export component TranscriptionPanel {
     min-height: 200px;
 
     Rectangle {
-        background: theme-colors.bg_primary;
-        border-radius: 22px;
+        background: @linear-gradient(180deg, theme-colors.bg_secondary 0%, theme-colors.bg_primary 100%);
+        border-radius: 18px;
         border-width: 1px;
         border-color: theme-colors.border_light;
 
         VerticalLayout {
-        padding: 20px;
+            padding: 20px;
 
-        HorizontalLayout {
-            alignment: space-between;
-
-            Text {
-                text: "Transcription";
-                color: theme-colors.text_primary;
-                font-size: 14px;
-                font-weight: 600;
-            }
-
-            if text != "": Rectangle {
-                width: 32px;
-                height: 32px;
-                background: theme-colors.accent_glow;
-                border-radius: 6px;
+            HorizontalLayout {
+                alignment: space-between;
 
                 Text {
-                    text: "C";
-                    color: theme-colors.accent;
-                    font-size: 12px;
+                    text: "Transcription";
+                    color: theme-colors.text_primary;
+                    font-size: 14px;
+                    font-weight: 600;
                 }
 
-                TouchArea {
-                    clicked => { copy(text); }
-                    mouse-cursor: pointer;
+                if text != "": Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    background: theme-colors.accent_glow;
+                    border-radius: 6px;
+
+                    Text {
+                        text: "C";
+                        color: theme-colors.accent;
+                        font-size: 12px;
+                    }
+
+                    TouchArea {
+                        clicked => { copy(text); }
+                        mouse-cursor: pointer;
+                    }
                 }
             }
-        }
 
-        Rectangle {
-            height: 1px;
-            background: theme-colors.border_light;
-        }
+            Rectangle {
+                height: 1px;
+                background: theme-colors.border_light;
+            }
 
-        if text == "": Text {
-            text: "Transcription will appear here after recording...";
-            color: theme-colors.text_muted;
-            font-size: 13px;
-            wrap: word-wrap;
-        }
+            if text == "": Text {
+                text: "Transcription will appear here after recording...";
+                color: theme-colors.text_muted;
+                font-size: 13px;
+                wrap: word-wrap;
+            }
 
-        if text != "": Text {
-            text: text;
-            color: theme-colors.text_primary;
-            font-size: 14px;
-            wrap: word-wrap;
-        }
+            if text != "": Text {
+                text: text;
+                color: theme-colors.text_primary;
+                font-size: 14px;
+                wrap: word-wrap;
+            }
         }
     }
 }

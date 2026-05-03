@@ -20,15 +20,75 @@ export component App inherits Window {
     in-out property <string> transcription-text: "";
     in-out property <string> status-message: "Ready";
     in-out property <float> audio-level: 0;
+    in-out property <bool> show-burst: false;
     in-out property <string> active-panel: "record";
     in-out property <bool> custom-titlebar: true;
     in-out property <bool> has-update: false;
     in-out property <int> session-count: 0;
 
-    // Callbacks — wired from Rust
+    // ── Settings: Audio ──────────────────────────────────────────────────
+    in-out property <string> settings-audio-device-id;
+    in-out property <bool> settings-sounds-enabled: true;
+    in property <[string]> settings-audio-devices: ["Default"];
+    in-out property <bool> settings-loading-devices: false;
+
+    // ── Settings: Whisper / Engine ────────────────────────────────────────
+    in-out property <string> settings-whisper-mode: "api";
+    in-out property <string> settings-api-provider: "openai";
+    in-out property <string> settings-api-key;
+    in-out property <string> settings-groq-api-key;
+    in-out property <string> settings-api-model: "gpt-4o-transcribe";
+    in-out property <string> settings-api-language: "en";
+    in-out property <bool> settings-show-api-key: false;
+    in-out property <string> settings-local-model: "base";
+    in-out property <string> settings-local-model-category: "General";
+    in-out property <bool> settings-model-downloaded: false;
+    in-out property <bool> settings-downloading-model: false;
+    in-out property <bool> settings-deleting-model: false;
+    in-out property <string> settings-download-error;
+    in property <string> settings-model-size;
+    in property <string> settings-model-memory;
+    in property <string> settings-model-speed;
+    in property <string> settings-model-quality;
+    in property <[string]> settings-api-providers: ["OpenAI", "Groq"];
+    in property <[string]> settings-api-models: ["gpt-4o-transcribe", "gpt-4o-mini-transcribe"];
+    in property <[string]> settings-local-model-categories: ["General", "Tiny", "Base", "Small", "Medium", "Large"];
+    in property <[string]> settings-local-models: ["tiny", "base", "small", "medium", "large"];
+    in property <[string]> settings-languages: ["Auto-detect", "English", "Spanish", "French", "German", "Japanese", "Chinese"];
+
+    // ── Settings: UI ─────────────────────────────────────────────────────
+    in-out property <string> settings-theme: "white";
+    in-out property <bool> settings-custom-titlebar: true;
+    in-out property <bool> settings-always-on-top: false;
+    in-out property <string> settings-overlay-mode: "minimal";
+    in-out property <string> settings-overlay-style: "default";
+    in-out property <float> settings-overlay-opacity: 0.85;
+    in-out property <int> settings-max-history-entries: 100;
+    in property <[string]> settings-themes: ["White", "Warm Gray", "Soft Beige", "Blue Gray", "Warm Taupe", "Soft Sage", "Dark Charcoal", "Dark Blue", "Dark Purple", "Dark Forest", "Dark Burgundy", "Obsidian"];
+    in property <[string]> settings-overlay-modes: ["Minimal (bars only)", "Full (bars, timer, stop button)"];
+    in property <[string]> settings-overlay-styles: ["Default", "Glass", "Neon", "Pill"];
+
+    // ── Settings: Output ─────────────────────────────────────────────────
+    in-out property <int> settings-output-mode: 2;
+    in-out property <bool> settings-show-paste-tool-warning: false;
+    in-out property <string> settings-paste-tool-hint;
+
+    // ── Settings: Keyboard ───────────────────────────────────────────────
+    in-out property <string> settings-record-toggle-shortcut: "Meta+Shift+`";
+    in-out property <bool> settings-recording-shortcut: false;
+
+    // ── Settings: About ──────────────────────────────────────────────────
+    in property <string> settings-app-version;
+    in-out property <string> settings-update-version;
+    in-out property <string> settings-update-notes;
+    in-out property <bool> settings-update-checking: false;
+    in-out property <bool> settings-update-downloading: false;
+    in-out property <float> settings-update-progress: 0;
+    in-out property <bool> settings-is-linux: false;
+
+    // ── Core callbacks — wired from Rust ─────────────────────────────────
     callback request-navigate(string);
     callback toggle-recording();
-    callback save-settings(string);
     callback copy-to-clipboard(string);
     callback load-history();
     callback check-for-update();
@@ -37,6 +97,28 @@ export component App inherits Window {
     callback minimize-window();
     callback close-window();
     callback set-window-icon-theme(string);
+
+    // ── Settings callbacks — wired from Rust ─────────────────────────────
+    callback settings-refresh-audio-devices();
+    callback settings-start-mic-test();
+    callback settings-stop-mic-test();
+    callback settings-audio-device-changed(string);
+    callback settings-mode-changed(string);
+    callback settings-provider-changed(string);
+    callback settings-api-key-changed(string);
+    callback settings-api-model-changed(string);
+    callback settings-language-changed(string);
+    callback settings-local-model-changed(string);
+    callback settings-category-changed(string);
+    callback settings-download-model();
+    callback settings-delete-model();
+    callback settings-toggle-api-key-visibility();
+    callback settings-theme-changed(string);
+    callback settings-overlay-mode-changed(string);
+    callback settings-overlay-style-changed(string);
+    callback settings-output-mode-changed(int);
+    callback settings-start-recording-shortcut();
+    callback settings-stop-recording-shortcut();
 
     title: "QuillScribe";
     min-width: 800px;
@@ -82,6 +164,7 @@ export component App inherits Window {
                             is-transcribing: is-transcribing;
                             status-message: status-message;
                             audio-level: audio-level;
+                            show-burst: show-burst;
                             toggle-recording => { toggle-recording(); }
                         }
 
@@ -96,6 +179,89 @@ export component App inherits Window {
                         theme-colors: theme-colors;
                         width: 100%;
                         height: 100%;
+
+                        // Audio
+                        audio-device-id <=> settings-audio-device-id;
+                        sounds-enabled <=> settings-sounds-enabled;
+                        audio-devices: settings-audio-devices;
+                        loading-devices: settings-loading-devices;
+                        refresh-audio-devices => { settings-refresh-audio-devices(); }
+                        start-mic-test => { settings-start-mic-test(); }
+                        stop-mic-test => { settings-stop-mic-test(); }
+                        audio-device-changed(val) => { settings-audio-device-changed(val); }
+
+                        // Whisper / Engine
+                        whisper-mode <=> settings-whisper-mode;
+                        api-provider <=> settings-api-provider;
+                        api-key <=> settings-api-key;
+                        groq-api-key <=> settings-groq-api-key;
+                        api-model <=> settings-api-model;
+                        api-language <=> settings-api-language;
+                        show-api-key <=> settings-show-api-key;
+                        local-model <=> settings-local-model;
+                        local-model-category <=> settings-local-model-category;
+                        model-downloaded <=> settings-model-downloaded;
+                        downloading-model <=> settings-downloading-model;
+                        deleting-model <=> settings-deleting-model;
+                        download-error <=> settings-download-error;
+                        model-size: settings-model-size;
+                        model-memory: settings-model-memory;
+                        model-speed: settings-model-speed;
+                        model-quality: settings-model-quality;
+                        api-providers: settings-api-providers;
+                        api-models: settings-api-models;
+                        local-model-categories: settings-local-model-categories;
+                        local-models: settings-local-models;
+                        languages: settings-languages;
+                        mode-changed(val) => { settings-mode-changed(val); }
+                        provider-changed(val) => { settings-provider-changed(val); }
+                        api-key-changed(val) => { settings-api-key-changed(val); }
+                        api-model-changed(val) => { settings-api-model-changed(val); }
+                        language-changed(val) => { settings-language-changed(val); }
+                        local-model-changed(val) => { settings-local-model-changed(val); }
+                        category-changed(val) => { settings-category-changed(val); }
+                        download-model => { settings-download-model(); }
+                        delete-model => { settings-delete-model(); }
+                        toggle-api-key-visibility => { settings-toggle-api-key-visibility(); }
+
+                        // UI
+                        theme <=> settings-theme;
+                        custom-titlebar <=> settings-custom-titlebar;
+                        always-on-top <=> settings-always-on-top;
+                        overlay-mode <=> settings-overlay-mode;
+                        overlay-style <=> settings-overlay-style;
+                        overlay-opacity <=> settings-overlay-opacity;
+                        max-history-entries <=> settings-max-history-entries;
+                        themes: settings-themes;
+                        overlay-modes: settings-overlay-modes;
+                        overlay-styles: settings-overlay-styles;
+                        theme-changed(val) => { settings-theme-changed(val); }
+                        overlay-mode-changed(val) => { settings-overlay-mode-changed(val); }
+                        overlay-style-changed(val) => { settings-overlay-style-changed(val); }
+
+                        // Output
+                        output-mode <=> settings-output-mode;
+                        show-paste-tool-warning <=> settings-show-paste-tool-warning;
+                        paste-tool-hint <=> settings-paste-tool-hint;
+                        output-mode-changed(val) => { settings-output-mode-changed(val); }
+
+                        // Keyboard
+                        record-toggle-shortcut <=> settings-record-toggle-shortcut;
+                        recording-shortcut <=> settings-recording-shortcut;
+                        start-recording-shortcut => { settings-start-recording-shortcut(); }
+                        stop-recording-shortcut => { settings-stop-recording-shortcut(); }
+
+                        // About
+                        app-version: settings-app-version;
+                        has-update <=> has-update;
+                        update-version <=> settings-update-version;
+                        update-notes <=> settings-update-notes;
+                        update-checking <=> settings-update-checking;
+                        update-downloading <=> settings-update-downloading;
+                        update-progress <=> settings-update-progress;
+                        is-linux <=> settings-is-linux;
+                        check-for-update => { check-for-update(); }
+                        install-update => { install-update(); }
                     }
 
                     if active-panel == "history": HistoryPanel {

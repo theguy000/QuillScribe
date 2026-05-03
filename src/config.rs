@@ -271,10 +271,12 @@ impl ConfigManager {
 
     // ── UI getters / setters ─────────────────────────────────────────────
 
+    #[allow(dead_code)]
     pub fn get_always_on_top(&self) -> bool {
         self.settings.lock().unwrap().ui.always_on_top
     }
 
+    #[allow(dead_code)]
     pub fn get_custom_titlebar(&self) -> bool {
         self.settings.lock().unwrap().ui.custom_titlebar
     }

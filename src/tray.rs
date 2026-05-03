@@ -81,11 +81,9 @@ pub fn setup_tray(
         }
     });
 
-    {
-        TRAY_ICON.with(|t| {
-            *t.borrow_mut() = Some(tray);
-        });
-    }
+    TRAY_ICON.with(|t| {
+        *t.borrow_mut() = Some(tray);
+    });
 
     info!("System tray initialized with theme: {}", theme);
     Ok(())

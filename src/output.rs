@@ -262,6 +262,10 @@ impl OutputManager {
             .set_text(text.to_string())
             .context("Failed to copy text to clipboard")?;
         debug!("Copied {} characters to clipboard", text.len());
+        // On Linux (X11), the clipboard is owned by the process that set it.
+        // Give clipboard managers time to read the contents before dropping.
+        #[cfg(target_os = "linux")]
+        sleep(Duration::from_millis(100));
         Ok(())
     }
 
