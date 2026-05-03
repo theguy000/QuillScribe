@@ -7,50 +7,53 @@ export component HistoryPanel {
 
     Rectangle {
         background: theme-colors.bg_primary;
+        border-radius: 22px;
+        border-width: 1px;
+        border-color: theme-colors.border_light;
+        clip: true;
 
         VerticalLayout {
-        padding: 24px;
-        spacing: 16px;
+            padding: 24px;
+            spacing: 16px;
 
-        HorizontalLayout {
-            alignment: space-between;
+            HorizontalLayout {
+                alignment: space-between;
 
-            Text {
-                text: "History";
-                color: theme-colors.text_primary;
-                font-size: 20px;
-                font-weight: 700;
+                Text {
+                    text: "History";
+                    color: theme-colors.text_primary;
+                    font-size: 20px;
+                    font-weight: 700;
+                }
+
+                Rectangle {
+                    width: 80px;
+                    height: 32px;
+                    background: theme-colors.accent;
+                    border-radius: 6px;
+
+                    Text {
+                        text: "Refresh";
+                        color: theme-colors.on_accent;
+                        font-size: 13px;
+                    }
+
+                    TouchArea {
+                        clicked => { refresh(); }
+                        mouse-cursor: pointer;
+                    }
+                }
             }
 
             Rectangle {
-                width: 80px;
-                height: 32px;
-                background: theme-colors.accent;
-                border-radius: 6px;
+                height: 1px;
+                background: theme-colors.border;
+            }
 
-                Text {
-                    text: "Refresh";
-                    color: theme-colors.on_accent;
-                    font-size: 13px;
-                }
-
-                TouchArea {
-                    clicked => { refresh(); }
-                    mouse-cursor: pointer;
-                }
+            Text {
+                text: "History entries will appear here.";
+                color: theme-colors.text_secondary;
+                font-size: 14px;
             }
         }
-
-        Rectangle {
-            height: 1px;
-            background: theme-colors.border;
-        }
-
-        Text {
-            text: "History entries will appear here.";
-            color: theme-colors.text_secondary;
-            font-size: 14px;
-        }
-    }
-    }
 }

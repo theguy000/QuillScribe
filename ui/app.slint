@@ -58,6 +58,9 @@ export component App inherits Window {
             }
 
             HorizontalLayout {
+                padding: 22px;
+                spacing: 22px;
+
                 Sidebar {
                     theme-colors: theme-colors;
                     active-panel: active-panel;
@@ -67,11 +70,10 @@ export component App inherits Window {
                 }
 
                 Rectangle {
-                    background: theme-colors.bg_primary;
+                    background: transparent;
                     clip: true;
 
                     if active-panel == "record": HorizontalLayout {
-                        padding: 22px;
                         spacing: 18px;
 
                         RecordPanel {
