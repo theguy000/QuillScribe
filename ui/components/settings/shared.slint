@@ -24,13 +24,26 @@ export component SettingsHint inherits Text {
     wrap: word-wrap;
 }
 
-export component SettingsSelect inherits HorizontalLayout {
+export component SettingsSelect inherits Rectangle {
     in property <ThemeColors> theme-colors;
     in-out property <string> current-value;
     in property <[string]> options;
+    in-out property <bool> is-open: false;
     callback value-changed(string);
 
-    alignment: start;
+    forward-focus: trigger-fs;
+
+    function close-dropdown() {
+        popup.close();
+    }
+
+    function open-dropdown() {
+        trigger-fs.focus();
+        popup.show();
+    }
+
+    width: 240px;
+    height: 28px;
 
     function pick-value() -> string {
         if current-value != "" {
@@ -42,74 +55,101 @@ export component SettingsSelect inherits HorizontalLayout {
         return "";
     }
 
-    Rectangle {
-        width: 240px;
-        height: 28px;
-        border-radius: 6px;
-        background: theme-colors.bg_tertiary;
-        border-width: 1px;
-        border-color: theme-colors.border_light;
+    trigger-fs := FocusScope {
+        width: 100%;
+        height: 100%;
 
-        HorizontalLayout {
-            padding-left: 10px;
-            padding-right: 10px;
-            alignment: space-between;
-
-            Text {
-                text: root.pick-value();
-                color: theme-colors.text_primary;
-                font-size: 12px;
-                vertical-alignment: center;
-            }
-
-            // Dropdown arrow
-            Text {
-                text: "▾";
-                color: theme-colors.text_muted;
-                font-size: 12px;
-                vertical-alignment: center;
+        changed has-focus => {
+            if self.has-focus {
+                is-open = false;
             }
         }
 
-        touch_main := TouchArea {
-            clicked => {
-                if options.length > 0 {
-                    popup.show();
+        // Trigger button
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            border-radius: 6px;
+            background: theme-colors.bg_tertiary;
+            border-width: 1px;
+            border-color: theme-colors.border_light;
+
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                alignment: space-between;
+
+                Text {
+                    text: root.pick-value();
+                    color: theme-colors.text_primary;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+
+                // Dropdown chevron
+                Image {
+                    source: @image-url("chevron-down.svg");
+                    colorize: theme-colors.text_muted;
+                    width: 14px;
+                    height: 14px;
+                    y: (parent.height - self.height) / 2;
+                    transform-origin: { x: self.width / 2, y: self.height / 2 };
+                    transform-rotation: is-open ? 180deg : 0deg;
+                    animate transform-rotation { duration: 200ms; easing: ease-out; }
                 }
             }
-            mouse-cursor: pointer;
-        }
 
-        popup := PopupWindow {
-            x: 0px;
-            y: 30px;
-            width: parent.width;
-            height: Math.min(options.length, 5) * 26px + 8px;
-            close-policy: close-on-click-outside;
+            touch_main := TouchArea {
+                clicked => {
+                    trigger-fs.focus();
+                    if is-open {
+                        close-dropdown();
+                    } else if options.length > 0 {
+                        open-dropdown();
+                    }
+                }
+                mouse-cursor: pointer;
+            }
 
-            Rectangle {
-                width: 100%;
-                height: 100%;
-                border-radius: 6px;
-                background: theme-colors.bg_secondary;
-                border-width: 1px;
-                border-color: theme-colors.border_light;
-                drop-shadow-blur: 12px;
-                drop-shadow-color: theme-colors.shadow_lg;
-                drop-shadow-offset-y: 4px;
-                clip: true;
+            // Dropdown list popup
+            popup := PopupWindow {
+                x: 0px;
+                y: 30px;
+                width: root.width;
+                height: Math.min(options.length, 5) * 26px + 8px;
+                close-policy: close-on-click-outside;
+                forward-focus: popup-fs;
 
-                flick := Flickable {
-                    viewport-height: options.length * 26px + 8px;
-                    interactive: true;
+                popup-fs := FocusScope {
+                    focus-changed-event => {
+                        if self.has-focus {
+                            is-open = true;
+                        }
+                    }
 
-                    VerticalLayout {
-                        padding: 4px;
-                        spacing: 0px;
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        border-radius: 6px;
+                        background: theme-colors.bg_secondary;
+                        border-width: 1px;
+                        border-color: theme-colors.border_light;
+                        drop-shadow-blur: 12px;
+                        drop-shadow-color: theme-colors.shadow_lg;
+                        drop-shadow-offset-y: 4px;
+                        clip: true;
 
-                        for option[idx] in options: Rectangle {
-                            width: 100%;
-                            height: 26px;
+                        flick := Flickable {
+                            viewport-height: options.length * 26px + 8px;
+                            interactive: true;
+
+                            VerticalLayout {
+                                padding: 4px;
+                                spacing: 0px;
+
+                                for option[idx] in options: Rectangle {
+                                    width: 100%;
+                                    height: 26px;
                             border-radius: 4px;
                             background: option == root.pick-value() ? theme-colors.accent_glow : (touch_option.has-hover ? theme-colors.bg_tertiary : transparent);
 
@@ -125,7 +165,7 @@ export component SettingsSelect inherits HorizontalLayout {
                                 clicked => {
                                     current-value = option;
                                     value-changed(option);
-                                    popup.close();
+                                    close-dropdown();
                                 }
                                 mouse-cursor: pointer;
                             }
@@ -177,6 +217,8 @@ export component SettingsSelect inherits HorizontalLayout {
                     }
                 }
             }
+        }
+    }
         }
     }
 }
