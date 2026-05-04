@@ -534,6 +534,9 @@ pub fn run() {
     let shared_cb = Arc::clone(&shared);
     app.on_settings_mode_changed(move |mode: slint::SharedString| {
         let mode_str = mode.to_string();
+        shared_cb.with_ui(|app| {
+            app.set_settings_whisper_mode(mode.clone());
+        });
         save_config_field(&shared_cb, |s| {
             s.whisper.mode = mode_str;
         });
@@ -712,6 +715,9 @@ pub fn run() {
     // Output
     let shared_cb = Arc::clone(&shared);
     app.on_settings_output_mode_changed(move |mode: i32| {
+        shared_cb.with_ui(|app| {
+            app.set_settings_output_mode(mode);
+        });
         save_config_field(&shared_cb, |s| {
             s.output.mode = mode as u8;
         });
