@@ -133,6 +133,8 @@ export component SettingsDialog inherits Rectangle {
     callback delete-model();
     callback toggle-api-key-visibility();
     callback theme-changed(string);
+    callback custom-titlebar-changed(bool);
+    callback always-on-top-changed(bool);
     callback overlay-mode-changed(string);
     callback overlay-style-changed(string);
     callback output-mode-changed(int);
@@ -305,6 +307,8 @@ export component SettingsDialog inherits Rectangle {
                                 overlay-modes: overlay-modes;
                                 overlay-styles: overlay-styles;
                                 theme-changed(val) => { theme-changed(val); }
+                                custom-titlebar-changed(val) => { custom-titlebar-changed(val); }
+                                always-on-top-changed(val) => { always-on-top-changed(val); }
                                 overlay-mode-changed(val) => { overlay-mode-changed(val); }
                                 overlay-style-changed(val) => { overlay-style-changed(val); }
                             }

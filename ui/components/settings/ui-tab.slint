@@ -17,6 +17,8 @@ export component UiTab inherits VerticalLayout {
     in property <[string]> overlay-styles;
 
     callback theme-changed(string);
+    callback custom-titlebar-changed(bool);
+    callback always-on-top-changed(bool);
     callback overlay-mode-changed(string);
     callback overlay-style-changed(string);
 
@@ -40,6 +42,7 @@ export component UiTab inherits VerticalLayout {
         theme-colors: theme-colors;
         label: "Custom titlebar";
         checked <=> custom-titlebar;
+        toggled() => { custom-titlebar-changed(custom-titlebar); }
     }
 
     // Always on top
@@ -47,6 +50,7 @@ export component UiTab inherits VerticalLayout {
         theme-colors: theme-colors;
         label: "Always on top";
         checked <=> always-on-top;
+        toggled() => { always-on-top-changed(always-on-top); }
     }
 
     // Recording Overlay Style

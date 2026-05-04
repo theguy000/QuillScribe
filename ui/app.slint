@@ -125,6 +125,8 @@ export component App inherits Window {
     callback settings-delete-model();
     callback settings-toggle-api-key-visibility();
     callback settings-theme-changed(string);
+    callback settings-custom-titlebar-changed(bool);
+    callback settings-always-on-top-changed(bool);
     callback settings-overlay-mode-changed(string);
     callback settings-overlay-style-changed(string);
     callback settings-output-mode-changed(int);
@@ -137,7 +139,7 @@ export component App inherits Window {
     preferred-width: 960px;
     preferred-height: 560px;
     background: theme-colors.bg_primary;
-    no-frame: true;
+    no-frame: custom-titlebar;
 
     Rectangle {
         background: theme-colors.bg_primary;
@@ -253,6 +255,8 @@ export component App inherits Window {
                         overlay-modes: settings-overlay-modes;
                         overlay-styles: settings-overlay-styles;
                         theme-changed(val) => { settings-theme-changed(val); }
+                        custom-titlebar-changed(val) => { settings-custom-titlebar-changed(val); }
+                        always-on-top-changed(val) => { settings-always-on-top-changed(val); }
                         overlay-mode-changed(val) => { settings-overlay-mode-changed(val); }
                         overlay-style-changed(val) => { settings-overlay-style-changed(val); }
 

@@ -1,6 +1,5 @@
 use log::{debug, info, warn};
 use slint::{ComponentHandle, winit_030::WinitWindowAccessor};
-use crate::config::ConfigManager;
 
 /// Start a window drag operation via winit.
 /// Call this from the titlebar's TouchArea `pointer-event` on down.
@@ -34,24 +33,15 @@ pub fn quit_app(app: &crate::App) {
 
 /// Apply always-on-top setting.
 /// TODO: Implement with Slint/winit window API.
-#[allow(dead_code)]
-pub fn apply_always_on_top(_on_top: bool) {
-    info!("Always-on-top set to {}", _on_top);
+pub fn apply_always_on_top(on_top: bool) {
+    info!("Always-on-top set to {}", on_top);
 }
 
 /// Apply the custom-titlebar toggle.
-/// With Slint, the titlebar is rendered in the UI itself.
-#[allow(dead_code)]
-pub fn apply_custom_titlebar(_custom: bool) {
-    debug!("Custom titlebar: {} (handled in Slint UI)", _custom);
-}
-
-/// Set always-on-top and persist to config.
-#[allow(dead_code)]
-pub fn set_always_on_top(config: &ConfigManager, on_top: bool) {
-    config.set_always_on_top(on_top);
-    let _ = config.save_settings();
-    apply_always_on_top(on_top);
+/// The Slint UI handles this via the no-frame property binding.
+pub fn apply_custom_titlebar(app: &crate::App, custom: bool) {
+    app.set_custom_titlebar(custom);
+    debug!("Custom titlebar: {} (Slint no-frame updated)", custom);
 }
 
 /// Returns the 256x256 taskbar icon bytes for the given theme.
@@ -109,4 +99,45 @@ pub fn set_window_icon_theme(app: &crate::App, theme: &str) {
         winit_win.set_window_icon(Some(icon));
     });
     debug!("Window icon updated for theme: {}", theme);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_always_on_top_does_not_panic() {
+        apply_always_on_top(true);
+        apply_always_on_top(false);
+    }
+
+    #[test]
+    fn decode_png_to_rgba_valid_icon() {
+        let bytes = include_bytes!("../icons/taskbar/white.png");
+        let (rgba, w, h) = decode_png_to_rgba(bytes).expect("decode valid PNG");
+        assert!(!rgba.is_empty(), "RGBA buffer should not be empty");
+        assert!(w > 0, "width should be > 0");
+        assert!(h > 0, "height should be > 0");
+        assert_eq!(rgba.len() as u32, w * h * 4, "RGBA buffer size should match w*h*4");
+    }
+
+    #[test]
+    fn taskbar_icon_bytes_for_known_themes() {
+        let themes = [
+            "white", "warm_gray", "soft_beige", "blue_gray", "warm_taupe",
+            "soft_sage", "dark_charcoal", "dark_blue", "dark_purple",
+            "dark_forest", "dark_burgundy", "obsidian",
+        ];
+        for theme in themes {
+            let bytes = taskbar_icon_bytes_for_theme(theme);
+            assert!(!bytes.is_empty(), "theme '{}' should have non-empty icon bytes", theme);
+        }
+    }
+
+    #[test]
+    fn taskbar_icon_bytes_unknown_theme_fallback() {
+        let fallback = taskbar_icon_bytes_for_theme("white");
+        let unknown = taskbar_icon_bytes_for_theme("nonexistent_theme_xyz");
+        assert_eq!(unknown, fallback, "unknown theme should fall back to white");
+    }
 }

@@ -244,15 +244,7 @@ pub fn run() {
         app.set_settings_overlay_style(s.ui.overlay_style.clone().into());
         app.set_settings_overlay_opacity(s.ui.overlay_opacity as f32);
         app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
-
-        // Output
-        app.set_settings_output_mode(s.output.mode as i32);
-
-        // Keyboard
-        app.set_settings_record_toggle_shortcut(s.shortcuts.record_toggle.clone().into());
-
-        // Platform
-        app.set_settings_is_linux(cfg!(target_os = "linux"));
+        window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
 
         drop(config);
     }
@@ -721,6 +713,24 @@ pub fn run() {
             app.set_current_theme(key.clone().into());
         });
         tray::set_tray_theme(&key);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_custom_titlebar_changed(move |custom: bool| {
+        save_config_field(&shared_cb, |s| {
+            s.ui.custom_titlebar = custom;
+        });
+        shared_cb.with_ui(|app| {
+            window::apply_custom_titlebar(&app, custom);
+        });
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_always_on_top_changed(move |on_top: bool| {
+        save_config_field(&shared_cb, |s| {
+            s.ui.always_on_top = on_top;
+        });
+        window::apply_always_on_top(on_top);
     });
 
     let shared_cb = Arc::clone(&shared);

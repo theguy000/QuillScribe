@@ -335,3 +335,60 @@ impl ConfigManager {
         *self.settings.lock().unwrap() = settings;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ui_config_has_correct_defaults() {
+        let cfg = UiConfig::default();
+        assert!(cfg.custom_titlebar, "custom_titlebar should default to true");
+        assert!(!cfg.always_on_top, "always_on_top should default to false");
+        assert_eq!(cfg.theme, "white");
+        assert_eq!(cfg.overlay_mode, "minimal");
+        assert_eq!(cfg.overlay_style, "default");
+        assert!((cfg.overlay_opacity - 0.85).abs() < f64::EPSILON * 2.0);
+    }
+
+    #[test]
+    fn ui_config_serde_roundtrip() {
+        let original = UiConfig::default();
+        let json = serde_json::to_string(&original).expect("serialize UiConfig");
+        let parsed: UiConfig = serde_json::from_str(&json).expect("deserialize UiConfig");
+        assert_eq!(parsed.custom_titlebar, original.custom_titlebar);
+        assert_eq!(parsed.always_on_top, original.always_on_top);
+        assert_eq!(parsed.theme, original.theme);
+        assert_eq!(parsed.overlay_mode, original.overlay_mode);
+        assert_eq!(parsed.overlay_style, original.overlay_style);
+        assert!((parsed.overlay_opacity - original.overlay_opacity).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn settings_serde_preserves_ui_fields() {
+        let mut settings = Settings::default();
+        settings.ui.custom_titlebar = false;
+        settings.ui.always_on_top = true;
+
+        let json = serde_json::to_string_pretty(&settings).expect("serialize Settings");
+        let parsed: Settings = serde_json::from_str(&json).expect("deserialize Settings");
+
+        assert_eq!(parsed.ui.custom_titlebar, false);
+        assert_eq!(parsed.ui.always_on_top, true);
+    }
+
+    #[test]
+    fn full_settings_default_serde_roundtrip() {
+        let original = Settings::default();
+        let json = serde_json::to_string_pretty(&original).expect("serialize Settings");
+        let parsed: Settings = serde_json::from_str(&json).expect("deserialize Settings");
+
+        assert_eq!(parsed.ui.custom_titlebar, original.ui.custom_titlebar);
+        assert_eq!(parsed.ui.always_on_top, original.ui.always_on_top);
+        assert_eq!(parsed.ui.theme, original.ui.theme);
+        assert_eq!(parsed.ui.overlay_mode, original.ui.overlay_mode);
+        assert_eq!(parsed.ui.overlay_style, original.ui.overlay_style);
+        assert!((parsed.ui.overlay_opacity - original.ui.overlay_opacity).abs() < f64::EPSILON);
+        assert_eq!(parsed.advanced.max_history_entries, original.advanced.max_history_entries);
+    }
+}
