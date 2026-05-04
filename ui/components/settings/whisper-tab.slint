@@ -111,10 +111,12 @@ export component WhisperTab inherits VerticalLayout {
 
                 // Toggle visibility
                 Rectangle {
-                    width: 32px;
-                    height: 32px;
+                    width: 28px;
+                    height: 28px;
                     border-radius: 6px;
-                    background: touch.has-hover ? theme-colors.bg_tertiary : transparent;
+                    background: theme-colors.bg_secondary;
+                    border-width: 1px;
+                    border-color: theme-colors.border;
 
                     Image {
                         source: show-api-key ? @image-url("../../icons/eye-off.svg") : @image-url("../../icons/eye.svg");
