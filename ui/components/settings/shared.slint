@@ -441,18 +441,29 @@ export component SettingsSlider inherits Rectangle {
     in property <float> minimum: 0;
     in property <float> maximum: 100;
 
-    height: 24px;
+    height: 28px;
     width: 100%;
 
+    function ratio() -> float {
+        return (value - minimum) / (maximum - minimum);
+    }
+
+    function update-value(mouse-x: length) {
+        value = minimum + mouse-x / self.width * (maximum - minimum);
+        if value < minimum { value = minimum; }
+        if value > maximum { value = maximum; }
+    }
+
+    // Track background
     Rectangle {
-        y: 10px;
+        y: 12px;
         width: 100%;
         height: 4px;
         border-radius: 2px;
         background: theme-colors.bg_tertiary;
 
         Rectangle {
-            width: parent.width * (value - minimum) / (maximum - minimum);
+            width: parent.width * root.ratio();
             height: 100%;
             border-radius: 2px;
             background: theme-colors.accent;
@@ -461,18 +472,17 @@ export component SettingsSlider inherits Rectangle {
 
     // Thumb
     Rectangle {
-        x: parent.width * (value - minimum) / (maximum - minimum) - 7px;
-        y: 5px;
-        width: 14px;
-        height: 14px;
-        border-radius: 7px;
+        x: parent.width * root.ratio() - 8px;
+        y: 6px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
         background: theme-colors.accent;
-    }
-
-    function update-value(mouse-x: length) {
-        value = minimum + mouse-x / self.width * (maximum - minimum);
-        if value < minimum { value = minimum; }
-        if value > maximum { value = maximum; }
+        border-width: 2px;
+        border-color: theme-colors.on_accent;
+        drop-shadow-blur: 2px;
+        drop-shadow-color: #00000033;
+        drop-shadow-offset-y: 1px;
     }
 
     touch := TouchArea {

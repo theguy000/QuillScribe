@@ -86,19 +86,18 @@ export component UiTab inherits VerticalLayout {
     }
 
     // Overlay Opacity
-    SettingsField {
+    if overlay-style == "Glass": SettingsField {
         label: "Overlay Opacity — " + Math.round(overlay-opacity * 100) + "%";
         theme-colors: theme-colors;
 
         SettingsSlider {
             theme-colors: theme-colors;
             value <=> overlay-opacity;
-            minimum: 0.3;
             maximum: 1.0;
         }
     }
 
-    SettingsHint {
+    if overlay-style == "Glass": SettingsHint {
         theme-colors: theme-colors;
         text: "Controls the background transparency of the glass overlay. Lower values are more transparent.";
     }
