@@ -58,6 +58,20 @@ impl SharedAppState {
             }
         }
     }
+
+    fn with_ui_ret<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(App) -> R,
+    {
+        if let Ok(lock) = self.app_weak.lock() {
+            if let Some(weak) = lock.as_ref() {
+                if let Some(app) = weak.upgrade() {
+                    return Some(f(app));
+                }
+            }
+        }
+        None
+    }
 }
 
 /// Helper: save a single-field config change.
@@ -266,13 +280,9 @@ pub fn run() {
     app.on_toggle_recording(move || {
         let rt_handle = rt_handle_toggle.clone();
         let s = Arc::clone(&shared_toggle);
-        let ui = s.app_weak.lock().unwrap().clone();
 
         // Read current state on the UI thread (callback runs on Slint event loop)
-        let is_recording = ui.as_ref()
-            .and_then(|w| w.upgrade())
-            .map(|app| app.get_is_recording())
-            .unwrap_or(false);
+        let is_recording = s.with_ui_ret(|app| app.get_is_recording()).unwrap_or(false);
 
         if !is_recording {
             // Start recording — synchronous, on UI thread
@@ -283,35 +293,35 @@ pub fn run() {
                     return;
                 }
             }
-            if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+            s.with_ui(|app| {
                 app.set_is_recording(true);
                 app.set_status_message("Recording...".into());
-            }
+            });
         } else {
             // Stop recording — synchronous UI update on UI thread
-            if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+            s.with_ui(|app| {
                 app.set_is_recording(false);
                 app.set_is_transcribing(true);
                 app.set_status_message("Transcribing...".into());
-            }
+            });
 
             let (audio_data, sample_rate) = {
                 let mut audio = s.state.audio.lock().unwrap();
                 match audio.stop_recording() {
                     Ok(Some((data, sr))) => (data, sr),
                     Ok(None) => {
-                        if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+                        s.with_ui(|app| {
                             app.set_is_transcribing(false);
                             app.set_status_message("No speech detected".into());
-                        }
+                        });
                         return;
                     }
                     Err(e) => {
                         log::error!("Failed to stop recording: {}", e);
-                        if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
+                        s.with_ui(|app| {
                             app.set_is_transcribing(false);
                             app.set_status_message(format!("Error: {}", e).into());
-                        }
+                        });
                         return;
                     }
                 }
@@ -345,7 +355,6 @@ pub fn run() {
 
             // Spawn async transcription on Tokio runtime
             let s_async = Arc::clone(&s);
-            let ui_async = ui.clone();
             rt_handle.spawn(async move {
                 let result = whisper_clone.transcribe_audio(audio_data, sample_rate).await;
                 let transcription_time = start_time.elapsed().as_secs_f64();
@@ -377,8 +386,9 @@ pub fn run() {
 
                         // Update UI from the Slint event loop thread
                         let text_for_ui = text.clone();
+                        let s_invoke = Arc::clone(&s_async);
                         let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(app) = ui_async.as_ref().and_then(|w| w.upgrade()) {
+                            s_invoke.with_ui(|app| {
                                 app.set_is_transcribing(false);
                                 app.set_transcription_text(text_for_ui.into());
                                 app.set_status_message("Transcription complete".into());
@@ -394,7 +404,7 @@ pub fn run() {
                                         }
                                     },
                                 );
-                            }
+                            });
                         });
                     }
                     Err(e) => {
@@ -407,11 +417,12 @@ pub fn run() {
                             0.0,
                         );
                         let err_msg = format!("Error: {}", e);
+                        let s_invoke = Arc::clone(&s_async);
                         let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(app) = ui_async.as_ref().and_then(|w| w.upgrade()) {
+                            s_invoke.with_ui(|app| {
                                 app.set_is_transcribing(false);
                                 app.set_status_message(err_msg.into());
-                            }
+                            });
                         });
                     }
                 }
@@ -493,7 +504,9 @@ pub fn run() {
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_refresh_audio_devices(move || {
+        shared_cb.with_ui(|app| app.set_settings_loading_devices(true));
         refresh_blocklist_and_devices(&shared_cb);
+        shared_cb.with_ui(|app| app.set_settings_loading_devices(false));
     });
 
     let shared_cb = Arc::clone(&shared);

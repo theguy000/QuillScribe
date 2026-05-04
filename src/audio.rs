@@ -447,12 +447,13 @@ fn enumerate_devices(host: &cpal::Host, blocklist: &[String]) -> Vec<AudioDevice
             {
                 if name.starts_with("sysdefault:CARD=") {
                     display_name = name.replace("sysdefault:CARD=", "");
-                } else if name == "pulse" {
-                    display_name = "PulseAudio".to_string();
-                } else if name == "pipewire" {
-                    display_name = "PipeWire".to_string();
-                } else if name == "default" {
-                    display_name = "System Default".to_string();
+                } else {
+                    display_name = match name.as_str() {
+                        "pulse" => "PulseAudio".to_string(),
+                        "pipewire" => "PipeWire".to_string(),
+                        "default" => "System Default".to_string(),
+                        _ => display_name,
+                    };
                 }
             }
 
@@ -510,7 +511,6 @@ fn build_input_stream(
     let err_state = Arc::clone(&state);
     let err_fn = move |err: cpal::StreamError| {
         eprintln!("Audio stream error: {}", err);
-        // Mark monitoring/recording as stopped so the next attempt starts a fresh stream.
         let mut s = err_state.lock().unwrap();
         s.is_monitoring = false;
         s.is_recording = false;

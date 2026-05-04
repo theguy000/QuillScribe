@@ -22,29 +22,29 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>) {
         }
     };
 
-    match manager.register(hotkey) {
-        Ok(_id) => {
-            info!("Registered global shortcut: {}", shortcut_str);
-            let weak = app_weak.clone();
-            std::thread::spawn(move || {
-                let receiver = GlobalHotKeyEvent::receiver();
-                loop {
-                    if let Ok(event) = receiver.try_recv() {
-                        if event.state == HotKeyState::Pressed {
-                            debug!("Global hotkey triggered: record toggle");
-                            if let Some(app) = weak.upgrade() {
-                                app.invoke_toggle_recording();
-                            }
-                        }
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-            });
-        }
-        Err(e) => {
-            error!("Failed to register global shortcut '{}': {}", shortcut_str, e);
-        }
+    if let Err(e) = manager.register(hotkey) {
+        error!("Failed to register global shortcut '{}': {}", shortcut_str, e);
+        let mut guard = HOTKEY_MANAGER.lock().unwrap();
+        *guard = Some(manager);
+        return;
     }
+
+    info!("Registered global shortcut: {}", shortcut_str);
+    let weak = app_weak.clone();
+    std::thread::spawn(move || {
+        let receiver = GlobalHotKeyEvent::receiver();
+        loop {
+            if let Ok(event) = receiver.try_recv() {
+                if event.state == HotKeyState::Pressed {
+                    debug!("Global hotkey triggered: record toggle");
+                    if let Some(app) = weak.upgrade() {
+                        app.invoke_toggle_recording();
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
 
     let mut guard = HOTKEY_MANAGER.lock().unwrap();
     *guard = Some(manager);

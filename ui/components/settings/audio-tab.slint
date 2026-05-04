@@ -20,6 +20,8 @@ export component AudioTab inherits VerticalLayout {
     callback add-blocklist-item(string);
     callback remove-blocklist-item(int);
 
+    property <float> refresh-angle: 0;
+
     spacing: 16px;
 
     // Microphone
@@ -44,16 +46,23 @@ export component AudioTab inherits VerticalLayout {
                 border-radius: 6px;
                 background: touch.has-hover ? theme-colors.bg_tertiary : transparent;
 
-                Text {
-                    text: "↻";
-                    color: loading-devices ? theme-colors.text_muted : theme-colors.text_secondary;
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                Image {
+                    source: @image-url("../../icons/refresh.svg");
+                    colorize: loading-devices ? theme-colors.text_muted : theme-colors.text_secondary;
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    transform-origin: { x: self.width / 2, y: self.height / 2 };
+                    transform-rotation: refresh-angle * 1deg;
+                    animate transform-rotation { duration: 600ms; easing: ease-in-out; }
                 }
 
                 touch := TouchArea {
-                    clicked => { refresh-audio-devices(); }
+                    clicked => {
+                        refresh-angle += 360;
+                        refresh-audio-devices();
+                    }
                     mouse-cursor: pointer;
                 }
             }
