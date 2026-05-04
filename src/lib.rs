@@ -718,8 +718,9 @@ pub fn run() {
             s.ui.theme = key.clone();
         });
         shared_cb.with_ui(|app| {
-            app.set_current_theme(key.into());
+            app.set_current_theme(key.clone().into());
         });
+        tray::set_tray_theme(&key);
     });
 
     let shared_cb = Arc::clone(&shared);

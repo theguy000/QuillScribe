@@ -156,7 +156,6 @@ pub fn cleanup_tray() {
     });
 }
 
-#[allow(dead_code)]
 pub fn set_tray_theme(theme: &str) {
     TRAY_ICON.with(|t| {
         if let Some(ref tray) = *t.borrow() {
