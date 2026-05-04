@@ -99,13 +99,13 @@ export component WhisperTab inherits VerticalLayout {
 
             HorizontalLayout {
                 spacing: 6px;
+                alignment: start;
 
                 SettingsInput {
                     theme-colors: theme-colors;
                     input-type: show-api-key ? InputType.text : InputType.password;
                     text <=> api-key;
                     placeholder-text: api-provider == "groq" ? "gsk_..." : "sk-...";
-                    horizontal-stretch: 1;
                 }
 
                 // Toggle visibility
@@ -115,12 +115,11 @@ export component WhisperTab inherits VerticalLayout {
                     border-radius: 6px;
                     background: touch.has-hover ? theme-colors.bg_tertiary : transparent;
 
-                    Text {
-                        text: show-api-key ? "🙈" : "👁";
-                        color: theme-colors.text_secondary;
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    Image {
+                        source: show-api-key ? @image-url("../../icons/eye-off.svg") : @image-url("../../icons/eye.svg");
+                        colorize: theme-colors.text_secondary;
+                        width: 16px; height: 16px;
+                        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
                     }
 
                     touch := TouchArea {

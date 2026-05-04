@@ -387,16 +387,24 @@ export component SettingsInput inherits HorizontalLayout {
         background: theme-colors.bg_tertiary;
         border-width: 1px;
         border-color: field.has-focus ? theme-colors.accent : theme-colors.border_light;
+        clip: true;
 
         field := TextInput {
             text <=> root.text;
             color: theme-colors.text_primary;
             font-size: 12px;
             x: 10px;
-            width: parent.width - 20px;
+            width: max(parent.width - 20px, self.preferred-width);
             height: parent.height;
             vertical-alignment: center;
             input-type: root.input-type;
+            single-line: true;
+
+            cursor-position-changed(cursor-position) => {
+                // Scroll text so cursor stays visible within the clipped area
+                // Keep 10px padding on the right edge
+                self.x = min(10px, parent.width - 10px - cursor-position.x - self.text-cursor-width);
+            }
         }
     }
 }
