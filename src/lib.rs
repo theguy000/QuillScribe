@@ -234,6 +234,19 @@ pub fn run() {
         app.set_settings_api_language(s.whisper.api_language.clone().into());
         app.set_settings_local_model(s.whisper.local_model.clone().into());
 
+        // Initialize local model categories and models
+        let categories = whisper::WhisperManager::get_local_model_categories();
+        let category_strings: Vec<slint::SharedString> = categories.iter().map(|c| c.into()).collect();
+        let category_rc = std::rc::Rc::new(slint::VecModel::from(category_strings));
+        app.set_settings_local_model_categories(slint::ModelRc::from(category_rc));
+
+        let initial_category = "General";
+        let models = whisper::WhisperManager::get_local_models_for_category(initial_category);
+        let model_strings: Vec<slint::SharedString> = models.iter().map(|m| m.into()).collect();
+        let model_rc = std::rc::Rc::new(slint::VecModel::from(model_strings));
+        app.set_settings_local_models(slint::ModelRc::from(model_rc));
+        app.set_settings_local_model_category(initial_category.into());
+
         // UI
         let theme_display = theme_key_to_display(&s.ui.theme);
         app.set_settings_theme(theme_display.into());
@@ -623,9 +636,18 @@ pub fn run() {
     });
 
     let shared_cb = Arc::clone(&shared);
-    app.on_settings_category_changed(move |_category: slint::SharedString| {
-        // Category is a UI-only grouping filter — no config change needed
-        let _ = shared_cb;
+    app.on_settings_category_changed(move |category: slint::SharedString| {
+        let category_str = category.to_string();
+        let models = whisper::WhisperManager::get_local_models_for_category(&category_str);
+        let model_strings: Vec<slint::SharedString> = models.iter().map(|m| m.into()).collect();
+        let model_rc = std::rc::Rc::new(slint::VecModel::from(model_strings));
+        shared_cb.with_ui(|app| {
+            app.set_settings_local_models(slint::ModelRc::from(model_rc));
+            // Select the first model in the filtered list
+            if let Some(first_model) = models.first() {
+                app.set_settings_local_model(first_model.clone().into());
+            }
+        });
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -644,6 +666,7 @@ pub fn run() {
             let s = Arc::clone(&shared_cb);
             s.with_ui(|app| {
                 app.set_settings_downloading_model(true);
+                app.set_settings_download_progress(0.0);
                 app.set_settings_download_error("".into());
             });
             let model_name = {
@@ -651,22 +674,38 @@ pub fn run() {
                 config.get_whisper().local_model
             };
             let s2 = Arc::clone(&s);
+            let s3 = Arc::clone(&s);
+            let s4 = Arc::clone(&s);
             rt_handle.spawn(async move {
-                match whisper::WhisperManager::download_model(&model_name).await {
+                match whisper::WhisperManager::download_model_with_progress(&model_name, move |downloaded, total| {
+                    let progress = if total > 0 {
+                        (downloaded as f32 / total as f32).min(1.0)
+                    } else {
+                        0.0
+                    };
+                    let s5 = Arc::clone(&s4);
+                    let _ = slint::invoke_from_event_loop(move || {
+                        s5.with_ui(|app| {
+                            app.set_settings_download_progress(progress);
+                        });
+                    });
+                }).await {
                     Ok(_) => {
                         let _ = slint::invoke_from_event_loop(move || {
                             s2.with_ui(|app| {
                                 app.set_settings_downloading_model(false);
                                 app.set_settings_model_downloaded(true);
+                                app.set_settings_download_progress(1.0);
                             });
                         });
                     }
                     Err(e) => {
                         let err = format!("{}", e);
                         let _ = slint::invoke_from_event_loop(move || {
-                            s2.with_ui(|app| {
+                            s3.with_ui(|app| {
                                 app.set_settings_downloading_model(false);
                                 app.set_settings_download_error(err.into());
+                                app.set_settings_download_progress(0.0);
                             });
                         });
                     }

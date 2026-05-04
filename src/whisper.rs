@@ -1,19 +1,32 @@
 use anyhow::{anyhow, Result};
+use futures_util::StreamExt;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     pub size: String,
     pub memory: String,
     pub speed: String,
     pub quality: String,
+}
+
+impl ModelInfo {
+    fn new(size: &str, memory: &str, speed: &str, quality: &str) -> Self {
+        Self {
+            size: size.to_string(),
+            memory: memory.to_string(),
+            speed: speed.to_string(),
+            quality: quality.to_string(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -101,10 +114,8 @@ impl WhisperManager {
     }
 
     pub fn set_api_language(&mut self, lang: &str) -> Result<()> {
-        // Handle corrupted values like "en,English" by extracting the code before the comma.
-        let lang = lang.split(',').next().unwrap_or(lang).trim();
-        let languages = Self::get_available_languages();
-        if languages.iter().any(|(code, _)| code == lang) {
+        let lang = Self::extract_language_code(lang);
+        if Self::is_valid_language(lang) {
             self.api_language = lang.to_string();
             Ok(())
         } else {
@@ -130,17 +141,13 @@ impl WhisperManager {
         self.local_model_path = path.to_string();
     }
 
-    #[allow(dead_code)]
     pub fn set_local_language(&mut self, lang: &str) -> Result<()> {
-        // Handle corrupted values like "en,English" by extracting the code before the comma.
-        let lang = lang.split(',').next().unwrap_or(lang).trim();
-        // "auto" is valid for local mode (whisper.cpp auto-detects language)
+        let lang = Self::extract_language_code(lang);
         if lang == "auto" {
             self.local_language = lang.to_string();
             return Ok(());
         }
-        let languages = Self::get_available_languages();
-        if languages.iter().any(|(code, _)| code == lang) {
+        if Self::is_valid_language(lang) {
             self.local_language = lang.to_string();
             Ok(())
         } else {
@@ -158,21 +165,41 @@ impl WhisperManager {
         }
     }
 
+    fn extract_language_code(lang: &str) -> &str {
+        lang.split(',').next().unwrap_or(lang).trim()
+    }
+
+    fn is_valid_language(code: &str) -> bool {
+        Self::get_available_languages().iter().any(|(c, _)| c == code)
+    }
+
     // ── API transcription ────────────────────────────────────────────────
 
+    fn provider_label(provider: &str) -> &'static str {
+        match provider {
+            "groq" => "Groq",
+            _ => "OpenAI",
+        }
+    }
+
+    fn api_url(provider: &str) -> &'static str {
+        match provider {
+            "groq" => "https://api.groq.com/openai/v1/audio/transcriptions",
+            _ => "https://api.openai.com/v1/audio/transcriptions",
+        }
+    }
+
     async fn transcribe_api(&self, audio_data: Vec<f32>, sample_rate: u32) -> Result<String> {
-        let active_key = match self.api_provider.as_str() {
-            "groq" => &self.groq_api_key,
-            _ => &self.api_key,
+        let active_key = if self.api_provider == "groq" {
+            &self.groq_api_key
+        } else {
+            &self.api_key
         };
 
         if active_key.is_empty() {
             return Err(anyhow!(
                 "API key is not set for {}.",
-                match self.api_provider.as_str() {
-                    "groq" => "Groq",
-                    _ => "OpenAI",
-                }
+                Self::provider_label(&self.api_provider),
             ));
         }
 
@@ -196,15 +223,8 @@ impl WhisperManager {
             form = form.text("response_format", "json".to_string());
         }
 
-        let api_url = match self.api_provider.as_str() {
-            "groq" => "https://api.groq.com/openai/v1/audio/transcriptions",
-            _ => "https://api.openai.com/v1/audio/transcriptions",
-        };
-
-        let provider_label = match self.api_provider.as_str() {
-            "groq" => "Groq",
-            _ => "OpenAI",
-        };
+        let api_url = Self::api_url(&self.api_provider);
+        let provider_label = Self::provider_label(&self.api_provider);
 
         let client = reqwest::Client::new();
         let response = client
@@ -219,9 +239,7 @@ impl WhisperManager {
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow!(
                 "{} API request failed with status {}: {}",
-                provider_label,
-                status,
-                body
+                provider_label, status, body
             ));
         }
 
@@ -343,13 +361,11 @@ impl WhisperManager {
     }
 
     /// Check whether the model file exists on disk.
-    #[allow(dead_code)]
     pub fn is_model_downloaded(model_name: &str) -> bool {
         Self::get_model_path(model_name).exists()
     }
 
     /// List all model names that have been downloaded (by scanning the models dir).
-    #[allow(dead_code)]
     pub fn get_downloaded_models() -> Vec<String> {
         let dir = Self::models_dir();
         if !dir.exists() {
@@ -377,7 +393,6 @@ impl WhisperManager {
     }
 
     /// Delete a downloaded model file.
-    #[allow(dead_code)]
     pub fn delete_model(model_name: &str) -> Result<()> {
         let path = Self::get_model_path(model_name);
         if path.exists() {
@@ -387,14 +402,19 @@ impl WhisperManager {
         Ok(())
     }
 
-    /// Download a GGML model from Hugging Face.
+    /// Download a GGML model from Hugging Face with progress reporting.
     ///
     /// URL pattern:
     /// `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{model}.bin`
     ///
     /// Returns the path to the downloaded file.
-    #[allow(dead_code)]
-    pub async fn download_model(model_name: &str) -> Result<String> {
+    pub async fn download_model_with_progress<F>(
+        model_name: &str,
+        mut progress_callback: F,
+    ) -> Result<String>
+    where
+        F: FnMut(u64, u64) + Send + 'static,
+    {
         let url = Self::model_download_url(model_name);
         let dest = Self::get_model_path(model_name);
 
@@ -408,7 +428,7 @@ impl WhisperManager {
             )
         })?;
 
-        // Download with streaming.
+        // Download with streaming and progress.
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()?;
@@ -423,18 +443,43 @@ impl WhisperManager {
             ));
         }
 
-        let bytes = response.bytes().await?;
+        let total_size = response.content_length().unwrap_or(0);
+        let mut downloaded = 0u64;
 
-        // Write to a temporary file first, then rename for atomicity.
+        let mut file = File::create(&dest.with_extension("bin.tmp"))
+            .await
+            .map_err(|e| anyhow!("Failed to create file: {}", e))?;
+
+        let mut stream = response.bytes_stream();
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| anyhow!("Download error: {}", e))?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| anyhow!("Write error: {}", e))?;
+            downloaded += chunk.len() as u64;
+            progress_callback(downloaded, total_size);
+        }
+
+        // Rename to final path.
         let tmp_path = dest.with_extension("bin.tmp");
-        fs::write(&tmp_path, &bytes).map_err(|e| anyhow!("Failed to write model file: {}", e))?;
-        fs::rename(&tmp_path, &dest).map_err(|e| anyhow!("Failed to rename model file: {}", e))?;
+        tokio::fs::rename(&tmp_path, &dest)
+            .await
+            .map_err(|e| anyhow!("Failed to rename model file: {}", e))?;
 
         Ok(dest.to_string_lossy().to_string())
     }
 
+    /// Download a GGML model from Hugging Face (without progress reporting).
+    ///
+    /// URL pattern:
+    /// `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{model}.bin`
+    ///
+    /// Returns the path to the downloaded file.
+    pub async fn download_model(model_name: &str) -> Result<String> {
+        Self::download_model_with_progress(model_name, |_downloaded, _total| {}).await
+    }
+
     /// Construct the Hugging Face download URL for a model.
-    #[allow(dead_code)]
     fn model_download_url(model_name: &str) -> String {
         format!(
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin",
@@ -533,93 +578,49 @@ impl WhisperManager {
         ]
     }
 
-    #[allow(dead_code)]
+    pub fn get_local_model_categories() -> Vec<String> {
+        vec![
+            "General".to_string(),
+            "Tiny".to_string(),
+            "Base".to_string(),
+            "Small".to_string(),
+            "Medium".to_string(),
+            "Large".to_string(),
+        ]
+    }
+
+    pub fn get_local_models_for_category(category: &str) -> Vec<String> {
+        let all_models = Self::get_available_local_models();
+        match category {
+            "General" => all_models,
+            "Tiny" => all_models.into_iter().filter(|m| m.starts_with("tiny")).collect(),
+            "Base" => all_models.into_iter().filter(|m| m.starts_with("base")).collect(),
+            "Small" => all_models.into_iter().filter(|m| m.starts_with("small")).collect(),
+            "Medium" => all_models.into_iter().filter(|m| m.starts_with("medium") || m.starts_with("distil-medium")).collect(),
+            "Large" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("large") || m == "turbo" || m.starts_with("distil-large"))
+                .collect(),
+            _ => all_models,
+        }
+    }
+
     pub fn get_model_info(model_name: &str) -> ModelInfo {
         match model_name {
-            "tiny" | "tiny.en" => ModelInfo {
-                size: "75 MB".to_string(),
-                memory: "~390 MB".to_string(),
-                speed: "~10x".to_string(),
-                quality: "Low".to_string(),
-            },
-            "base" | "base.en" => ModelInfo {
-                size: "142 MB".to_string(),
-                memory: "~500 MB".to_string(),
-                speed: "~7x".to_string(),
-                quality: "Low-Medium".to_string(),
-            },
-            "small" | "small.en" => ModelInfo {
-                size: "466 MB".to_string(),
-                memory: "~1 GB".to_string(),
-                speed: "~4x".to_string(),
-                quality: "Medium".to_string(),
-            },
-            "medium" | "medium.en" => ModelInfo {
-                size: "1.5 GB".to_string(),
-                memory: "~2.6 GB".to_string(),
-                speed: "~2x".to_string(),
-                quality: "Medium-High".to_string(),
-            },
-            "large-v1" | "large-v2" | "large-v3" => ModelInfo {
-                size: "2.9 GB".to_string(),
-                memory: "~4.7 GB".to_string(),
-                speed: "~1x".to_string(),
-                quality: "High".to_string(),
-            },
-            "turbo" => ModelInfo {
-                size: "1.5 GB".to_string(),
-                memory: "~2.6 GB".to_string(),
-                speed: "~8x".to_string(),
-                quality: "High".to_string(),
-            },
-            "distil-large-v2" | "distil-large-v3" => ModelInfo {
-                size: "756 MB".to_string(),
-                memory: "~1.5 GB".to_string(),
-                speed: "~6x".to_string(),
-                quality: "Medium-High".to_string(),
-            },
-            "distil-medium.en" => ModelInfo {
-                size: "789 MB".to_string(),
-                memory: "~1.5 GB".to_string(),
-                speed: "~5x".to_string(),
-                quality: "Medium".to_string(),
-            },
-            "distil-small.en" => ModelInfo {
-                size: "332 MB".to_string(),
-                memory: "~800 MB".to_string(),
-                speed: "~6x".to_string(),
-                quality: "Low-Medium".to_string(),
-            },
-            "gpt-4o-transcribe" => ModelInfo {
-                size: "Cloud".to_string(),
-                memory: "N/A".to_string(),
-                speed: "Fast".to_string(),
-                quality: "Very High".to_string(),
-            },
-            "gpt-4o-mini-transcribe" => ModelInfo {
-                size: "Cloud".to_string(),
-                memory: "N/A".to_string(),
-                speed: "Very Fast".to_string(),
-                quality: "High".to_string(),
-            },
-            "whisper-large-v3-turbo" => ModelInfo {
-                size: "Cloud".to_string(),
-                memory: "N/A".to_string(),
-                speed: "Very Fast".to_string(),
-                quality: "High".to_string(),
-            },
-            "whisper-large-v3" => ModelInfo {
-                size: "Cloud".to_string(),
-                memory: "N/A".to_string(),
-                speed: "Fast".to_string(),
-                quality: "Very High".to_string(),
-            },
-            _ => ModelInfo {
-                size: "Unknown".to_string(),
-                memory: "Unknown".to_string(),
-                speed: "Unknown".to_string(),
-                quality: "Unknown".to_string(),
-            },
+            "tiny" | "tiny.en" => ModelInfo::new("75 MB", "~390 MB", "~10x", "Low"),
+            "base" | "base.en" => ModelInfo::new("142 MB", "~500 MB", "~7x", "Low-Medium"),
+            "small" | "small.en" => ModelInfo::new("466 MB", "~1 GB", "~4x", "Medium"),
+            "medium" | "medium.en" => ModelInfo::new("1.5 GB", "~2.6 GB", "~2x", "Medium-High"),
+            "large-v1" | "large-v2" | "large-v3" => ModelInfo::new("2.9 GB", "~4.7 GB", "~1x", "High"),
+            "turbo" => ModelInfo::new("1.5 GB", "~2.6 GB", "~8x", "High"),
+            "distil-large-v2" | "distil-large-v3" => ModelInfo::new("756 MB", "~1.5 GB", "~6x", "Medium-High"),
+            "distil-medium.en" => ModelInfo::new("789 MB", "~1.5 GB", "~5x", "Medium"),
+            "distil-small.en" => ModelInfo::new("332 MB", "~800 MB", "~6x", "Low-Medium"),
+            "gpt-4o-transcribe" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),
+            "gpt-4o-mini-transcribe" => ModelInfo::new("Cloud", "N/A", "Very Fast", "High"),
+            "whisper-large-v3-turbo" => ModelInfo::new("Cloud", "N/A", "Very Fast", "High"),
+            "whisper-large-v3" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),
+            _ => ModelInfo::new("Unknown", "Unknown", "Unknown", "Unknown"),
         }
     }
 
@@ -729,5 +730,307 @@ impl WhisperManager {
         .into_iter()
         .map(|(code, name)| (code.to_string(), name.to_string()))
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_local_model_categories_returns_expected_categories() {
+        let categories = WhisperManager::get_local_model_categories();
+        assert_eq!(categories.len(), 6);
+        assert!(categories.contains(&"General".to_string()));
+        assert!(categories.contains(&"Tiny".to_string()));
+        assert!(categories.contains(&"Base".to_string()));
+        assert!(categories.contains(&"Small".to_string()));
+        assert!(categories.contains(&"Medium".to_string()));
+        assert!(categories.contains(&"Large".to_string()));
+    }
+
+    #[test]
+    fn test_get_local_models_for_category_general_returns_all_models() {
+        let models = WhisperManager::get_local_models_for_category("General");
+        let all_models = WhisperManager::get_available_local_models();
+        assert_eq!(models, all_models);
+    }
+
+    #[test]
+    fn test_get_local_models_for_category_tiny_filters_correctly() {
+        let models = WhisperManager::get_local_models_for_category("Tiny");
+        assert_eq!(models.len(), 2);
+        assert!(models.contains(&"tiny".to_string()));
+        assert!(models.contains(&"tiny.en".to_string()));
+    }
+
+    #[test]
+    fn test_get_local_models_for_category_base_filters_correctly() {
+        let models = WhisperManager::get_local_models_for_category("Base");
+        assert_eq!(models.len(), 2);
+        assert!(models.contains(&"base".to_string()));
+        assert!(models.contains(&"base.en".to_string()));
+    }
+
+    #[test]
+    fn test_get_local_models_for_category_small_filters_correctly() {
+        let models = WhisperManager::get_local_models_for_category("Small");
+        assert_eq!(models.len(), 2);
+        assert!(models.contains(&"small".to_string()));
+        assert!(models.contains(&"small.en".to_string()));
+    }
+
+    #[test]
+    fn test_get_local_models_for_category_medium_filters_correctly() {
+        let models = WhisperManager::get_local_models_for_category("Medium");
+        assert!(models.contains(&"medium".to_string()));
+        assert!(models.contains(&"medium.en".to_string()));
+        assert!(models.contains(&"distil-medium.en".to_string()));
+    }
+
+    #[test]
+    fn test_get_local_models_for_category_large_filters_correctly() {
+        let models = WhisperManager::get_local_models_for_category("Large");
+        assert!(models.contains(&"large-v1".to_string()));
+        assert!(models.contains(&"large-v2".to_string()));
+        assert!(models.contains(&"large-v3".to_string()));
+        assert!(models.contains(&"turbo".to_string()));
+        assert!(models.contains(&"distil-large-v2".to_string()));
+        assert!(models.contains(&"distil-large-v3".to_string()));
+    }
+
+    #[test]
+    fn test_get_local_models_for_category_unknown_returns_all() {
+        let models = WhisperManager::get_local_models_for_category("Unknown");
+        let all_models = WhisperManager::get_available_local_models();
+        assert_eq!(models, all_models);
+    }
+
+    #[test]
+    fn test_get_available_local_models_returns_expected_count() {
+        let models = WhisperManager::get_available_local_models();
+        assert_eq!(models.len(), 16);
+    }
+
+    #[test]
+    fn test_get_model_info_returns_info_for_tiny() {
+        let info = WhisperManager::get_model_info("tiny");
+        assert_eq!(info.size, "75 MB");
+        assert_eq!(info.memory, "~390 MB");
+        assert_eq!(info.speed, "~10x");
+        assert_eq!(info.quality, "Low");
+    }
+
+    #[test]
+    fn test_get_model_info_returns_info_for_base() {
+        let info = WhisperManager::get_model_info("base");
+        assert_eq!(info.size, "142 MB");
+        assert_eq!(info.memory, "~500 MB");
+        assert_eq!(info.speed, "~7x");
+        assert_eq!(info.quality, "Low-Medium");
+    }
+
+    #[test]
+    fn test_get_model_info_returns_info_for_unknown() {
+        let info = WhisperManager::get_model_info("unknown");
+        assert_eq!(info.size, "Unknown");
+        assert_eq!(info.memory, "Unknown");
+        assert_eq!(info.speed, "Unknown");
+        assert_eq!(info.quality, "Unknown");
+    }
+
+    #[test]
+    fn test_get_available_api_models_for_provider_openai() {
+        let models = WhisperManager::get_available_api_models_for_provider("openai");
+        assert!(models.contains(&"gpt-4o-transcribe".to_string()));
+        assert!(models.contains(&"gpt-4o-mini-transcribe".to_string()));
+    }
+
+    #[test]
+    fn test_get_available_api_models_for_provider_groq() {
+        let models = WhisperManager::get_available_api_models_for_provider("groq");
+        assert!(models.contains(&"whisper-large-v3-turbo".to_string()));
+        assert!(models.contains(&"whisper-large-v3".to_string()));
+    }
+
+    #[test]
+    fn test_get_available_api_models_for_provider_unknown_defaults_to_openai() {
+        let models = WhisperManager::get_available_api_models_for_provider("unknown");
+        let openai_models = WhisperManager::get_available_api_models_for_provider("openai");
+        assert_eq!(models, openai_models);
+    }
+
+    #[test]
+    fn test_whisper_manager_new_has_default_values() {
+        let mut manager = WhisperManager::new();
+        let result = manager.set_mode("api");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_set_mode_accepts_valid_modes() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_mode("api").is_ok());
+        assert!(manager.set_mode("local").is_ok());
+    }
+
+    #[test]
+    fn test_set_mode_rejects_invalid_mode() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_mode("invalid").is_err());
+    }
+
+    #[test]
+    fn test_set_api_provider_accepts_valid_providers() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_api_provider("openai").is_ok());
+        assert!(manager.set_api_provider("groq").is_ok());
+    }
+
+    #[test]
+    fn test_set_api_provider_rejects_invalid_provider() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_api_provider("invalid").is_err());
+    }
+
+    #[test]
+    fn test_set_api_model_rejects_invalid_model() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_api_model("invalid-model").is_err());
+    }
+
+    #[test]
+    fn test_set_local_language_accepts_auto() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_local_language("auto").is_ok());
+    }
+
+    #[test]
+    fn test_set_local_language_accepts_valid_code() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_local_language("en").is_ok());
+    }
+
+    #[test]
+    fn test_set_local_language_handles_corrupted_value() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_local_language("en,English").is_ok());
+    }
+
+    #[test]
+    fn test_set_local_language_rejects_invalid_code() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_local_language("invalid").is_err());
+    }
+
+    #[test]
+    fn test_set_local_model_accepts_valid_model() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_local_model("tiny").is_ok());
+        assert_eq!(manager.local_model, "tiny");
+    }
+
+    #[test]
+    fn test_set_local_model_rejects_invalid_model() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_local_model("invalid-model").is_err());
+    }
+
+    #[test]
+    fn test_set_api_language_accepts_valid_code() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_api_language("es").is_ok());
+        assert_eq!(manager.api_language, "es");
+    }
+
+    #[test]
+    fn test_set_api_language_rejects_invalid_code() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_api_language("invalid").is_err());
+    }
+
+    #[test]
+    fn test_set_api_language_handles_corrupted_value() {
+        let mut manager = WhisperManager::new();
+        assert!(manager.set_api_language("fr,French").is_ok());
+        assert_eq!(manager.api_language, "fr");
+    }
+
+    #[test]
+    fn test_models_dir_returns_path_in_data_dir() {
+        let dir = WhisperManager::models_dir();
+        assert!(dir.to_string_lossy().contains("quillscribe"));
+        assert!(dir.to_string_lossy().contains("models"));
+    }
+
+    #[test]
+    fn test_get_model_path_includes_model_name() {
+        let path = WhisperManager::get_model_path("tiny");
+        assert!(path.to_string_lossy().contains("tiny"));
+        assert!(path.extension().is_some_and(|e| e == "bin"));
+    }
+
+    #[test]
+    fn test_model_download_url_format() {
+        let url = WhisperManager::model_download_url("base");
+        assert_eq!(
+            url,
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin"
+        );
+    }
+
+    #[test]
+    fn test_is_model_downloaded_true_when_file_exists() {
+        let model_name = "__test_dummy_model__";
+        let path = WhisperManager::get_model_path(model_name);
+        let _ = fs::create_dir_all(WhisperManager::models_dir());
+        fs::write(&path, b"dummy").unwrap();
+        let result = WhisperManager::is_model_downloaded(model_name);
+        let _ = fs::remove_file(&path);
+        assert!(result);
+    }
+
+    #[test]
+    fn test_is_model_downloaded_false_when_missing() {
+        let result = WhisperManager::is_model_downloaded("__nonexistent_model__");
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_get_downloaded_models_finds_models() {
+        let model_name = "__test_downloaded__";
+        let path = WhisperManager::get_model_path(model_name);
+        let _ = fs::create_dir_all(WhisperManager::models_dir());
+        fs::write(&path, b"dummy").unwrap();
+        let models = WhisperManager::get_downloaded_models();
+        let _ = fs::remove_file(&path);
+        assert!(models.contains(&model_name.to_string()));
+    }
+
+    #[test]
+    fn test_delete_model_removes_file() {
+        let model_name = "__test_delete__";
+        let path = WhisperManager::get_model_path(model_name);
+        let _ = fs::create_dir_all(WhisperManager::models_dir());
+        fs::write(&path, b"dummy").unwrap();
+        assert!(path.exists());
+        let result = WhisperManager::delete_model(model_name);
+        assert!(result.is_ok());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn test_delete_model_succeeds_when_missing() {
+        let result = WhisperManager::delete_model("__never_existed__");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_available_languages_contains_common_codes() {
+        let languages = WhisperManager::get_available_languages();
+        assert!(!languages.is_empty());
+        assert!(languages.iter().any(|(c, _)| c == "en"));
+        assert!(languages.iter().any(|(c, _)| c == "es"));
+        assert!(languages.iter().any(|(c, _)| c == "fr"));
     }
 }

@@ -51,6 +51,7 @@ export component App inherits Window {
     in-out property <string> settings-local-model-category: "General";
     in-out property <bool> settings-model-downloaded: false;
     in-out property <bool> settings-downloading-model: false;
+    in-out property <float> settings-download-progress: 0;
     in-out property <bool> settings-deleting-model: false;
     in-out property <string> settings-download-error;
     in property <string> settings-model-size;
@@ -221,6 +222,7 @@ export component App inherits Window {
                         local-model-category <=> settings-local-model-category;
                         model-downloaded <=> settings-model-downloaded;
                         downloading-model <=> settings-downloading-model;
+                        download-progress <=> settings-download-progress;
                         deleting-model <=> settings-deleting-model;
                         download-error <=> settings-download-error;
                         model-size: settings-model-size;

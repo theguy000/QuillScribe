@@ -71,6 +71,7 @@ export component SettingsDialog inherits Rectangle {
     in-out property <string> local-model-category: "General";
     in-out property <bool> model-downloaded: false;
     in-out property <bool> downloading-model: false;
+    in property <float> download-progress: 0;
     in-out property <bool> deleting-model: false;
     in-out property <string> download-error;
     in property <string> model-size;
@@ -271,6 +272,7 @@ export component SettingsDialog inherits Rectangle {
                                 local-model-category: local-model-category;
                                 model-downloaded: model-downloaded;
                                 downloading-model: downloading-model;
+                                download-progress: download-progress;
                                 deleting-model: deleting-model;
                                 download-error: download-error;
                                 model-size: model-size;
