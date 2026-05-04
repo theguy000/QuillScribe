@@ -304,9 +304,40 @@ impl Drop for AudioManager {
 // All cpal types (Host, Device, Stream) live exclusively on this thread,
 // avoiding any Send/Sync issues.
 
+#[cfg(target_os = "linux")]
+fn suppress_stderr_during<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    unsafe {
+        let dev_null = libc::open(
+            b"/dev/null\0".as_ptr() as *const libc::c_char,
+            libc::O_WRONLY,
+        );
+        if dev_null < 0 {
+            return f();
+        }
+        let old_stderr = libc::dup(2);
+        libc::dup2(dev_null, 2);
+        libc::close(dev_null);
+        let result = f();
+        libc::dup2(old_stderr, 2);
+        libc::close(old_stderr);
+        result
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn suppress_stderr_during<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    f()
+}
+
 #[allow(unused_assignments, unused_variables)]
 fn audio_thread_fn(rx: mpsc::Receiver<AudioCommand>, state: Arc<Mutex<AudioState>>) {
-    let host = cpal::default_host();
+    let host = suppress_stderr_during(cpal::default_host);
     // The active stream is kept alive here; dropping it stops audio capture.
     // The compiler warns about "unused assignments" because the reads are
     // implicit (keeping the stream alive / dropping it), so we suppress that.
@@ -320,13 +351,13 @@ fn audio_thread_fn(rx: mpsc::Receiver<AudioCommand>, state: Arc<Mutex<AudioState
 
         match cmd {
             AudioCommand::GetDevices { blocklist, reply } => {
-                let devices = enumerate_devices(&host, &blocklist);
+                let devices = suppress_stderr_during(|| enumerate_devices(&host, &blocklist));
                 let _ = reply.send(devices);
             }
 
             AudioCommand::SetDevice { device_id, reply } => {
                 let result = if let Some(ref id) = device_id {
-                    match find_device_by_id(&host, id) {
+                    match suppress_stderr_during(|| find_device_by_id(&host, id)) {
                         Some(_) => Ok(()),
                         None => Err(anyhow!("Audio device not found: {}", id)),
                     }

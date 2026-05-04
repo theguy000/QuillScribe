@@ -55,21 +55,22 @@ impl StatisticsManager {
         if !path.exists() {
             return Vec::new();
         }
-        match fs::read_to_string(path) {
-            Ok(content) => match serde_json::from_str(&content) {
-                Ok(history) => history,
-                Err(e) => {
-                    warn!(
-                        "Failed to parse history file, backing up and resetting: {}",
-                        e
-                    );
-                    let backup = path.with_extension("json.bak");
-                    let _ = fs::copy(path, &backup);
-                    Vec::new()
-                }
-            },
+        let content = match fs::read_to_string(path) {
+            Ok(c) => c,
             Err(e) => {
                 warn!("Failed to read history file: {}", e);
+                return Vec::new();
+            }
+        };
+        match serde_json::from_str(&content) {
+            Ok(history) => history,
+            Err(e) => {
+                warn!(
+                    "Failed to parse history file, backing up and resetting: {}",
+                    e
+                );
+                let backup = path.with_extension("json.bak");
+                let _ = fs::copy(path, &backup);
                 Vec::new()
             }
         }

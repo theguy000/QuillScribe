@@ -110,23 +110,24 @@ impl SoundManager {
             None => return,
         };
 
-        match Sink::try_new(handle) {
-            Ok(sink) => {
-                let cursor = Cursor::new(wav_data);
-                match Decoder::new(cursor) {
-                    Ok(source) => {
-                        sink.append(source);
-                        // Detach the sink so it plays to completion without blocking
-                        sink.detach();
-                        debug!("Playing {} notification sound", name);
-                    }
-                    Err(e) => {
-                        error!("Failed to decode {} WAV data: {}", name, e);
-                    }
-                }
-            }
+        let sink = match Sink::try_new(handle) {
+            Ok(sink) => sink,
             Err(e) => {
                 error!("Failed to create audio sink for {} sound: {}", name, e);
+                return;
+            }
+        };
+
+        let cursor = Cursor::new(wav_data);
+        match Decoder::new(cursor) {
+            Ok(source) => {
+                sink.append(source);
+                // Detach the sink so it plays to completion without blocking
+                sink.detach();
+                debug!("Playing {} notification sound", name);
+            }
+            Err(e) => {
+                error!("Failed to decode {} WAV data: {}", name, e);
             }
         }
     }

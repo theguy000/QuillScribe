@@ -148,6 +148,36 @@ pub fn run() {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let rt_handle = rt.handle().clone();
 
+    // Suppress ALSA error spam on Linux by installing a no-op global handler.
+    // Also prevent JACK from trying to auto-start its server.
+    #[cfg(target_os = "linux")]
+    {
+        std::env::set_var("JACK_NO_START_SERVER", "1");
+
+        extern "C" {
+            fn quillscribe_silence_alsa_errors(
+                file: *const libc::c_char,
+                line: libc::c_int,
+                function: *const libc::c_char,
+                err: libc::c_int,
+                fmt: *const libc::c_char,
+                ...,
+            );
+        }
+
+        unsafe {
+            let f: unsafe extern "C" fn(
+                *const libc::c_char,
+                libc::c_int,
+                *const libc::c_char,
+                libc::c_int,
+                *const libc::c_char,
+                ...,
+            ) = quillscribe_silence_alsa_errors;
+            let _ = alsa_sys::snd_lib_error_set_handler(Some(f));
+        }
+    }
+
     let app_state = AppState::new();
     let initial_theme = {
         let config = app_state.config.lock().unwrap();
@@ -186,81 +216,48 @@ pub fn run() {
     }
 
     // ── Initialize UI from persisted config ──────────────────────────────
-    {
+    let s = {
         let config = shared.state.config.lock().unwrap();
-        let s = config.get_settings();
+        config.get_settings()
+    };
 
-        // Audio
-        if let Some(ref dev_id) = s.audio.device_id {
-            let dev_name = if let Ok(audio) = shared.state.audio.lock() {
-                audio.get_available_devices(s.audio.blocklist.clone())
-                    .into_iter()
-                    .find(|d| &d.id == dev_id)
-                    .map(|d| d.name)
-                    .unwrap_or_else(|| dev_id.clone())
-            } else {
-                dev_id.clone()
-            };
-            app.set_settings_audio_device_id(dev_name.into());
-        } else {
-            app.set_settings_audio_device_id("Default".into());
-        }
-        app.set_settings_sounds_enabled(s.audio.sounds_enabled);
-        
-        let blocklist_items: Vec<slint::SharedString> = s.audio.blocklist.iter()
-            .map(|s| slint::SharedString::from(s.as_str()))
-            .collect();
-        let blocklist_model = std::rc::Rc::new(slint::VecModel::from(blocklist_items));
-        app.set_settings_audio_blocklist(slint::ModelRc::from(blocklist_model));
+    // Audio devices, blocklist, and device selection
+    refresh_blocklist_and_devices(&shared);
+    app.set_settings_sounds_enabled(s.audio.sounds_enabled);
 
-        if let Ok(audio) = shared.state.audio.lock() {
-            let devices = audio.get_available_devices(s.audio.blocklist.clone());
-            let mut names: Vec<slint::SharedString> = vec!["Default".into()];
-            names.extend(
-                devices
-                    .into_iter()
-                    .map(|d| slint::SharedString::from(d.name.as_str()))
-            );
-            let model = std::rc::Rc::new(slint::VecModel::from(names));
-            app.set_settings_audio_devices(slint::ModelRc::from(model.clone()));
-        }
+    // Whisper / Engine
+    app.set_settings_whisper_mode(s.whisper.mode.clone().into());
+    app.set_settings_api_provider(s.whisper.api_provider.clone().into());
+    app.set_settings_api_key(s.whisper.api_key.clone().into());
+    app.set_settings_groq_api_key(s.whisper.groq_api_key.clone().into());
+    app.set_settings_api_model(s.whisper.api_model.clone().into());
+    app.set_settings_api_language(s.whisper.api_language.clone().into());
+    app.set_settings_local_model(s.whisper.local_model.clone().into());
 
-        // Whisper / Engine
-        app.set_settings_whisper_mode(s.whisper.mode.clone().into());
-        app.set_settings_api_provider(s.whisper.api_provider.clone().into());
-        app.set_settings_api_key(s.whisper.api_key.clone().into());
-        app.set_settings_groq_api_key(s.whisper.groq_api_key.clone().into());
-        app.set_settings_api_model(s.whisper.api_model.clone().into());
-        app.set_settings_api_language(s.whisper.api_language.clone().into());
-        app.set_settings_local_model(s.whisper.local_model.clone().into());
+    // Initialize local model categories and models
+    let categories = whisper::WhisperManager::get_local_model_categories();
+    let category_strings: Vec<slint::SharedString> = categories.iter().map(|c| c.into()).collect();
+    let category_rc = std::rc::Rc::new(slint::VecModel::from(category_strings));
+    app.set_settings_local_model_categories(slint::ModelRc::from(category_rc));
 
-        // Initialize local model categories and models
-        let categories = whisper::WhisperManager::get_local_model_categories();
-        let category_strings: Vec<slint::SharedString> = categories.iter().map(|c| c.into()).collect();
-        let category_rc = std::rc::Rc::new(slint::VecModel::from(category_strings));
-        app.set_settings_local_model_categories(slint::ModelRc::from(category_rc));
+    let initial_category = "General";
+    let models = whisper::WhisperManager::get_local_models_for_category(initial_category);
+    let model_strings: Vec<slint::SharedString> = models.iter().map(|m| m.into()).collect();
+    let model_rc = std::rc::Rc::new(slint::VecModel::from(model_strings));
+    app.set_settings_local_models(slint::ModelRc::from(model_rc));
+    app.set_settings_local_model_category(initial_category.into());
 
-        let initial_category = "General";
-        let models = whisper::WhisperManager::get_local_models_for_category(initial_category);
-        let model_strings: Vec<slint::SharedString> = models.iter().map(|m| m.into()).collect();
-        let model_rc = std::rc::Rc::new(slint::VecModel::from(model_strings));
-        app.set_settings_local_models(slint::ModelRc::from(model_rc));
-        app.set_settings_local_model_category(initial_category.into());
-
-        // UI
-        let theme_display = theme_key_to_display(&s.ui.theme);
-        app.set_settings_theme(theme_display.into());
-        app.set_current_theme(s.ui.theme.clone().into());
-        app.set_settings_custom_titlebar(s.ui.custom_titlebar);
-        app.set_settings_always_on_top(s.ui.always_on_top);
-        app.set_settings_overlay_mode(s.ui.overlay_mode.clone().into());
-        app.set_settings_overlay_style(s.ui.overlay_style.clone().into());
-        app.set_settings_overlay_opacity(s.ui.overlay_opacity as f32);
-        app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
-        window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
-
-        drop(config);
-    }
+    // UI
+    let theme_display = theme_key_to_display(&s.ui.theme);
+    app.set_settings_theme(theme_display.into());
+    app.set_current_theme(s.ui.theme.clone().into());
+    app.set_settings_custom_titlebar(s.ui.custom_titlebar);
+    app.set_settings_always_on_top(s.ui.always_on_top);
+    app.set_settings_overlay_mode(s.ui.overlay_mode.clone().into());
+    app.set_settings_overlay_style(s.ui.overlay_style.clone().into());
+    app.set_settings_overlay_opacity(s.ui.overlay_opacity as f32);
+    app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
+    window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
 
     // ── Wire core Slint callbacks ────────────────────────────────────────
 
@@ -272,13 +269,10 @@ pub fn run() {
         let ui = s.app_weak.lock().unwrap().clone();
 
         // Read current state on the UI thread (callback runs on Slint event loop)
-        let is_recording = {
-            if let Some(app) = ui.as_ref().and_then(|w| w.upgrade()) {
-                app.get_is_recording()
-            } else {
-                false
-            }
-        };
+        let is_recording = ui.as_ref()
+            .and_then(|w| w.upgrade())
+            .map(|app| app.get_is_recording())
+            .unwrap_or(false);
 
         if !is_recording {
             // Start recording — synchronous, on UI thread
@@ -584,7 +578,7 @@ pub fn run() {
         let model_rc = std::rc::Rc::new(slint::VecModel::from(model_strings));
         let first_model = models.first().cloned().unwrap_or_default();
         shared_cb.with_ui(|app| {
-            app.set_settings_api_models(slint::ModelRc::from(model_rc.clone()));
+            app.set_settings_api_models(slint::ModelRc::from(model_rc));
             app.set_settings_api_model(first_model.clone().into());
         });
         save_config_field(&shared_cb, |s| {
