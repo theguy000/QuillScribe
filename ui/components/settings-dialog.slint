@@ -244,8 +244,8 @@ export component SettingsDialog inherits Rectangle {
 
                             if active-tab == "audio": AudioTab {
                                 theme-colors: theme-colors;
-                                audio-device-id: audio-device-id;
-                                sounds-enabled: sounds-enabled;
+                                audio-device-id <=> audio-device-id;
+                                sounds-enabled <=> sounds-enabled;
                                 audio-devices: audio-devices;
                                 loading-devices: loading-devices;
                                 testing-mic: testing-mic;
