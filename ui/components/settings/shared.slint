@@ -392,7 +392,7 @@ export component SettingsInput inherits HorizontalLayout {
         field := TextInput {
             text <=> root.text;
             color: theme-colors.text_primary;
-            font-size: 12px;
+            font-size: root.input-type == InputType.password ? 10px : 12px;
             x: 10px;
             width: max(parent.width - 20px, self.preferred-width);
             height: parent.height;
