@@ -150,10 +150,8 @@ fn refresh_blocklist_and_devices(shared: &SharedAppState) {
 }
 
 pub fn run() {
-    #[cfg(target_os = "linux")]
-    {
-        std::env::set_var("SLINT_BACKEND", "winit-femtovg");
-    }
+    // Let Slint auto-detect the best renderer (femtovg with GPU if available)
+    // Previously tried winit-skia-vulkan but the feature wasn't compiled in.
 
     // Initialize logging
     env_logger::init();

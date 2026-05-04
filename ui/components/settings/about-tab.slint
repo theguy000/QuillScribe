@@ -212,7 +212,7 @@ export component AboutTab inherits VerticalLayout {
         theme-colors: theme-colors;
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: 10px;
 
             // Info items
             for item in [
@@ -220,24 +220,26 @@ export component AboutTab inherits VerticalLayout {
                 { label: "Framework", value: "Slint + Rust" },
                 { label: "Backend", value: "Rust" }
             ]: Rectangle {
-                height: 44px;
+                width: 32px + max(project-label.preferred-width, project-value.preferred-width);
+                height: 48px;
                 border-radius: 8px;
                 background: theme-colors.bg_secondary;
 
                 VerticalLayout {
-                    spacing: 2px;
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    padding-top: 6px;
+                    spacing: 4px;
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 7px;
+                    padding-bottom: 7px;
 
-                    Text {
+                    project-label := Text {
                         text: item.label;
                         color: theme-colors.text_muted;
                         font-size: 10px;
                         font-weight: 600;
                     }
 
-                    Text {
+                    project-value := Text {
                         text: item.value;
                         color: theme-colors.text_primary;
                         font-size: 12px;
@@ -256,7 +258,11 @@ export component AboutTab inherits VerticalLayout {
         HorizontalLayout {
             spacing: 8px;
 
-            for label in ["GitHub", "Report Issue"]: Rectangle {
+            for item in [
+                { label: "GitHub", icon: @image-url("../../icons/github.svg") },
+                { label: "Report Issue", icon: @image-url("../../icons/alert-circle.svg") }
+            ]: Rectangle {
+                width: 44px + link-label.preferred-width;
                 height: 32px;
                 border-radius: 8px;
                 background: theme-colors.accent_glow;
@@ -264,9 +270,25 @@ export component AboutTab inherits VerticalLayout {
                 HorizontalLayout {
                     padding-left: 12px;
                     padding-right: 12px;
+                    spacing: 6px;
+                    alignment: center;
 
-                    Text {
-                        text: label;
+                    Rectangle {
+                        width: 14px;
+                        height: 32px;
+
+                        Image {
+                            source: item.icon;
+                            width: 14px;
+                            height: 14px;
+                            image-fit: contain;
+                            colorize: theme-colors.accent;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+
+                    link-label := Text {
+                        text: item.label;
                         color: theme-colors.accent;
                         font-size: 13px;
                         font-weight: 500;

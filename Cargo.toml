@@ -86,8 +86,14 @@ png = "0.17"
 
 # Optimize all dependencies in dev builds for faster startup.
 # Code stays at opt-level 0 for fast recompilation.
+# Faster dev builds: optimize deps only lightly, split debug info to reduce linker memory
+[profile.dev]
+opt-level = 0
+debug = 1          # line-tables-only — much less memory than full debuginfo
+codegen-units = 16 # more parallelism during compilation
+
 [profile.dev.package."*"]
-opt-level = 2
+opt-level = 1      # light optimization for deps (faster compile than opt-level 2)
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

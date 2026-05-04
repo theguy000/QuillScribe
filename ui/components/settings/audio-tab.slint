@@ -79,42 +79,56 @@ export component AudioTab inherits VerticalLayout {
         label: "Test Microphone";
         theme-colors: theme-colors;
 
-        HorizontalLayout {
-            spacing: 10px;
-            alignment: start;
+        Rectangle {
+            width: 304px;
+            background: theme-colors.bg_secondary;
+            border-radius: 10px;
+            horizontal-stretch: 0;
 
-            SettingsButton {
-                theme-colors: theme-colors;
-                label: testing-mic ? "Stop" : "Test";
-                primary: !testing-mic;
-                danger: testing-mic;
-                width: 70px;
-                clicked => {
-                    if testing-mic {
-                        stop-mic-test();
-                    } else {
-                        start-mic-test();
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 10px;
+                alignment: center;
+
+                SettingsButton {
+                    theme-colors: theme-colors;
+                    label: testing-mic ? "Stop" : "Test";
+                    primary: !testing-mic;
+                    danger: testing-mic;
+                    width: 70px;
+                    clicked => {
+                        if testing-mic {
+                            stop-mic-test();
+                        } else {
+                            start-mic-test();
+                        }
                     }
                 }
-            }
 
-            // Level indicator track
-            Rectangle {
-                width: 200px;
-                height: 22px;
-                border-radius: 11px;
-                background: theme-colors.bg_tertiary;
-                border-width: 1px;
-                border-color: theme-colors.border_light;
-                clip: true;
+                // Level indicator track
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 200px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: theme-colors.bg_tertiary;
+                        border-width: 1px;
+                        border-color: theme-colors.border_light;
+                        clip: true;
 
-                // Fill
-                Rectangle {
-                    x: 0;
-                    width: Math.min(audio-level / 0.25, 1.0) * parent.width;
-                    height: 100%;
-                    border-radius: 11px;
-                    background: testing-mic && audio-level > 0.15 ? theme-colors.warning : theme-colors.success;
+                        // Fill
+                        Rectangle {
+                            x: 0;
+                            width: Math.min(audio-level / 0.25, 1.0) * parent.width;
+                            height: 100%;
+                            border-radius: 11px;
+                            background: testing-mic && audio-level > 0.15 ? theme-colors.warning : theme-colors.success;
+                        }
+                    }
                 }
             }
         }
