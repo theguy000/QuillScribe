@@ -19,28 +19,26 @@ export component TitleBar {
             y: parent.height - 1px;
         }
 
-        property <bool> drag-active: false;
-        
-        // Workaround for X11/Wayland window drag grab bug: 
-        // When winit hands over the window drag to the OS window manager, the OS swallows
-        // the mouse release event. This leaves the TouchArea stuck in an active "grab" state,
-        // making the entire window draggable on subsequent clicks. By briefly disabling the 
-        // TouchArea, we force Slint to cancel the pointer grab internally.
-        Timer {
-            interval: 500ms;
-            running: drag-active;
-            triggered => {
-                drag-active = false;
+        property <bool> drag-toggle: false;
+
+        // Two TouchAreas alternate via drag-toggle so the active one
+        // instantly drops the OS pointer grab on click.
+        ta1 := TouchArea {
+            enabled: !drag-toggle;
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    drag-toggle = true;
+                    drag-window();
+                }
             }
         }
 
-        // Drag region covers the entire titlebar (behind buttons so they take priority)
-        drag-touch := TouchArea {
-            enabled: !drag-active;
+        ta2 := TouchArea {
+            enabled: drag-toggle;
             pointer-event(event) => {
                 if event.kind == PointerEventKind.down {
+                    drag-toggle = false;
                     drag-window();
-                    drag-active = true;
                 }
             }
         }
