@@ -13,6 +13,7 @@ export component App inherits Window {
     in-out property <ThemeColors> theme-colors <=> Theme.current;
     in-out property <string> current-theme: "white";
     changed current-theme => {
+        Theme.current = Theme.get-theme(self.current-theme);
         set-window-icon-theme(self.current-theme);
     }
     in-out property <bool> is-recording: false;

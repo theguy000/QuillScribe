@@ -12,6 +12,29 @@ mod window;
 use log::warn;
 use std::sync::{Arc, Mutex};
 
+const THEME_MAP: &[(&str, &str)] = &[
+    ("white", "White"),
+    ("warm_gray", "Warm Gray"),
+    ("soft_beige", "Soft Beige"),
+    ("blue_gray", "Blue Gray"),
+    ("warm_taupe", "Warm Taupe"),
+    ("soft_sage", "Soft Sage"),
+    ("dark_charcoal", "Dark Charcoal"),
+    ("dark_blue", "Dark Blue"),
+    ("dark_purple", "Dark Purple"),
+    ("dark_forest", "Dark Forest"),
+    ("dark_burgundy", "Dark Burgundy"),
+    ("obsidian", "Obsidian"),
+];
+
+fn theme_key_to_display(key: &str) -> &str {
+    THEME_MAP.iter().find(|(k, _)| *k == key).map(|(_, d)| *d).unwrap_or("White")
+}
+
+fn theme_display_to_key(display: &str) -> &str {
+    THEME_MAP.iter().find(|(_, d)| *d == display).map(|(k, _)| *k).unwrap_or("white")
+}
+
 use commands::AppState;
 
 slint::include_modules!();
@@ -212,7 +235,9 @@ pub fn run() {
         app.set_settings_local_model(s.whisper.local_model.clone().into());
 
         // UI
-        app.set_settings_theme(s.ui.theme.clone().into());
+        let theme_display = theme_key_to_display(&s.ui.theme);
+        app.set_settings_theme(theme_display.into());
+        app.set_current_theme(s.ui.theme.clone().into());
         app.set_settings_custom_titlebar(s.ui.custom_titlebar);
         app.set_settings_always_on_top(s.ui.always_on_top);
         app.set_settings_overlay_mode(s.ui.overlay_mode.clone().into());
@@ -687,12 +712,13 @@ pub fn run() {
     // UI settings
     let shared_cb = Arc::clone(&shared);
     app.on_settings_theme_changed(move |theme: slint::SharedString| {
-        let theme_str = theme.to_string();
+        let display_str = theme.to_string();
+        let key = theme_display_to_key(&display_str).to_string();
         save_config_field(&shared_cb, |s| {
-            s.ui.theme = theme_str.clone();
+            s.ui.theme = key.clone();
         });
         shared_cb.with_ui(|app| {
-            app.set_current_theme(theme_str.into());
+            app.set_current_theme(key.into());
         });
     });
 

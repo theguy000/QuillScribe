@@ -417,20 +417,20 @@ export global Theme {
         }
     }
 
-    // ── Theme lookup by name ──────────────────────────────────────────
-    pure function get-theme(name: string) -> ThemeColors {
-        if name == "white" { return white-theme(); }
-        if name == "warm_gray" { return warm-gray-theme(); }
-        if name == "soft_beige" { return soft-beige-theme(); }
-        if name == "blue_gray" { return blue-gray-theme(); }
-        if name == "warm_taupe" { return warm-taupe-theme(); }
-        if name == "soft_sage" { return soft-sage-theme(); }
-        if name == "dark_charcoal" { return dark-charcoal-theme(); }
-        if name == "dark_blue" { return dark-blue-theme(); }
-        if name == "dark_purple" { return dark-purple-theme(); }
-        if name == "dark_forest" { return dark-forest-theme(); }
-        if name == "dark_burgundy" { return dark-burgundy-theme(); }
-        if name == "obsidian" { return obsidian-theme(); }
+    // ── Theme lookup by key ──────────────────────────────────────────
+    public pure function get-theme(key: string) -> ThemeColors {
+        if key == "white" { return white-theme(); }
+        if key == "warm_gray" { return warm-gray-theme(); }
+        if key == "soft_beige" { return soft-beige-theme(); }
+        if key == "blue_gray" { return blue-gray-theme(); }
+        if key == "warm_taupe" { return warm-taupe-theme(); }
+        if key == "soft_sage" { return soft-sage-theme(); }
+        if key == "dark_charcoal" { return dark-charcoal-theme(); }
+        if key == "dark_blue" { return dark-blue-theme(); }
+        if key == "dark_purple" { return dark-purple-theme(); }
+        if key == "dark_forest" { return dark-forest-theme(); }
+        if key == "dark_burgundy" { return dark-burgundy-theme(); }
+        if key == "obsidian" { return obsidian-theme(); }
         return white-theme();
     }
 }
