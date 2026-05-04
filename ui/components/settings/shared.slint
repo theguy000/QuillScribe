@@ -24,14 +24,13 @@ export component SettingsHint inherits Text {
     wrap: word-wrap;
 }
 
-export component SettingsSelect inherits Rectangle {
+export component SettingsSelect inherits HorizontalLayout {
     in property <ThemeColors> theme-colors;
     in-out property <string> current-value;
     in property <[string]> options;
     callback value-changed(string);
 
-    width: 100%;
-    height: 32px;
+    alignment: start;
 
     function pick-value() -> string {
         if current-value != "" {
@@ -44,8 +43,8 @@ export component SettingsSelect inherits Rectangle {
     }
 
     Rectangle {
-        width: 100%;
-        height: 32px;
+        width: 240px;
+        height: 28px;
         border-radius: 6px;
         background: theme-colors.bg_tertiary;
         border-width: 1px;
@@ -67,62 +66,114 @@ export component SettingsSelect inherits Rectangle {
             Text {
                 text: "▾";
                 color: theme-colors.text_muted;
-                font-size: 11px;
+                font-size: 12px;
                 vertical-alignment: center;
             }
         }
 
         touch_main := TouchArea {
             clicked => {
-                popup.show();
+                if options.length > 0 {
+                    popup.show();
+                }
             }
             mouse-cursor: pointer;
         }
-    }
 
-    popup := PopupWindow {
-        x: 0px;
-        y: 34px;
-        width: root.width;
-        height: options.length * 30px;
-        close-policy: close-on-click;
+        popup := PopupWindow {
+            x: 0px;
+            y: 30px;
+            width: parent.width;
+            height: Math.min(options.length, 5) * 26px + 8px;
+            close-policy: close-on-click-outside;
 
-        Rectangle {
-            width: 100%;
-            height: 100%;
-            border-radius: 6px;
-            background: theme-colors.bg_secondary;
-            border-width: 1px;
-            border-color: theme-colors.border;
-            drop-shadow-blur: 8px;
-            drop-shadow-color: theme-colors.shadow_lg;
-            drop-shadow-offset-y: 4px;
-            clip: true;
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                border-radius: 6px;
+                background: theme-colors.bg_secondary;
+                border-width: 1px;
+                border-color: theme-colors.border_light;
+                drop-shadow-blur: 12px;
+                drop-shadow-color: theme-colors.shadow_lg;
+                drop-shadow-offset-y: 4px;
+                clip: true;
 
-            VerticalLayout {
-                padding: 4px;
-                spacing: 0px;
+                flick := Flickable {
+                    viewport-height: options.length * 26px + 8px;
+                    interactive: true;
 
-                for option[idx] in options: Rectangle {
-                    width: 100%;
-                    height: 26px;
-                    border-radius: 4px;
-                    background: option == root.pick-value() ? theme-colors.accent_glow : (touch_option.has-hover ? theme-colors.bg_tertiary : transparent);
+                    VerticalLayout {
+                        padding: 4px;
+                        spacing: 0px;
 
-                    Text {
-                        text: option;
-                        color: option == root.pick-value() ? theme-colors.accent : theme-colors.text_primary;
-                        font-size: 12px;
-                        vertical-alignment: center;
-                        x: 10px;
+                        for option[idx] in options: Rectangle {
+                            width: 100%;
+                            height: 26px;
+                            border-radius: 4px;
+                            background: option == root.pick-value() ? theme-colors.accent_glow : (touch_option.has-hover ? theme-colors.bg_tertiary : transparent);
+
+                            Text {
+                                text: option;
+                                color: option == root.pick-value() ? theme-colors.accent : theme-colors.text_primary;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                x: 10px;
+                            }
+
+                            touch_option := TouchArea {
+                                clicked => {
+                                    current-value = option;
+                                    value-changed(option);
+                                    popup.close();
+                                }
+                                mouse-cursor: pointer;
+                            }
+                        }
+                    }
+                }
+
+                // Custom Scrollbar (draggable)
+                scrollbar_touch := TouchArea {
+                    x: parent.width - 10px;
+                    y: 0px;
+                    width: 10px;
+                    height: flick.height;
+                    mouse-cursor: pointer;
+                    visible: flick.viewport-height > flick.height;
+
+                    property <length> drag-start-y: 0px;
+                    property <length> drag-start-viewport: 0px;
+
+                    property <bool> is-pressed: false;
+
+                    pointer-event(event) => {
+                        if event.kind == PointerEventKind.down {
+                            is-pressed = true;
+                            drag-start-y = self.mouse-y;
+                            drag-start-viewport = flick.viewport-y;
+                        } else if event.kind == PointerEventKind.up {
+                            is-pressed = false;
+                        }
                     }
 
-                    touch_option := TouchArea {
-                        clicked => {
-                            current-value = option;
-                            value-changed(option);
+                    moved => {
+                        if is-pressed {
+                            let delta = self.mouse-y - drag-start-y;
+                            let ratio = flick.viewport-height / flick.height;
+                            let max-scroll = flick.viewport-height - flick.height;
+                            flick.viewport-y = Math.max(0px, Math.min(drag-start-viewport + delta * ratio, max-scroll));
                         }
-                        mouse-cursor: pointer;
+                    }
+
+                    // Visual thumb
+                    Rectangle {
+                        width: 4px;
+                        height: flick.height * (flick.height / flick.viewport-height);
+                        y: -flick.viewport-y * (flick.height / flick.viewport-height);
+                        x: (parent.width - self.width) / 2;
+                        border-radius: 2px;
+                        background: theme-colors.border;
                     }
                 }
             }
@@ -279,28 +330,32 @@ export component SettingsButton inherits Rectangle {
     }
 }
 
-export component SettingsInput inherits Rectangle {
+export component SettingsInput inherits HorizontalLayout {
     in property <ThemeColors> theme-colors;
     in-out property <string> text;
     in property <string> placeholder-text;
     in property <InputType> input-type: InputType.text;
 
-    height: 32px;
-    width: 100%;
-    border-radius: 6px;
-    background: theme-colors.bg_tertiary;
-    border-width: 1px;
-    border-color: field.has-focus ? theme-colors.accent : theme-colors.border_light;
+    alignment: start;
 
-    field := TextInput {
-        text <=> root.text;
-        color: theme-colors.text_primary;
-        font-size: 12px;
-        x: 10px;
-        width: parent.width - 20px;
-        height: parent.height;
-        vertical-alignment: center;
-        input-type: root.input-type;
+    Rectangle {
+        width: 240px;
+        height: 28px;
+        border-radius: 6px;
+        background: theme-colors.bg_tertiary;
+        border-width: 1px;
+        border-color: field.has-focus ? theme-colors.accent : theme-colors.border_light;
+
+        field := TextInput {
+            text <=> root.text;
+            color: theme-colors.text_primary;
+            font-size: 12px;
+            x: 10px;
+            width: parent.width - 20px;
+            height: parent.height;
+            vertical-alignment: center;
+            input-type: root.input-type;
+        }
     }
 }
 

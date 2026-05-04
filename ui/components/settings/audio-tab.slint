@@ -147,7 +147,7 @@ export component AudioTab inherits VerticalLayout {
     blocklist_popup := PopupWindow {
         x: (parent.width - 400px) / 2;
         y: (parent.height - 450px) / 2;
-        close-policy: close-on-click;
+        close-policy: close-on-click-outside;
         
         BlocklistDialog {
             theme-colors: theme-colors;
