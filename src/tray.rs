@@ -64,22 +64,25 @@ pub fn setup_tray(
         .map_err(|e| format!("Failed to build tray icon: {}", e))?;
 
     let weak = app_weak.clone();
-    std::thread::spawn(move || {
-        let menu_channel = MenuEvent::receiver();
-        let tray_channel = TrayIconEvent::receiver();
-        loop {
-            if let Ok(event) = menu_channel.try_recv() {
-                handle_menu_event(&event.id().0, &weak);
-            }
-            if let Ok(_event) = tray_channel.try_recv() {
-                // Handle tray icon click
-                if let Some(app) = weak.upgrade() {
-                    app.window().show().ok();
+    std::thread::Builder::new()
+        .name("tray-event-loop".into())
+        .spawn(move || {
+            let menu_channel = MenuEvent::receiver();
+            let tray_channel = TrayIconEvent::receiver();
+            loop {
+                if let Ok(event) = menu_channel.try_recv() {
+                    handle_menu_event(&event.id().0, &weak);
                 }
+                if let Ok(_event) = tray_channel.try_recv() {
+                    // Handle tray icon click
+                    if let Some(app) = weak.upgrade() {
+                        app.window().show().ok();
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-    });
+        })
+        .expect("Failed to spawn tray event loop thread");
 
     TRAY_ICON.with(|t| {
         *t.borrow_mut() = Some(tray);
@@ -141,7 +144,7 @@ fn handle_menu_event(
             app.window().show().ok();
         }),
         "Exit" => with_app(app_weak, |app| {
-            crate::window::close_window(&app);
+            crate::window::quit_app(&app);
         }),
         _ => {}
     }
@@ -158,7 +161,7 @@ pub fn set_tray_theme(theme: &str) {
     TRAY_ICON.with(|t| {
         if let Some(ref tray) = *t.borrow() {
             if let Ok(icon) = icon_from_png_bytes(tray_icon_bytes_for_theme(theme)) {
-                let _ = tray.set_icon(Some(icon));
+                tray.set_icon(Some(icon)).ok();
                 debug!("Tray icon updated for theme: {}", theme);
             }
         }

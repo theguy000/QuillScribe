@@ -780,7 +780,7 @@ pub fn run() {
     let app_weak_close = app.as_weak();
     app.on_close_window(move || {
         if let Some(app) = app_weak_close.upgrade() {
-            window::close_window(&app);
+            window::hide_to_tray(&app);
         }
     });
 
@@ -791,7 +791,7 @@ pub fn run() {
         }
     });
 
-    // Initialize GTK on Linux (required by tray-icon for menu support)
+    // Initialize GTK on Linux (required by tray-icon/libappindicator before building the tray)
     #[cfg(target_os = "linux")]
     {
         if let Err(e) = gtk::init() {
@@ -830,8 +830,41 @@ pub fn run() {
         },
     );
 
-    // Run the Slint event loop
-    app.run().unwrap();
+    // On Linux, pump the GLib main context on the main thread so that
+    // libappindicator's D-Bus registration (from tray-icon) completes.
+    #[cfg(target_os = "linux")]
+    {
+        let glib_timer = slint::Timer::default();
+        glib_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(50),
+            move || {
+                let ctx = glib::MainContext::default();
+                for _ in 0..10 {
+                    if !ctx.iteration(false) {
+                        break;
+                    }
+                }
+            },
+        );
+        // Timer must outlive this block — forget prevents it from being dropped.
+        std::mem::forget(glib_timer);
+    }
+
+    // Intercept native window close (Alt+F4, etc.) — hide to tray instead of quitting
+    let app_weak_native_close = app.as_weak();
+    app.window().on_close_requested(move || {
+        if let Some(app) = app_weak_native_close.upgrade() {
+            app.window().hide().ok();
+        }
+        slint::CloseRequestResponse::KeepWindowShown
+    });
+
+    // Run the Slint event loop — use run_event_loop_until_quit so the app
+    // stays alive in the tray even after the window is hidden.
+    // (app.run() would exit as soon as the last window is hidden.)
+    app.window().show().ok();
+    slint::run_event_loop_until_quit().unwrap();
 
     // Clean up tray
     tray::cleanup_tray();

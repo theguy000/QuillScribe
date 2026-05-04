@@ -19,11 +19,17 @@ pub fn minimize_window(app: &crate::App) {
     });
 }
 
-/// Close the window — quit the Slint event loop gracefully so cleanup runs.
-pub fn close_window(app: &crate::App) {
-    info!("Close requested");
-    let _ = app.window().hide();
-    let _ = slint::quit_event_loop();
+/// Hide the window to the system tray instead of quitting.
+pub fn hide_to_tray(app: &crate::App) {
+    info!("Hiding to tray");
+    app.window().hide().ok();
+}
+
+/// Quit the application — hide window and stop the Slint event loop.
+pub fn quit_app(app: &crate::App) {
+    info!("Quit requested");
+    app.window().hide().ok();
+    slint::quit_event_loop().ok();
 }
 
 /// Apply always-on-top setting.

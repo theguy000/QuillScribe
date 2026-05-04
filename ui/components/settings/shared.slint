@@ -454,15 +454,17 @@ export component SettingsSlider inherits Rectangle {
         if value > maximum { value = maximum; }
     }
 
-    // Track background
+    // Full-width track background
     Rectangle {
         y: 12px;
-        width: 100%;
+        width: parent.width;
         height: 4px;
         border-radius: 2px;
         background: theme-colors.bg_tertiary;
 
+        // Filled portion — always starts from the left edge (x: 0)
         Rectangle {
+            x: 0;
             width: parent.width * root.ratio();
             height: 100%;
             border-radius: 2px;
@@ -470,7 +472,7 @@ export component SettingsSlider inherits Rectangle {
         }
     }
 
-    // Thumb
+    // Round thumb controller
     Rectangle {
         x: parent.width * root.ratio() - 8px;
         y: 6px;
