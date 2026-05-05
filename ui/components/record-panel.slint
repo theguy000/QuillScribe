@@ -1,4 +1,5 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
+import { PanelSurface } from "panel-surface.slint";
 
 component Dot {
     in property <ThemeColors> theme-colors;
@@ -54,11 +55,8 @@ export component RecordPanel {
     min-width: 300px;
     min-height: 200px;
 
-    Rectangle {
-        background: @linear-gradient(180deg, theme-colors.bg_primary 0%, theme-colors.bg_secondary 100%);
-        border-radius: 18px;
-        border-width: 1px;
-        border-color: theme-colors.border_light;
+    PanelSurface {
+        theme-colors: theme-colors;
 
         VerticalLayout {
             padding: 30px;
