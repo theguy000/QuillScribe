@@ -6,6 +6,7 @@ use std::sync::{
 };
 
 static HOTKEY_MANAGER: std::sync::Mutex<Option<GlobalHotKeyManager>> = std::sync::Mutex::new(None);
+static REGISTERED_HOTKEY: std::sync::Mutex<Option<global_hotkey::hotkey::HotKey>> = std::sync::Mutex::new(None);
 
 // Single persistent listener thread. The callback becomes a no-op when
 // RECORDING_ACTIVE is false, avoiding per-session thread/hook leaks.
@@ -140,7 +141,7 @@ fn ensure_listener_started() {
     });
 }
 
-pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>) {
+pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>, shortcut: &str) {
     let manager = match GlobalHotKeyManager::new() {
         Ok(m) => m,
         Err(e) => {
@@ -149,9 +150,8 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>) {
         }
     };
 
-    // Default shortcut: Super+Shift+Space
-    let shortcut_str = "Super+Shift+Space";
-    let hotkey = match parse_shortcut(shortcut_str) {
+    let shortcut_str = shortcut.to_string();
+    let hotkey = match parse_shortcut(shortcut) {
         Ok(h) => h,
         Err(e) => {
             error!("Failed to parse shortcut '{}': {}", shortcut_str, e);
@@ -167,6 +167,10 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>) {
     }
 
     info!("Registered global shortcut: {}", shortcut_str);
+    {
+        let mut rh = REGISTERED_HOTKEY.lock().unwrap();
+        *rh = Some(hotkey);
+    }
     let weak = app_weak.clone();
     std::thread::spawn(move || {
         let receiver = GlobalHotKeyEvent::receiver();
@@ -174,9 +178,12 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>) {
             if let Ok(event) = receiver.try_recv() {
                 if event.state == HotKeyState::Pressed {
                     debug!("Global hotkey triggered: record toggle");
-                    if let Some(app) = weak.upgrade() {
-                        app.invoke_toggle_recording();
-                    }
+                    let weak_clone = weak.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(app) = weak_clone.upgrade() {
+                            app.invoke_toggle_recording();
+                        }
+                    });
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
@@ -188,6 +195,7 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>) {
 }
 
 /// Re-register the global hotkey with a new shortcut.
+/// Unregisters the previous hotkey first.
 pub fn reregister_hotkey(shortcut: &str) -> Result<(), String> {
     let hotkey = parse_shortcut(shortcut)?;
 
@@ -197,9 +205,26 @@ pub fn reregister_hotkey(shortcut: &str) -> Result<(), String> {
         None => return Err("Hotkey manager not initialized".to_string()),
     };
 
+    let old_hotkey = *REGISTERED_HOTKEY.lock().unwrap();
+
+    if let Some(old) = old_hotkey {
+        if let Err(e) = manager.unregister(old) {
+            return Err(format!("Failed to unregister old shortcut: {}", e));
+        }
+    }
+
     if let Err(e) = manager.register(hotkey) {
+        if let Some(old) = old_hotkey {
+            if let Err(restore_error) = manager.register(old) {
+                error!("Failed to restore previous hotkey: {}", restore_error);
+                let mut rh = REGISTERED_HOTKEY.lock().unwrap();
+                *rh = None;
+            }
+        }
         Err(format!("Failed to register shortcut '{}': {}", shortcut, e))
     } else {
+        let mut rh = REGISTERED_HOTKEY.lock().unwrap();
+        *rh = Some(hotkey);
         info!("Re-registered global shortcut: {}", shortcut);
         Ok(())
     }

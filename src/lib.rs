@@ -816,6 +816,13 @@ pub fn run() {
             let shortcut_str = shortcut.clone();
             let shared_for_ui = Arc::clone(&shared_cb2);
             let _ = slint::invoke_from_event_loop(move || {
+                if let Err(e) = hotkey::reregister_hotkey(&shortcut_str) {
+                    log::error!("Failed to re-register hotkey: {}", e);
+                    shared_for_ui.with_ui(|app| {
+                        app.set_settings_recording_shortcut(false);
+                    });
+                    return;
+                }
                 shared_for_ui.with_ui(|app| {
                     app.set_settings_record_toggle_shortcut(shortcut.into());
                     app.set_settings_recording_shortcut(false);
@@ -823,9 +830,6 @@ pub fn run() {
                 save_config_field(&shared_for_ui, |s| {
                     s.shortcuts.record_toggle = shortcut_str.clone();
                 });
-                if let Err(e) = hotkey::reregister_hotkey(&shortcut_str) {
-                    log::error!("Failed to re-register hotkey: {}", e);
-                }
             });
         }) {
             log::error!("Failed to start keyboard recording: {}", e);
@@ -886,7 +890,12 @@ pub fn run() {
     }
 
     // Set up global hotkey
-    hotkey::register_record_toggle(&app.as_weak());
+    let record_toggle_shortcut = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_record_toggle()
+    };
+    app.set_settings_record_toggle_shortcut(record_toggle_shortcut.clone().into());
+    hotkey::register_record_toggle(&app.as_weak(), &record_toggle_shortcut);
 
     // Set initial window (taskbar) icon to match theme
     window::set_window_icon_theme(&app, &initial_theme);
