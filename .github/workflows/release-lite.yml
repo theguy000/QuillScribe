@@ -42,7 +42,7 @@ jobs:
           git checkout quillscribe-lite
           git add Cargo.toml
           git diff --cached --quiet && echo "No version changes to commit" && exit 0
-          git commit -m "chore: bump lite version to ${VERSION}"
+          git commit -m "chore: bump lite version to ${{ env.VERSION }}"
           git push origin quillscribe-lite
 
       # ── Rust ────────────────────────────────────────────────────────────
@@ -70,7 +70,8 @@ jobs:
             libxkbcommon-dev \
             libgl1-mesa-dev \
             cmake \
-            clang
+            clang \
+            mold
 
       # ── Windows: ensure cmake is available (for whisper.cpp build) ─────
       - name: Verify cmake (Windows)

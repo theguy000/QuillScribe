@@ -5,7 +5,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-static HOTKEY_MANAGER: std::sync::Mutex<Option<GlobalHotKeyManager>> = std::sync::Mutex::new(None);
+struct GlobalHotKeyManagerWrapper(GlobalHotKeyManager);
+unsafe impl Send for GlobalHotKeyManagerWrapper {}
+unsafe impl Sync for GlobalHotKeyManagerWrapper {}
+
+static HOTKEY_MANAGER: std::sync::Mutex<Option<GlobalHotKeyManagerWrapper>> = std::sync::Mutex::new(None);
 static REGISTERED_HOTKEY: std::sync::Mutex<Option<global_hotkey::hotkey::HotKey>> = std::sync::Mutex::new(None);
 
 // Single persistent listener thread. The callback becomes a no-op when
@@ -162,7 +166,7 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>, shortcut: &str
     if let Err(e) = manager.register(hotkey) {
         error!("Failed to register global shortcut '{}': {}", shortcut_str, e);
         let mut guard = HOTKEY_MANAGER.lock().unwrap();
-        *guard = Some(manager);
+        *guard = Some(GlobalHotKeyManagerWrapper(manager));
         return;
     }
 
@@ -191,7 +195,7 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>, shortcut: &str
     });
 
     let mut guard = HOTKEY_MANAGER.lock().unwrap();
-    *guard = Some(manager);
+    *guard = Some(GlobalHotKeyManagerWrapper(manager));
 }
 
 /// Re-register the global hotkey with a new shortcut.
@@ -201,7 +205,7 @@ pub fn reregister_hotkey(shortcut: &str) -> Result<(), String> {
 
     let mut guard = HOTKEY_MANAGER.lock().unwrap();
     let manager = match guard.as_mut() {
-        Some(m) => m,
+        Some(m) => &mut m.0,
         None => return Err("Hotkey manager not initialized".to_string()),
     };
 
