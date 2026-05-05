@@ -1,5 +1,5 @@
 import { ThemeColors } from "../../themes/theme-definitions.slint";
-import { SettingsField, SettingsHint, SettingsSelect, SettingsCheckbox, SettingsButton } from "shared.slint";
+import { SettingsField, SettingsHint, SettingsSelect, SettingsCheckbox, SettingsButton, IconButton } from "shared.slint";
 import { BlocklistDialog } from "blocklist-dialog.slint";
 
 export component AudioTab inherits VerticalLayout {
@@ -40,30 +40,16 @@ export component AudioTab inherits VerticalLayout {
             }
 
             // Refresh button
-            Rectangle {
-                width: 32px;
-                height: 32px;
-                border-radius: 6px;
-                background: touch.has-hover ? theme-colors.bg_tertiary : transparent;
-
-                Image {
-                    source: @image-url("../../icons/refresh.svg");
-                    colorize: loading-devices ? theme-colors.text_muted : theme-colors.text_secondary;
-                    width: 16px;
-                    height: 16px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    transform-origin: { x: self.width / 2, y: self.height / 2 };
-                    transform-rotation: refresh-angle * 1deg;
-                    animate transform-rotation { duration: 600ms; easing: ease-in-out; }
-                }
-
-                touch := TouchArea {
-                    clicked => {
-                        refresh-angle += 360;
-                        refresh-audio-devices();
-                    }
-                    mouse-cursor: pointer;
+            IconButton {
+                theme-colors: theme-colors;
+                icon-size: 16px;
+                icon-source: @image-url("../../icons/refresh.svg");
+                icon-color: loading-devices ? theme-colors.text_muted : theme-colors.text_secondary;
+                button-size: 28px;
+                rotation-angle: refresh-angle;
+                clicked => {
+                    refresh-angle += 360;
+                    refresh-audio-devices();
                 }
             }
         }

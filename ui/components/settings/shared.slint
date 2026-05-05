@@ -508,3 +508,37 @@ export component SettingsSlider inherits Rectangle {
         }
     }
 }
+
+export component IconButton inherits Rectangle {
+    in property <ThemeColors> theme-colors;
+    in property <length> icon-size: 16px;
+    in property <image> icon-source;
+    in property <color> icon-color: theme-colors.text_secondary;
+    in property <length> button-size: 28px;
+    in property <float> rotation-angle: 0;
+    callback clicked();
+
+    width: button-size;
+    height: button-size;
+    border-radius: 6px;
+    background: theme-colors.bg_secondary;
+    border-width: 1px;
+    border-color: theme-colors.border;
+
+    Image {
+        source: icon-source;
+        colorize: icon-color;
+        width: icon-size;
+        height: icon-size;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+        transform-rotation: rotation-angle * 1deg;
+        animate transform-rotation { duration: 600ms; easing: ease-in-out; }
+    }
+
+    TouchArea {
+        clicked => { clicked(); }
+        mouse-cursor: pointer;
+    }
+}

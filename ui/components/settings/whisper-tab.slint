@@ -1,5 +1,5 @@
 import { ThemeColors } from "../../themes/theme-definitions.slint";
-import { SettingsField, SettingsHint, SettingsSelect, SettingsInput, SettingsRadioOption, SettingsButton } from "shared.slint";
+import { SettingsField, SettingsHint, SettingsSelect, SettingsInput, SettingsRadioOption, SettingsButton, IconButton } from "shared.slint";
 
 export component WhisperTab inherits VerticalLayout {
     in property <ThemeColors> theme-colors;
@@ -110,25 +110,11 @@ export component WhisperTab inherits VerticalLayout {
                 }
 
                 // Toggle visibility
-                Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 6px;
-                    background: theme-colors.bg_secondary;
-                    border-width: 1px;
-                    border-color: theme-colors.border;
-
-                    Image {
-                        source: show-api-key ? @image-url("../../icons/eye-off.svg") : @image-url("../../icons/eye.svg");
-                        colorize: theme-colors.text_secondary;
-                        width: 16px; height: 16px;
-                        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
-                    }
-
-                    touch := TouchArea {
-                        clicked => { toggle-api-key-visibility(); }
-                        mouse-cursor: pointer;
-                    }
+                IconButton {
+                    theme-colors: theme-colors;
+                    icon-size: 16px;
+                    icon-source: show-api-key ? @image-url("../../icons/eye-off.svg") : @image-url("../../icons/eye.svg");
+                    clicked => { toggle-api-key-visibility(); }
                 }
             }
         }
