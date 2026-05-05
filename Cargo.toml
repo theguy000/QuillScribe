@@ -30,6 +30,9 @@ tray-icon = "0.17"
 # Global hotkey (replaces tauri-plugin-global-shortcut)
 global-hotkey = "0.6"
 
+# Keyboard event capture for shortcut recording
+rdev = "0.5"
+
 # Auto-start (replaces tauri-plugin-autostart)
 auto-launch = "0.5"
 

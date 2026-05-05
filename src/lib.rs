@@ -807,14 +807,40 @@ pub fn run() {
     // Keyboard
     let shared_cb = Arc::clone(&shared);
     app.on_settings_start_recording_shortcut(move || {
-        let _ = shared_cb;
-        // TODO: implement shortcut recording
+        shared_cb.with_ui(|app| {
+            app.set_settings_recording_shortcut(true);
+        });
+
+        let shared_cb2 = Arc::clone(&shared_cb);
+        if let Err(e) = hotkey::start_keyboard_recording(move |shortcut| {
+            let shortcut_str = shortcut.clone();
+            let shared_for_ui = Arc::clone(&shared_cb2);
+            let _ = slint::invoke_from_event_loop(move || {
+                shared_for_ui.with_ui(|app| {
+                    app.set_settings_record_toggle_shortcut(shortcut.into());
+                    app.set_settings_recording_shortcut(false);
+                });
+                save_config_field(&shared_for_ui, |s| {
+                    s.shortcuts.record_toggle = shortcut_str.clone();
+                });
+                if let Err(e) = hotkey::reregister_hotkey(&shortcut_str) {
+                    log::error!("Failed to re-register hotkey: {}", e);
+                }
+            });
+        }) {
+            log::error!("Failed to start keyboard recording: {}", e);
+            shared_cb.with_ui(|app| {
+                app.set_settings_recording_shortcut(false);
+            });
+        }
     });
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_stop_recording_shortcut(move || {
-        let _ = shared_cb;
-        // TODO: implement shortcut recording stop + save
+        shared_cb.with_ui(|app| {
+            app.set_settings_recording_shortcut(false);
+        });
+        hotkey::stop_keyboard_recording();
     });
 
     // Window management callbacks
