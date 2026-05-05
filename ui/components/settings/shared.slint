@@ -2,16 +2,28 @@ import { ThemeColors } from "../../themes/theme-definitions.slint";
 
 // ── Reusable settings field components ──────────────────────────────────────
 
+// TODO: Slint cursor bug — after clicking a TouchArea that changes state (radio,
+// checkbox, dropdown, edit toggle), the mouse cursor resets to default even though
+// the mouse hasn't moved. The cursor only returns to pointer on next mouse move.
+// Root cause: set_mouse_cursor() is only called on input events, not after
+// property/state changes that re-render components.
+// Upstream issues: https://github.com/slint-ui/slint/issues/3904
+//                 https://github.com/slint-ui/slint/issues/6443
+// FocusScope does NOT fix this (keyboard-only). Re-test when Slint releases a fix.
+// Affected components: SettingsRadioOption, SettingsCheckbox, SettingsSelect,
+// TranscriptionPanel edit button.
+
 export component SettingsField inherits VerticalLayout {
     in property <ThemeColors> theme-colors;
     in property <string> label;
     spacing: 6px;
 
     Text {
-        text: label;
-        color: theme-colors.text_primary;
+        text: label.to-uppercase();
+        color: theme-colors.text_secondary;
         font-size: 12px;
-        font-weight: 600;
+        font-weight: 500;
+        letter-spacing: 0.4px;
     }
 
     // Children go here (the actual input control)
