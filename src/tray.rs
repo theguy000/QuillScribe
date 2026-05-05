@@ -1,6 +1,6 @@
 use log::{debug, info};
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem},
     Icon, TrayIconBuilder, TrayIconEvent,
 };
 
@@ -9,6 +9,12 @@ use slint::ComponentHandle;
 thread_local! {
     static TRAY_ICON: std::cell::RefCell<Option<tray_icon::TrayIcon>> = std::cell::RefCell::new(None);
 }
+
+const MENU_ID_SHOW: &str = "show";
+const MENU_ID_START_RECORDING: &str = "start-recording";
+const MENU_ID_STOP_RECORDING: &str = "stop-recording";
+const MENU_ID_SETTINGS: &str = "settings";
+const MENU_ID_EXIT: &str = "exit";
 
 #[cfg(windows)]
 fn shortcut_ico_bytes_for_theme(theme: &str) -> &'static [u8] {
@@ -71,13 +77,10 @@ pub fn setup_tray(
             let tray_channel = TrayIconEvent::receiver();
             loop {
                 if let Ok(event) = menu_channel.try_recv() {
-                    handle_menu_event(&event.id().0, &weak);
+                    handle_menu_event(event.id().0.as_str(), &weak);
                 }
                 if let Ok(_event) = tray_channel.try_recv() {
-                    // Handle tray icon click
-                    if let Some(app) = weak.upgrade() {
-                        app.window().show().ok();
-                    }
+                    show_app(&weak);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
@@ -97,12 +100,12 @@ fn build_tray_menu(
 ) -> Result<Menu, Box<dyn std::error::Error>> {
     let menu = Menu::new();
 
-    let show_item = MenuItem::new("Show QuillScribe", true, None);
-    let start_item = MenuItem::new("Start Recording", true, None);
-    let stop_item = MenuItem::new("Stop Recording", false, None);
+    let show_item = MenuItem::with_id(MenuId::new(MENU_ID_SHOW), "Show QuillScribe", true, None);
+    let start_item = MenuItem::with_id(MenuId::new(MENU_ID_START_RECORDING), "Start Recording", true, None);
+    let stop_item = MenuItem::with_id(MenuId::new(MENU_ID_STOP_RECORDING), "Stop Recording", false, None);
     let separator = PredefinedMenuItem::separator();
-    let settings_item = MenuItem::new("Settings", true, None);
-    let quit_item = MenuItem::new("Exit", true, None);
+    let settings_item = MenuItem::with_id(MenuId::new(MENU_ID_SETTINGS), "Settings", true, None);
+    let quit_item = MenuItem::with_id(MenuId::new(MENU_ID_EXIT), "Exit", true, None);
 
     menu.append(&show_item)?;
     menu.append(&start_item)?;
@@ -116,10 +119,23 @@ fn build_tray_menu(
     Ok(menu)
 }
 
-fn with_app<F: FnOnce(crate::App)>(app_weak: &slint::Weak<crate::App>, f: F) {
-    if let Some(app) = app_weak.upgrade() {
-        f(app);
-    }
+fn with_app<F>(app_weak: &slint::Weak<crate::App>, f: F)
+where
+    F: FnOnce(crate::App) + Send + 'static,
+{
+    let weak = app_weak.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(app) = weak.upgrade() {
+            f(app);
+        }
+    });
+}
+
+fn show_app(app_weak: &slint::Weak<crate::App>) {
+    with_app(app_weak, |app| {
+        app.window().set_minimized(false);
+        app.window().show().ok();
+    });
 }
 
 fn handle_menu_event(
@@ -127,23 +143,20 @@ fn handle_menu_event(
     app_weak: &slint::Weak<crate::App>,
 ) {
     match id {
-        "Show QuillScribe" => with_app(app_weak, |app| {
-            app.window().set_minimized(false);
-            app.window().show().ok();
-        }),
-        "Start Recording" => with_app(app_weak, |app| {
+        MENU_ID_SHOW => show_app(app_weak),
+        MENU_ID_START_RECORDING => with_app(app_weak, |app| {
             app.invoke_toggle_recording();
         }),
-        "Stop Recording" => with_app(app_weak, |app| {
+        MENU_ID_STOP_RECORDING => with_app(app_weak, |app| {
             if app.get_is_recording() {
                 app.invoke_toggle_recording();
             }
         }),
-        "Settings" => with_app(app_weak, |app| {
+        MENU_ID_SETTINGS => with_app(app_weak, |app| {
             app.set_active_panel("settings".into());
             app.window().show().ok();
         }),
-        "Exit" => with_app(app_weak, |app| {
+        MENU_ID_EXIT => with_app(app_weak, |app| {
             crate::window::quit_app(&app);
         }),
         _ => {}
