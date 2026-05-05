@@ -4,6 +4,7 @@ import { Sidebar } from "components/sidebar.slint";
 import { RecordPanel } from "components/record-panel.slint";
 import { TranscriptionPanel } from "components/transcription-panel.slint";
 import { SettingsDialog } from "components/settings-dialog.slint";
+import { BlocklistDeviceEntry } from "components/settings/blocklist-dialog.slint";
 import { HistoryPanel, HistoryListEntry } from "components/history-panel.slint";
 import { ToastContainer } from "components/toast.slint";
 
@@ -41,6 +42,7 @@ export component App inherits Window {
     in-out property <bool> settings-loading-devices: false;
     in-out property <bool> settings-testing-mic: false;
     in-out property <[string]> settings-audio-blocklist: [];
+    in-out property <[BlocklistDeviceEntry]> settings-audio-blocklist-devices: [];
 
 
     // ── Settings: Whisper / Engine ────────────────────────────────────────
@@ -118,6 +120,7 @@ export component App inherits Window {
     callback settings-manage-blocklist();
     callback settings-add-blocklist-item(string);
     callback settings-remove-blocklist-item(int);
+    callback settings-unhide-blocklist-device(string);
     callback settings-sounds-enabled-changed(bool);
     callback settings-mode-changed(string);
     callback settings-provider-changed(string);
@@ -219,6 +222,7 @@ export component App inherits Window {
                         loading-devices: settings-loading-devices;
                         testing-mic: settings-testing-mic;
                         audio-level: audio-level;
+                        audio-blocklist-devices: settings-audio-blocklist-devices;
                         refresh-audio-devices => { settings-refresh-audio-devices(); }
                         start-mic-test => { settings-start-mic-test(); }
                         stop-mic-test => { settings-stop-mic-test(); }
@@ -227,6 +231,7 @@ export component App inherits Window {
                         audio-blocklist: settings-audio-blocklist;
                         add-blocklist-item(val) => { settings-add-blocklist-item(val); }
                         remove-blocklist-item(idx) => { settings-remove-blocklist-item(idx); }
+                        unhide-blocklist-device(id) => { settings-unhide-blocklist-device(id); }
 
                         // Whisper / Engine
                         whisper-mode <=> settings-whisper-mode;

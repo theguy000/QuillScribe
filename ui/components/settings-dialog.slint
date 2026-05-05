@@ -1,5 +1,6 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
 import { AudioTab } from "settings/audio-tab.slint";
+import { BlocklistDeviceEntry } from "settings/blocklist-dialog.slint";
 import { WhisperTab } from "settings/whisper-tab.slint";
 import { UiTab } from "settings/ui-tab.slint";
 import { OutputTab } from "settings/output-tab.slint";
@@ -59,6 +60,7 @@ export component SettingsDialog inherits Rectangle {
     in property <bool> testing-mic;
     in property <float> audio-level;
     in property <[string]> audio-blocklist: [];
+    in property <[BlocklistDeviceEntry]> audio-blocklist-devices: [];
 
     // Whisper tab properties
     in-out property <string> whisper-mode: "api";
@@ -124,6 +126,7 @@ export component SettingsDialog inherits Rectangle {
     callback manage-blocklist();
     callback add-blocklist-item(string);
     callback remove-blocklist-item(int);
+    callback unhide-blocklist-device(string);
     callback mode-changed(string);
     callback provider-changed(string);
     callback api-key-changed(string);
@@ -250,6 +253,7 @@ export component SettingsDialog inherits Rectangle {
                                 loading-devices: loading-devices;
                                 testing-mic: testing-mic;
                                 audio-level: audio-level;
+                                blocklist-devices: audio-blocklist-devices;
                                 refresh-audio-devices => { refresh-audio-devices(); }
                                 start-mic-test => { start-mic-test(); }
                                 stop-mic-test => { stop-mic-test(); }
@@ -258,6 +262,7 @@ export component SettingsDialog inherits Rectangle {
                                 blocklist: audio-blocklist;
                                 add-blocklist-item(val) => { add-blocklist-item(val); }
                                 remove-blocklist-item(idx) => { remove-blocklist-item(idx); }
+                                unhide-blocklist-device(id) => { unhide-blocklist-device(id); }
                             }
 
                             if active-tab == "whisper": WhisperTab {

@@ -1,6 +1,6 @@
 import { ThemeColors } from "../../themes/theme-definitions.slint";
 import { SettingsField, SettingsHint, SettingsSelect, SettingsCheckbox, SettingsButton, IconButton } from "shared.slint";
-import { BlocklistDialog } from "blocklist-dialog.slint";
+import { BlocklistDialog, BlocklistDeviceEntry } from "blocklist-dialog.slint";
 
 export component AudioTab inherits VerticalLayout {
     in property <ThemeColors> theme-colors;
@@ -11,6 +11,7 @@ export component AudioTab inherits VerticalLayout {
     in property <bool> testing-mic;
     in property <float> audio-level;
     in property <[string]> blocklist;
+    in property <[BlocklistDeviceEntry]> blocklist-devices;
 
     callback refresh-audio-devices();
     callback start-mic-test();
@@ -19,6 +20,7 @@ export component AudioTab inherits VerticalLayout {
     callback manage-blocklist();
     callback add-blocklist-item(string);
     callback remove-blocklist-item(int);
+    callback unhide-blocklist-device(string);
 
     property <float> refresh-angle: 0;
 
@@ -154,15 +156,21 @@ export component AudioTab inherits VerticalLayout {
     }
 
     blocklist_popup := PopupWindow {
-        x: (parent.width - 400px) / 2;
-        y: (parent.height - 450px) / 2;
+        width: Math.min(parent.width - 24px, 520px);
+        height: Math.min(parent.height - 24px, 560px);
+        x: Math.max(12px, (parent.width - self.width) / 2);
+        y: Math.max(12px, (parent.height - self.height) / 2);
         close-policy: close-on-click-outside;
         
         BlocklistDialog {
+            width: 100%;
+            height: 100%;
             theme-colors: theme-colors;
             blocklist: blocklist;
+            devices: blocklist-devices;
             add-item(val) => { add-blocklist-item(val); }
             remove-item(idx) => { remove-blocklist-item(idx); }
+            unhide-device(id) => { unhide-blocklist-device(id); }
             close => { blocklist_popup.close(); }
         }
     }

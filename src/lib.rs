@@ -10,7 +10,12 @@ mod whisper;
 mod window;
 
 use log::warn;
-use std::sync::{Arc, Mutex};
+use std::{
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
+
+use crate::audio::AudioDevice;
 
 const THEME_MAP: &[(&str, &str)] = &[
     ("white", "White"),
@@ -41,6 +46,91 @@ fn theme_display_to_key(display: &str) -> &str {
         .find(|(_, d)| *d == display)
         .map(|(k, _)| *k)
         .unwrap_or("white")
+}
+
+fn device_matches_blocklist(device_id: &str, blocklist: &[String]) -> bool {
+    blocklist
+        .iter()
+        .any(|pattern| device_id.contains(pattern.as_str()))
+}
+
+fn matching_blocklist_patterns(device_id: &str, blocklist: &[String]) -> Vec<String> {
+    blocklist
+        .iter()
+        .filter(|pattern| device_id.contains(pattern.as_str()))
+        .cloned()
+        .collect()
+}
+
+fn visible_audio_devices(all_devices: &[AudioDevice], blocklist: &[String]) -> Vec<AudioDevice> {
+    all_devices
+        .iter()
+        .filter(|device| !device_matches_blocklist(&device.id, blocklist))
+        .cloned()
+        .collect()
+}
+
+fn all_audio_devices(shared: &SharedAppState) -> Vec<AudioDevice> {
+    if let Ok(audio) = shared.state.audio.lock() {
+        audio.get_available_devices(Vec::new())
+    } else {
+        Vec::new()
+    }
+}
+
+fn blocklist_model(blocklist: &[String]) -> Rc<slint::VecModel<slint::SharedString>> {
+    let blocklist_items: Vec<slint::SharedString> = blocklist
+        .iter()
+        .map(|item| slint::SharedString::from(item.as_str()))
+        .collect();
+
+    Rc::new(slint::VecModel::from(blocklist_items))
+}
+
+fn blocklist_device_model(
+    all_devices: &[AudioDevice],
+    blocklist: &[String],
+) -> Rc<slint::VecModel<BlocklistDeviceEntry>> {
+    let blocklist_device_items: Vec<BlocklistDeviceEntry> = all_devices
+        .iter()
+        .map(|device| {
+            let matching_patterns = matching_blocklist_patterns(&device.id, blocklist);
+            BlocklistDeviceEntry {
+                name: device.name.as_str().into(),
+                id: device.id.as_str().into(),
+                blocked: !matching_patterns.is_empty(),
+                blocked_by: matching_patterns.join(", ").as_str().into(),
+            }
+        })
+        .collect();
+
+    Rc::new(slint::VecModel::from(blocklist_device_items))
+}
+
+fn unblock_device_from_blocklist(
+    target_id: &str,
+    all_devices: &[AudioDevice],
+    blocklist: &[String],
+) -> Vec<String> {
+    let mut updated_blocklist: Vec<String> = blocklist
+        .iter()
+        .filter(|pattern| !target_id.contains(pattern.as_str()))
+        .cloned()
+        .collect();
+
+    for device in all_devices {
+        if device.id == target_id {
+            continue;
+        }
+
+        let was_blocked = device_matches_blocklist(&device.id, blocklist);
+        let is_still_blocked = device_matches_blocklist(&device.id, &updated_blocklist);
+        if was_blocked && !is_still_blocked && !updated_blocklist.contains(&device.id) {
+            updated_blocklist.push(device.id.clone());
+        }
+    }
+
+    updated_blocklist
 }
 
 use commands::AppState;
@@ -227,11 +317,8 @@ fn refresh_blocklist_and_devices(shared: &SharedAppState) {
         (config.get_blocklist(), config.get_audio_device_id())
     };
 
-    let devices = if let Ok(audio) = shared.state.audio.lock() {
-        audio.get_available_devices(blocklist.clone())
-    } else {
-        Vec::new()
-    };
+    let all_devices = all_audio_devices(shared);
+    let devices = visible_audio_devices(&all_devices, &blocklist);
 
     // If the saved device is blocklisted, clear it and fall back to default
     if let Some(ref dev_id) = current_device_id {
@@ -257,22 +344,20 @@ fn refresh_blocklist_and_devices(shared: &SharedAppState) {
         None => "Default".to_string(),
     };
 
-    let blocklist_items: Vec<slint::SharedString> = blocklist
-        .iter()
-        .map(|s| slint::SharedString::from(s.as_str()))
-        .collect();
-    let blocklist_model = std::rc::Rc::new(slint::VecModel::from(blocklist_items));
-
     let mut names: Vec<slint::SharedString> = vec!["Default".into()];
     names.extend(
         devices
             .into_iter()
             .map(|d| slint::SharedString::from(d.name.as_str())),
     );
-    let device_model = std::rc::Rc::new(slint::VecModel::from(names));
+    let device_model = Rc::new(slint::VecModel::from(names));
 
     shared.with_ui(|app| {
-        app.set_settings_audio_blocklist(slint::ModelRc::from(blocklist_model));
+        app.set_settings_audio_blocklist(slint::ModelRc::from(blocklist_model(&blocklist)));
+        app.set_settings_audio_blocklist_devices(slint::ModelRc::from(blocklist_device_model(
+            &all_devices,
+            &blocklist,
+        )));
         app.set_settings_audio_devices(slint::ModelRc::from(device_model));
         app.set_settings_audio_device_id(selected_name.into());
     });
@@ -686,7 +771,7 @@ pub fn run() {
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_add_blocklist_item(move |item: slint::SharedString| {
-        let item_str = item.to_string();
+        let item_str = item.trim().to_string();
         if item_str.is_empty() {
             return;
         }
@@ -695,6 +780,27 @@ pub fn run() {
             if !s.audio.blocklist.contains(&item_str) {
                 s.audio.blocklist.push(item_str);
             }
+        });
+
+        refresh_blocklist_and_devices(&shared_cb);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_unhide_blocklist_device(move |device_id: slint::SharedString| {
+        let target_id = device_id.to_string();
+        if target_id.is_empty() {
+            return;
+        }
+
+        let all_devices = all_audio_devices(&shared_cb);
+
+        save_config_field(&shared_cb, |s| {
+            if !device_matches_blocklist(&target_id, &s.audio.blocklist) {
+                return;
+            }
+
+            s.audio.blocklist =
+                unblock_device_from_blocklist(&target_id, &all_devices, &s.audio.blocklist);
         });
 
         refresh_blocklist_and_devices(&shared_cb);

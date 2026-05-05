@@ -1,18 +1,27 @@
 import { ThemeColors } from "../../themes/theme-definitions.slint";
 import { SettingsField, SettingsHint, SettingsInput, SettingsButton } from "shared.slint";
 
+export struct BlocklistDeviceEntry {
+    name: string,
+    id: string,
+    blocked: bool,
+    blocked_by: string,
+}
+
 export component BlocklistDialog inherits Rectangle {
     in property <ThemeColors> theme-colors;
     in property <[string]> blocklist;
+    in property <[BlocklistDeviceEntry]> devices;
     
     callback add-item(string);
     callback remove-item(int);
+    callback unhide-device(string);
     callback close();
 
     property <string> new-item-text;
 
-    width: 400px;
-    height: 450px;
+    preferred-width: 520px;
+    preferred-height: 560px;
     background: theme-colors.bg_secondary;
     border-radius: 16px;
     border-width: 1px;
@@ -42,6 +51,8 @@ export component BlocklistDialog inherits Rectangle {
                 
                 Text {
                     text: "✕";
+                    width: 100%;
+                    height: 100%;
                     color: theme-colors.text_secondary;
                     font-size: 14px;
                     horizontal-alignment: center;
@@ -49,23 +60,118 @@ export component BlocklistDialog inherits Rectangle {
                 }
                 
                 close-touch := TouchArea {
+                    width: 100%;
+                    height: 100%;
                     clicked => { root.close(); }
+                    mouse-cursor: pointer;
                 }
             }
         }
 
         SettingsHint {
             theme-colors: theme-colors;
-            text: "Devices containing any of these patterns will be hidden from the selection list.";
+            text: "Hide detected input devices from the microphone selector, or manage the saved match patterns below.";
         }
 
-        // Add new item
+        Text {
+            text: "Detected input devices";
+            color: theme-colors.text_secondary;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        Rectangle {
+            background: theme-colors.bg_tertiary;
+            border-radius: 8px;
+            height: Math.min(190px, Math.max(96px, root.height * 0.30));
+            clip: true;
+
+            Flickable {
+                viewport-height: devices-content.preferred-height;
+                
+                devices-content := VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+
+                    if devices.length == 0: Text {
+                        text: "No input devices detected.";
+                        color: theme-colors.text_muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                    }
+
+                    for device in devices: Rectangle {
+                        height: 44px;
+                        background: device-touch.has-hover ? theme-colors.bg_secondary : transparent;
+                        border-radius: 6px;
+
+                        device-touch := TouchArea {
+                            width: 100%;
+                            height: 100%;
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 6px;
+                            spacing: 8px;
+                            alignment: space-between;
+
+                            VerticalLayout {
+                                spacing: 2px;
+
+                                Text {
+                                    text: device.name;
+                                    color: theme-colors.text_primary;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: device.blocked ? "Hidden by: " + device.blocked_by : device.id;
+                                    color: device.blocked ? theme-colors.warning : theme-colors.text_muted;
+                                    font-size: 10px;
+                                    overflow: elide;
+                                }
+                            }
+
+                            Rectangle {
+                                width: 64px;
+                                height: 44px;
+                                background: transparent;
+
+                                SettingsButton {
+                                    y: (parent.height - self.height) / 2;
+                                    theme-colors: theme-colors;
+                                    label: device.blocked ? "Unhide" : "Hide";
+                                    width: 64px;
+                                    clicked => {
+                                        if device.blocked {
+                                            root.unhide-device(device.id);
+                                        } else {
+                                            root.add-item(device.id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: "Saved match patterns";
+            color: theme-colors.text_secondary;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
         HorizontalLayout {
             spacing: 8px;
             SettingsInput {
                 theme-colors: theme-colors;
                 text <=> new-item-text;
-                placeholder-text: "Add pattern (e.g. Monitor)";
+                placeholder-text: "Add pattern or device id";
             }
             SettingsButton {
                 theme-colors: theme-colors;
@@ -85,6 +191,7 @@ export component BlocklistDialog inherits Rectangle {
             background: theme-colors.bg_tertiary;
             border-radius: 8px;
             vertical-stretch: 1;
+            min-height: 120px;
             clip: true;
 
             Flickable {
@@ -98,6 +205,11 @@ export component BlocklistDialog inherits Rectangle {
                         height: 36px;
                         background: item-touch.has-hover ? theme-colors.bg_secondary : transparent;
                         border-radius: 6px;
+
+                        item-touch := TouchArea {
+                            width: 100%;
+                            height: 100%;
+                        }
 
                         HorizontalLayout {
                             padding-left: 10px;
@@ -115,11 +227,14 @@ export component BlocklistDialog inherits Rectangle {
                             Rectangle {
                                 width: 28px;
                                 height: 28px;
+                                y: (parent.height - self.height) / 2;
                                 border-radius: 4px;
                                 background: remove-touch.has-hover ? theme-colors.bg_tertiary : transparent;
                                 
                                 Text {
-                                    text: "✕"; 
+                                    text: "✕";
+                                    width: 100%;
+                                    height: 100%;
                                     color: remove-touch.has-hover ? theme-colors.danger : theme-colors.text_muted;
                                     font-size: 14px;
                                     horizontal-alignment: center;
@@ -127,12 +242,13 @@ export component BlocklistDialog inherits Rectangle {
                                 }
 
                                 remove-touch := TouchArea {
+                                    width: 100%;
+                                    height: 100%;
                                     clicked => { root.remove-item(idx); }
+                                    mouse-cursor: pointer;
                                 }
                             }
                         }
-
-                        item-touch := TouchArea {}
                     }
                 }
             }

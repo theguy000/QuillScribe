@@ -368,6 +368,8 @@ export component SettingsButton inherits Rectangle {
                  : theme-colors.border;
 
     Text {
+        width: 100%;
+        height: 100%;
         text: label;
         color: disabled ? theme-colors.text_muted
              : (primary || danger) ? theme-colors.on_accent
@@ -379,6 +381,8 @@ export component SettingsButton inherits Rectangle {
     }
 
     TouchArea {
+        width: 100%;
+        height: 100%;
         clicked => { if !disabled { clicked(); } }
         mouse-cursor: disabled ? not-allowed : pointer;
     }
