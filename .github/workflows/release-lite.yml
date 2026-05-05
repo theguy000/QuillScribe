@@ -1,0 +1,126 @@
+name: Release Lite
+
+on:
+  push:
+    tags:
+      - "lite-v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+          - platform: windows-latest
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: quillscribe-lite
+
+      # ── Set version from git tag ───────────────────────────────────────
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#lite-v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Setting version to $VERSION"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+
+      - name: Commit version bump back to repo
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout quillscribe-lite
+          git add Cargo.toml
+          git diff --cached --quiet && echo "No version changes to commit" && exit 0
+          git commit -m "chore: bump lite version to ${VERSION}"
+          git push origin quillscribe-lite
+
+      # ── Rust ────────────────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: lite
+
+      # ── Linux system dependencies ──────────────────────────────────────
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libasound2-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libgl1-mesa-dev \
+            cmake \
+            clang
+
+      # ── Windows: ensure cmake is available (for whisper.cpp build) ─────
+      - name: Verify cmake (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: cmake --version
+
+      # ── Build ─────────────────────────────────────────────────────────
+      - name: Build release binary
+        run: cargo build --release
+
+      # ── Package Linux binary with tar.gz ───────────────────────────────
+      - name: Package binary (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          mkdir -p release-pkg
+          cp target/release/quillscribe release-pkg/
+          cp -r icons release-pkg/ 2>/dev/null || true
+          cp README.md release-pkg/ 2>/dev/null || true
+          tar -czf quillscribe-lite-linux-x86_64.tar.gz -C release-pkg .
+
+      - name: Package binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p release-pkg
+          cp target/release/quillscribe.exe release-pkg/
+          cp -r icons release-pkg/ 2>/dev/null || true
+          cp README.md release-pkg/ 2>/dev/null || true
+
+      # ── Upload ─────────────────────────────────────────────────────────
+      - name: Upload binary to GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "QuillScribe Lite ${{ github.ref_name }}"
+          body: |
+            ## QuillScribe Lite ${{ github.ref_name }}
+
+            Lightweight edition — local-first transcription without cloud dependencies.
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | Linux x86_64 | `quillscribe-lite-linux-x86_64.tar.gz` |
+            | Windows x86_64 | `quillscribe.exe` |
+          draft: true
+          prerelease: false
+          files: |
+            quillscribe-lite-linux-x86_64.tar.gz
+            release-pkg/quillscribe.exe
