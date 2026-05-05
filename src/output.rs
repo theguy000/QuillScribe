@@ -212,22 +212,22 @@ const YDOTOOL_PASTE_ARGS: [&str; 5] = ["key", "29:1", "47:1", "47:0", "29:0"];
 #[cfg(target_os = "linux")]
 const YDOTOOL_RELEASE_ARGS: [&str; 4] = ["key", "47:0", "29:0", "97:0"];
 
-#[cfg(target_os = "linux")]
+#[cfg(all(test, target_os = "linux"))]
 fn xdotool_paste_args() -> [&'static str; 3] {
     XDOTOOL_PASTE_ARGS
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(test, target_os = "linux"))]
 fn xdotool_release_args() -> [&'static str; 4] {
     XDOTOOL_RELEASE_ARGS
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(test, target_os = "linux"))]
 fn ydotool_paste_args() -> [&'static str; 5] {
     YDOTOOL_PASTE_ARGS
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(test, target_os = "linux"))]
 fn ydotool_release_args() -> [&'static str; 4] {
     YDOTOOL_RELEASE_ARGS
 }
