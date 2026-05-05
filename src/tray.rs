@@ -79,8 +79,10 @@ pub fn setup_tray(
                 if let Ok(event) = menu_channel.try_recv() {
                     handle_menu_event(event.id().0.as_str(), &weak);
                 }
-                if let Ok(_event) = tray_channel.try_recv() {
-                    show_app(&weak);
+                if let Ok(event) = tray_channel.try_recv() {
+                    if matches!(event, TrayIconEvent::Click { .. }) {
+                        show_app(&weak);
+                    }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
