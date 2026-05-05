@@ -142,7 +142,7 @@ export component RecordPanel {
                         interval: 16ms;
                         running: parent.press-release-tail > 0ms;
                         triggered => {
-                            parent.press-release-tail = parent.press-release-tail - 16ms;
+                            parent.press-release-tail = Math.max(parent.press-release-tail - 16ms, 0ms);
                         }
                     }
 
