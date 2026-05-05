@@ -198,6 +198,56 @@ pub fn check_paste_tool() -> PasteToolStatus {
     }
 }
 
+#[cfg(target_os = "linux")]
+const XDOTOOL_PASTE_ARGS: [&str; 3] = ["key", "--clearmodifiers", "ctrl+v"];
+
+#[cfg(target_os = "linux")]
+const XDOTOOL_RELEASE_ARGS: [&str; 4] = ["keyup", "Control_L", "Control_R", "v"];
+
+// 29 = KEY_LEFTCTRL, 47 = KEY_V; :1 = key down, :0 = key up.
+#[cfg(target_os = "linux")]
+const YDOTOOL_PASTE_ARGS: [&str; 5] = ["key", "29:1", "47:1", "47:0", "29:0"];
+
+// Release V plus both Ctrl keys in case a previous synthetic paste was interrupted.
+#[cfg(target_os = "linux")]
+const YDOTOOL_RELEASE_ARGS: [&str; 4] = ["key", "47:0", "29:0", "97:0"];
+
+#[cfg(target_os = "linux")]
+fn xdotool_paste_args() -> [&'static str; 3] {
+    XDOTOOL_PASTE_ARGS
+}
+
+#[cfg(target_os = "linux")]
+fn xdotool_release_args() -> [&'static str; 4] {
+    XDOTOOL_RELEASE_ARGS
+}
+
+#[cfg(target_os = "linux")]
+fn ydotool_paste_args() -> [&'static str; 5] {
+    YDOTOOL_PASTE_ARGS
+}
+
+#[cfg(target_os = "linux")]
+fn ydotool_release_args() -> [&'static str; 4] {
+    YDOTOOL_RELEASE_ARGS
+}
+
+#[cfg(target_os = "linux")]
+fn run_paste_command(
+    command: &str,
+    args: impl IntoIterator<Item = &'static str>,
+) -> Result<std::process::ExitStatus> {
+    std::process::Command::new(command)
+        .args(args)
+        .status()
+        .with_context(|| format!("Failed to execute {command}"))
+}
+
+#[cfg(target_os = "linux")]
+fn release_paste_keys(command: &str, args: impl IntoIterator<Item = &'static str>) {
+    let _ = std::process::Command::new(command).args(args).status();
+}
+
 // ── OutputManager ────────────────────────────────────────────────────────────
 
 pub struct OutputManager;
@@ -301,6 +351,42 @@ impl OutputManager {
 
         debug!("Simulating Ctrl+V paste via SendInput (Windows)");
 
+        let release_keys = || {
+            let release_inputs = [
+                // V up
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_V,
+                            wScan: 0,
+                            dwFlags: KEYEVENTF_KEYUP,
+                            time: 0,
+                            dwExtraInfo: 0,
+                        },
+                    },
+                },
+                // Ctrl up
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_CONTROL,
+                            wScan: 0,
+                            dwFlags: KEYEVENTF_KEYUP,
+                            time: 0,
+                            dwExtraInfo: 0,
+                        },
+                    },
+                },
+            ];
+
+            unsafe { SendInput(&release_inputs, std::mem::size_of::<INPUT>() as i32) }
+        };
+
+        // Clear any stale synthetic state from a previous interrupted paste.
+        let _ = release_keys();
+
         let inputs = [
             // Ctrl down
             INPUT {
@@ -332,6 +418,7 @@ impl OutputManager {
 
         let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
         if sent != inputs.len() as u32 {
+            let _ = release_keys();
             anyhow::bail!(
                 "SendInput failed: sent {} of {} key-down events",
                 sent,
@@ -341,41 +428,13 @@ impl OutputManager {
 
         sleep(Duration::from_millis(20));
 
-        let release_inputs = [
-            // V up
-            INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_V,
-                        wScan: 0,
-                        dwFlags: KEYEVENTF_KEYUP,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
-                },
-            },
-            // Ctrl up
-            INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VK_CONTROL,
-                        wScan: 0,
-                        dwFlags: KEYEVENTF_KEYUP,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
-                },
-            },
-        ];
-
-        let sent = unsafe { SendInput(&release_inputs, std::mem::size_of::<INPUT>() as i32) };
-        if sent != release_inputs.len() as u32 {
+        const RELEASE_INPUT_COUNT: u32 = 2;
+        let sent = release_keys();
+        if sent != RELEASE_INPUT_COUNT {
             anyhow::bail!(
                 "SendInput failed: sent {} of {} key-up events",
                 sent,
-                release_inputs.len()
+                RELEASE_INPUT_COUNT
             );
         }
 
@@ -386,36 +445,26 @@ impl OutputManager {
     /// Simulate Ctrl+V on Linux using the cached detected tool (xdotool or ydotool).
     #[cfg(target_os = "linux")]
     fn linux_paste(&self) -> Result<()> {
-        use std::process::Command;
-
         let status = check_paste_tool();
 
-        match status.detected_tool {
+        let (command, paste_args, release_args, tool_label) = match &status.detected_tool {
             LinuxPasteTool::Xdotool => {
                 debug!("Simulating Ctrl+V paste via xdotool (Linux/X11)");
-                let result = Command::new("xdotool")
-                    .args(["key", "--clearmodifiers", "ctrl+v"])
-                    .status()
-                    .context("Failed to execute xdotool")?;
-
-                if !result.success() {
-                    anyhow::bail!("xdotool exited with non-zero status: {:?}", result.code());
-                }
-                debug!("Ctrl+V paste simulated successfully via xdotool");
+                (
+                    "xdotool",
+                    XDOTOOL_PASTE_ARGS.as_slice(),
+                    XDOTOOL_RELEASE_ARGS.as_slice(),
+                    "xdotool",
+                )
             }
             LinuxPasteTool::Ydotool => {
                 debug!("Simulating Ctrl+V paste via ydotool (Linux)");
-                // 29 = KEY_LEFTCTRL, 47 = KEY_V
-                // :1 = key down, :0 = key up
-                let result = Command::new("ydotool")
-                    .args(["key", "29:1", "47:1", "47:0", "29:0"])
-                    .status()
-                    .context("Failed to execute ydotool")?;
-
-                if !result.success() {
-                    anyhow::bail!("ydotool exited with non-zero status: {:?}", result.code());
-                }
-                debug!("Ctrl+V paste simulated successfully via ydotool");
+                (
+                    "ydotool",
+                    YDOTOOL_PASTE_ARGS.as_slice(),
+                    YDOTOOL_RELEASE_ARGS.as_slice(),
+                    "ydotool",
+                )
             }
             LinuxPasteTool::None => {
                 anyhow::bail!(
@@ -423,7 +472,21 @@ impl OutputManager {
                     status.setup_hint
                 );
             }
+        };
+
+        release_paste_keys(command, release_args.iter().copied());
+        let result = run_paste_command(command, paste_args.iter().copied())?;
+        release_paste_keys(command, release_args.iter().copied());
+
+        if !result.success() {
+            anyhow::bail!(
+                "{} exited with non-zero status: {:?}",
+                tool_label,
+                result.code()
+            );
         }
+
+        debug!("Ctrl+V paste simulated successfully via {}", tool_label);
 
         Ok(())
     }
@@ -462,5 +525,36 @@ impl OutputManager {
 
         self.clear_clipboard()?;
         Ok(success)
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xdotool_paste_uses_clear_modifiers() {
+        assert_eq!(xdotool_paste_args(), ["key", "--clearmodifiers", "ctrl+v"]);
+    }
+
+    #[test]
+    fn xdotool_release_releases_ctrl_and_v() {
+        let args = xdotool_release_args();
+        assert!(args.contains(&"Control_L"));
+        assert!(args.contains(&"Control_R"));
+        assert!(args.contains(&"v"));
+    }
+
+    #[test]
+    fn ydotool_paste_releases_keys_after_pressing_them() {
+        assert_eq!(
+            ydotool_paste_args(),
+            ["key", "29:1", "47:1", "47:0", "29:0"]
+        );
+    }
+
+    #[test]
+    fn ydotool_release_releases_v_and_ctrl_keys() {
+        assert_eq!(ydotool_release_args(), ["key", "47:0", "29:0", "97:0"]);
     }
 }
