@@ -283,14 +283,24 @@ pub fn run() {
         let is_recording = s.with_ui_ret(|app| app.get_is_recording()).unwrap_or(false);
 
         if !is_recording {
-            // Start recording — synchronous, on UI thread
-            s.state.sound.play_start_sound();
-            if let Ok(mut audio) = s.state.audio.lock() {
-                if let Err(e) = audio.start_recording() {
-                    log::error!("Failed to start recording: {}", e);
-                    return;
-                }
+            // Start recording synchronously on the UI thread before presenting it as active.
+            let start_result = s
+                .state
+                .audio
+                .lock()
+                .map_err(|e| format!("Audio device lock failed: {}", e))
+                .and_then(|mut audio| audio.start_recording().map_err(|e| e.to_string()));
+
+            if let Err(e) = start_result {
+                log::error!("Failed to start recording: {}", e);
+                s.with_ui(|app| {
+                    app.set_is_recording(false);
+                    app.set_status_message(format!("Error: {}", e).into());
+                });
+                return;
             }
+
+            s.state.sound.play_start_sound();
             s.with_ui(|app| {
                 app.set_is_recording(true);
                 app.set_status_message("Recording...".into());

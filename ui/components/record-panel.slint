@@ -4,6 +4,7 @@ import { PanelSurface } from "panel-surface.slint";
 component Dot {
     in property <ThemeColors> theme-colors;
     in property <duration> delay;
+    property <bool> started: delay == 0ms;
 
     width: 5px;
     height: 5px;
@@ -17,8 +18,17 @@ component Dot {
         opacity: root.opacity;
 
         Timer {
+            interval: root.delay;
+            running: !root.started;
+            triggered => {
+                root.started = true;
+                root.opacity = 1.0;
+            }
+        }
+
+        Timer {
             interval: 600ms;
-            running: true;
+            running: root.started;
             triggered => {
                 root.opacity = root.opacity < 0.5 ? 1.0 : 0.3;
             }
@@ -27,6 +37,44 @@ component Dot {
         animate opacity {
             duration: 300ms;
         }
+    }
+}
+
+component SpinnerArc inherits Path {
+    in property <color> arc-color;
+    in property <length> arc-stroke-width;
+    in property <float> progress;
+    in property <float> start;
+
+    property <float> center: 54;
+    property <float> radius: 50;
+    property <float> start-anchor: start - 0.001;
+    property <float> end: start + progress;
+
+    width: 100%;
+    height: 100%;
+    viewbox-width: 108;
+    viewbox-height: 108;
+    fill: transparent;
+    stroke: arc-color;
+    stroke-width: arc-stroke-width;
+    stroke-line-cap: round;
+
+    MoveTo {
+        x: root.center - root.radius * sin(-root.start-anchor * 360deg);
+        y: root.center - root.radius * cos(-root.start-anchor * 360deg);
+    }
+    LineTo {
+        x: root.center - root.radius * sin(-root.start * 360deg);
+        y: root.center - root.radius * cos(-root.start * 360deg);
+    }
+    ArcTo {
+        radius-x: root.radius;
+        radius-y: root.radius;
+        x: root.center - root.radius * sin(-root.end * 360deg);
+        y: root.center - root.radius * cos(-root.end * 360deg);
+        sweep: true;
+        large-arc: false;
     }
 }
 
@@ -65,7 +113,6 @@ export component RecordPanel {
             spacing: 16px;
             alignment: center;
 
-            // Mic button
             HorizontalLayout {
                 alignment: center;
                 
@@ -74,6 +121,31 @@ export component RecordPanel {
                     height: 128px;
 
                     property <float> wave-time: 0;
+                    property <bool> is-button-down: false;
+                    property <duration> press-release-tail: 0ms;
+                    property <bool> is-button-pressed: is-button-down || press-release-tail > 0ms;
+                    property <length> button-press-offset: is-button-pressed ? 6px : 0px;
+                    property <float> button-press-scale: is-button-pressed ? 0.94 : 1.0;
+                    property <float> wave-enter-time: 0;
+                    property <float> wave-enter-progress: Math.min(wave-enter-time / 180.0, 1.0);
+
+                    animate button-press-offset {
+                        duration: is-button-pressed ? 60ms : 130ms;
+                        easing: ease-out;
+                    }
+                    animate button-press-scale {
+                        duration: is-button-pressed ? 60ms : 130ms;
+                        easing: ease-out;
+                    }
+
+                    Timer {
+                        interval: 16ms;
+                        running: parent.press-release-tail > 0ms;
+                        triggered => {
+                            parent.press-release-tail = parent.press-release-tail - 16ms;
+                        }
+                    }
+
                     Timer {
                         interval: 32ms;
                         running: is-recording;
@@ -81,7 +153,13 @@ export component RecordPanel {
                             parent.wave-time = Math.mod(parent.wave-time + 32.0, 2400.0);
                         }
                     }
-                    // Reset wave when not recording
+                    Timer {
+                        interval: 16ms;
+                        running: is-recording && parent.wave-enter-time < 180.0;
+                        triggered => {
+                            parent.wave-enter-time = Math.min(parent.wave-enter-time + 16.0, 180.0);
+                        }
+                    }
                     Timer {
                         interval: 1ms;
                         running: !is-recording && parent.wave-time > 0;
@@ -89,24 +167,29 @@ export component RecordPanel {
                             parent.wave-time = 0;
                         }
                     }
+                    Timer {
+                        interval: 1ms;
+                        running: !is-recording && parent.wave-enter-time > 0;
+                        triggered => {
+                            parent.wave-enter-time = 0;
+                        }
+                    }
 
-                    // Recording wave rings
                     for i in [0, 1, 2]: Rectangle {
                         property <float> local-time: Math.mod(parent.wave-time + i * 800.0, 2400.0);
                         property <float> progress: self.local-time / 2400.0;
-                        property <float> wave-scale: 1.0 + self.progress * 1.2;
+                        property <float> wave-scale: (1.0 + self.progress * 1.2) * (0.88 + parent.wave-enter-progress * 0.12) * parent.button-press-scale;
 
                         width: 88px * self.wave-scale;
                         height: 88px * self.wave-scale;
                         x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
+                        y: (parent.height - self.height) / 2 + parent.button-press-offset;
                         border-radius: self.width / 2;
                         border-width: 2px;
                         border-color: theme-colors.accent;
-                        opacity: is-recording ? 0.55 * (1.0 - self.progress) : 0;
+                        opacity: is-recording ? parent.wave-enter-progress * 0.55 * (1.0 - self.progress) : 0;
                     }
 
-                    // Completion burst rings
                     property <float> burst-time: 0;
                     property <bool> burst-active: show-burst;
                     Timer {
@@ -116,7 +199,6 @@ export component RecordPanel {
                             parent.burst-time = Math.min(parent.burst-time + 16.0, 700.0);
                         }
                     }
-                    // Reset burst time when not active
                     Timer {
                         interval: 1ms;
                         running: !burst-active && parent.burst-time > 0;
@@ -126,53 +208,92 @@ export component RecordPanel {
                     }
 
                     for j in [0, 1, 2]: Rectangle {
-                        property <float> ring-delay: j * 50.0;
+                        property <float> ring-delay: j * 80.0;
+                        property <bool> ring-started: parent.burst-time >= self.ring-delay;
                         property <float> ring-elapsed: Math.max(parent.burst-time - self.ring-delay, 0.0);
                         property <float> ring-progress: Math.min(self.ring-elapsed / 700.0, 1.0);
-                        property <float> ring-scale: 1.0 + self.ring-progress * 1.6;
+                        property <float> ring-scale: (1.0 + self.ring-progress * 1.6) * parent.button-press-scale;
 
                         width: 80px * self.ring-scale;
                         height: 80px * self.ring-scale;
                         x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
+                        y: (parent.height - self.height) / 2 + parent.button-press-offset;
                         border-radius: self.width / 2;
                         border-width: 2px;
                         border-color: theme-colors.accent;
-                        opacity: show-burst ? 0.7 * (1.0 - self.ring-progress) : 0;
+                        opacity: show-burst && self.ring-started ? 0.7 * (1.0 - self.ring-progress) : 0;
                     }
 
-                    // Completion burst flash (radial glow)
                     Rectangle {
                         property <float> flash-progress: Math.min(parent.burst-time / 600.0, 1.0);
-                        property <float> flash-scale: 1.0 + flash-progress * 0.8;
+                        property <float> flash-scale: (1.0 + flash-progress * 0.8) * parent.button-press-scale;
 
                         width: 80px * flash-scale;
                         height: 80px * flash-scale;
                         x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
+                        y: (parent.height - self.height) / 2 + parent.button-press-offset;
                         border-radius: self.width / 2;
                         background: theme-colors.accent_glow;
                         opacity: show-burst ? 0.6 * (1.0 - flash-progress) : 0;
                     }
 
+                    if is-transcribing: Rectangle {
+                        width: 108px * parent.button-press-scale;
+                        height: 108px * parent.button-press-scale;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2 + parent.button-press-offset;
+                        opacity: 1.0;
+
+                        animate opacity {
+                            duration: 180ms;
+                            easing: ease-out;
+                        }
+
+                        SpinnerArc {
+                            arc-color: theme-colors.accent;
+                            arc-stroke-width: 3px;
+                            progress: 0.318;
+                            start: mod(animation-tick(), 2s) / 2s;
+                        }
+
+                        SpinnerArc {
+                            arc-color: theme-colors.accent_glow;
+                            arc-stroke-width: 2.5px;
+                            progress: 0.127;
+                            start: -mod(animation-tick(), 1200ms) / 1200ms;
+                        }
+                    }
+
                     Rectangle {
-                        property <float> mic-scale: is-recording ? (1.0 + (audio-level * 0.08)) : 1.0;
+                        property <float> audio-scale: is-recording ? 1.0 + audio-level * 0.08 : 1.0;
+                        property <float> mic-scale: audio-scale * parent.button-press-scale;
+                        property <length> resting-shadow-blur: is-recording ? 20px : 30px;
+                        property <length> resting-shadow-offset-y: is-recording ? 0px : 16px;
 
                         width: 88px * mic-scale;
                         height: 88px * mic-scale;
                         x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
+                        y: (parent.height - self.height) / 2 + parent.button-press-offset;
                         border-radius: self.width / 2;
                         background: is-recording ? @linear-gradient(180deg, theme-colors.accent_hover 0%, theme-colors.accent 100%) : @linear-gradient(180deg, theme-colors.bg_primary 0%, theme-colors.bg_secondary 100%);
                         border-width: 1px;
                         border-color: is-recording ? theme-colors.accent : theme-colors.border;
                         drop-shadow-color: is-recording ? theme-colors.accent_glow : theme-colors.shadow;
-                        drop-shadow-blur: is-recording ? 20px : 30px;
-                        drop-shadow-offset-y: is-recording ? 0px : 16px;
+                        drop-shadow-blur: parent.is-button-pressed ? 12px : resting-shadow-blur;
+                        drop-shadow-offset-y: parent.is-button-pressed ? 3px : resting-shadow-offset-y;
                         opacity: is-transcribing ? 0.5 : 1.0;
 
                         animate mic-scale {
-                            duration: 100ms;
+                            duration: parent.is-button-pressed ? 60ms : 130ms;
+                            easing: ease-out;
+                        }
+                        animate drop-shadow-blur {
+                            duration: 120ms;
+                            easing: ease-out;
+                        }
+                        animate drop-shadow-offset-y {
+                            duration: 120ms;
+                            easing: ease-out;
                         }
                         animate background {
                             duration: 200ms;
@@ -198,6 +319,23 @@ export component RecordPanel {
                     }
 
                     TouchArea {
+                        pointer-event(event) => {
+                            if is-transcribing {
+                                parent.is-button-down = false;
+                                parent.press-release-tail = 0ms;
+                            } else if event.kind == PointerEventKind.down {
+                                parent.is-button-down = true;
+                                parent.press-release-tail = 0ms;
+                            } else if event.kind == PointerEventKind.up {
+                                if parent.is-button-down {
+                                    parent.press-release-tail = 96ms;
+                                }
+                                parent.is-button-down = false;
+                            } else if event.kind == PointerEventKind.cancel {
+                                parent.is-button-down = false;
+                                parent.press-release-tail = 0ms;
+                            }
+                        }
                         clicked => {
                             if !is-transcribing {
                                 toggle-recording();

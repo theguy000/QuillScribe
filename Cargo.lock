@@ -4987,7 +4987,7 @@ dependencies = [
 
 [[package]]
 name = "quillscribe"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "alsa-sys",
  "anyhow",
