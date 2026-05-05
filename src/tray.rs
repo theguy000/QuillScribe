@@ -1,7 +1,7 @@
 use log::{debug, info};
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem},
-    Icon, TrayIconBuilder, TrayIconEvent,
+    Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
 };
 
 use slint::ComponentHandle;
@@ -79,8 +79,8 @@ pub fn setup_tray(
                 if let Ok(event) = menu_channel.try_recv() {
                     handle_menu_event(event.id().0.as_str(), &weak);
                 }
-                if let Ok(_event) = tray_channel.try_recv() {
-                    show_app(&weak);
+                if let Ok(event) = tray_channel.try_recv() {
+                    handle_tray_event(event, &weak);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
@@ -160,6 +160,22 @@ fn handle_menu_event(
             crate::window::quit_app(&app);
         }),
         _ => {}
+    }
+}
+
+fn handle_tray_event(
+    event: TrayIconEvent,
+    app_weak: &slint::Weak<crate::App>,
+) {
+    if matches!(
+        event,
+        TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        }
+    ) {
+        show_app(app_weak);
     }
 }
 
