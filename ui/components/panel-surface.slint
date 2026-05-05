@@ -4,6 +4,9 @@ export component PanelSurface {
     in property <ThemeColors> theme-colors;
 
     Rectangle {
+        width: 100%;
+        height: 100%;
+        clip: true;
         background: theme-colors.bg_primary;
         border-radius: 18px;
         border-width: 1px;
