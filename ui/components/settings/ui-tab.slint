@@ -26,7 +26,7 @@ export component UiTab inherits VerticalLayout {
 
     // Theme
     SettingsField {
-        label: "Theme";
+        label: "THEME";
         theme-colors: theme-colors;
 
         SettingsSelect {
@@ -55,7 +55,7 @@ export component UiTab inherits VerticalLayout {
 
     // Recording Overlay Style
     SettingsField {
-        label: "Recording Overlay Style";
+        label: "RECORDING OVERLAY STYLE";
         theme-colors: theme-colors;
 
         SettingsSelect {
@@ -73,7 +73,7 @@ export component UiTab inherits VerticalLayout {
 
     // Overlay Visual Style
     SettingsField {
-        label: "Overlay Visual Style";
+        label: "OVERLAY VISUAL STYLE";
         theme-colors: theme-colors;
 
         SettingsSelect {
@@ -91,7 +91,7 @@ export component UiTab inherits VerticalLayout {
 
     // Overlay Opacity
     if overlay-style == "Glass": SettingsField {
-        label: "Overlay Opacity — " + Math.round(overlay-opacity * 100) + "%";
+        label: "OVERLAY OPACITY — " + Math.round(overlay-opacity * 100) + "%";
         theme-colors: theme-colors;
 
         SettingsSlider {
@@ -109,7 +109,7 @@ export component UiTab inherits VerticalLayout {
 
     // Max Recent History
     SettingsField {
-        label: "Maximum Recent History";
+        label: "MAXIMUM RECENT HISTORY";
         theme-colors: theme-colors;
 
         HorizontalLayout {
