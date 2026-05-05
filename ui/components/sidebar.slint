@@ -22,7 +22,7 @@ component SidebarButton {
     height: 38px;
 
     Rectangle {
-        background: active ? theme-colors.accent_glow : transparent;
+        background: active ? theme-colors.accent_glow : (ta.has-hover ? theme-colors.bg_tertiary : transparent);
         border-radius: 8px;
 
         HorizontalLayout {
@@ -37,19 +37,21 @@ component SidebarButton {
                 
                 SidebarIcon {
                     icon-source: icon-source;
-                    icon-color: active ? theme-colors.accent : theme-colors.text_secondary;
+                    icon-color: active ? theme-colors.accent : (ta.has-hover ? theme-colors.text_primary : theme-colors.text_secondary);
                     width: 16px; height: 16px;
                     x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                    animate icon-color { duration: 150ms; }
                 }
             }
 
             Text {
                 text: text;
-                color: active ? theme-colors.accent : theme-colors.text_secondary;
+                color: active ? theme-colors.accent : (ta.has-hover ? theme-colors.text_primary : theme-colors.text_secondary);
                 font-size: 13px;
                 font-weight: active ? 600 : 500;
                 vertical-alignment: center;
                 y: (parent.height - self.height) / 2;
+                animate color { duration: 150ms; }
             }
 
             if show-dot: Rectangle {
@@ -59,7 +61,9 @@ component SidebarButton {
             }
         }
 
-        TouchArea { clicked => { clicked(); } mouse-cursor: pointer; }
+        ta := TouchArea { clicked => { clicked(); } mouse-cursor: pointer; }
+
+        animate background { duration: 150ms; }
     }
 }
 

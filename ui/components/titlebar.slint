@@ -88,19 +88,31 @@ export component TitleBar {
                     width: 44px;
                     height: 36px;
 
+                    property <color> minimize-foreground: theme-colors.titlebar_text;
+
                     Rectangle {
                         width: 10px;
                         height: 1px;
-                        background: theme-colors.titlebar_text;
+                        background: minimize-foreground;
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                     }
 
                     ta-min := TouchArea {
                         clicked => { minimize-window(); }
+                        mouse-cursor: pointer;
                     }
 
                     background: ta-min.has-hover ? theme-colors.bg_tertiary.with-alpha(0.78) : transparent;
+
+                    animate background { duration: 150ms; }
+                    animate minimize-foreground { duration: 150ms; }
+
+                    states [
+                        hovered when ta-min.has-hover: {
+                            minimize-foreground: theme-colors.text_primary;
+                        }
+                    ]
                 }
 
                 // Close button — × character matching original SVG X
@@ -121,6 +133,7 @@ export component TitleBar {
 
                     ta-close := TouchArea {
                         clicked => { close-window(); }
+                        mouse-cursor: pointer;
                     }
 
                     background: ta-close.has-hover ? theme-colors.danger : transparent;
