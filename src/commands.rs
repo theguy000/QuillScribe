@@ -39,10 +39,7 @@ pub fn get_settings(state: &AppState) -> Result<Settings, String> {
 }
 
 #[allow(dead_code)]
-pub fn save_settings(
-    state: &AppState,
-    mut settings: Settings,
-) -> Result<(), String> {
+pub fn save_settings(state: &AppState, mut settings: Settings) -> Result<(), String> {
     if let Some(code) = settings.whisper.api_language.split(',').next() {
         settings.whisper.api_language = code.trim().to_string();
     }
@@ -56,7 +53,9 @@ pub fn save_settings(
     drop(config);
 
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
-    audio.set_input_device(device_id).map_err(|e| e.to_string())?;
+    audio
+        .set_input_device(device_id)
+        .map_err(|e| e.to_string())?;
     drop(audio);
 
     state.sound.set_sounds_enabled(sounds_enabled);
@@ -89,10 +88,7 @@ pub fn get_audio_devices(state: &AppState) -> Result<Vec<AudioDevice>, String> {
 }
 
 #[allow(dead_code)]
-pub fn set_audio_device(
-    state: &AppState,
-    device_id: Option<String>,
-) -> Result<(), String> {
+pub fn set_audio_device(state: &AppState, device_id: Option<String>) -> Result<(), String> {
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.set_input_device(device_id).map_err(|e| e.to_string())
 }
@@ -132,15 +128,27 @@ pub async fn stop_recording(state: &AppState) -> Result<Option<String>, String> 
         let config = state.config.lock().map_err(|e| e.to_string())?;
         let whisper_cfg = config.get_whisper();
         let mut whisper = state.whisper.lock().map_err(|e| e.to_string())?;
-        whisper.set_mode(&whisper_cfg.mode).map_err(|e| e.to_string())?;
-        whisper.set_api_provider(&whisper_cfg.api_provider).map_err(|e| e.to_string())?;
+        whisper
+            .set_mode(&whisper_cfg.mode)
+            .map_err(|e| e.to_string())?;
+        whisper
+            .set_api_provider(&whisper_cfg.api_provider)
+            .map_err(|e| e.to_string())?;
         whisper.set_api_key(&whisper_cfg.api_key);
         whisper.set_groq_api_key(&whisper_cfg.groq_api_key);
-        whisper.set_api_model(&whisper_cfg.api_model).map_err(|e| e.to_string())?;
-        whisper.set_api_language(&whisper_cfg.api_language).map_err(|e| e.to_string())?;
-        whisper.set_local_model(&whisper_cfg.local_model).map_err(|e| e.to_string())?;
+        whisper
+            .set_api_model(&whisper_cfg.api_model)
+            .map_err(|e| e.to_string())?;
+        whisper
+            .set_api_language(&whisper_cfg.api_language)
+            .map_err(|e| e.to_string())?;
+        whisper
+            .set_local_model(&whisper_cfg.local_model)
+            .map_err(|e| e.to_string())?;
         whisper.set_local_model_path(&whisper_cfg.local_model_path);
-        whisper.set_local_language(&whisper_cfg.api_language).map_err(|e| e.to_string())?;
+        whisper
+            .set_local_language(&whisper_cfg.api_language)
+            .map_err(|e| e.to_string())?;
     }
 
     let whisper_mode = {
@@ -155,7 +163,9 @@ pub async fn stop_recording(state: &AppState) -> Result<Option<String>, String> 
     let start_time = std::time::Instant::now();
     let audio_duration = audio_data.len() as f64 / sample_rate as f64;
 
-    let transcribe_result = whisper_clone.transcribe_audio(audio_data, sample_rate).await;
+    let transcribe_result = whisper_clone
+        .transcribe_audio(audio_data, sample_rate)
+        .await;
     let transcription_time = start_time.elapsed().as_secs_f64();
 
     let transcribed_text = match transcribe_result {
@@ -189,7 +199,9 @@ pub async fn stop_recording(state: &AppState) -> Result<Option<String>, String> 
         let config = state.config.lock().map_err(|e| e.to_string())?;
         let output_cfg = config.get_output();
         let output = state.output.lock().map_err(|e| e.to_string())?;
-        output.process_transcription(&transcribed_text, OutputMode::from(output_cfg.mode)).map_err(|e| e.to_string())?;
+        output
+            .process_transcription(&transcribed_text, OutputMode::from(output_cfg.mode))
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(Some(transcribed_text))
@@ -202,21 +214,17 @@ pub fn get_audio_level(state: &AppState) -> Result<f32, String> {
 }
 
 #[allow(dead_code)]
-pub fn test_microphone(
-    state: &AppState,
-    device_id: Option<String>,
-) -> Result<bool, String> {
+pub fn test_microphone(state: &AppState, device_id: Option<String>) -> Result<bool, String> {
     let audio = state.audio.lock().map_err(|e| e.to_string())?;
     audio.test_microphone(device_id).map_err(|e| e.to_string())
 }
 
 #[allow(dead_code)]
-pub fn start_mic_test(
-    state: &AppState,
-    device_id: Option<String>,
-) -> Result<(), String> {
+pub fn start_mic_test(state: &AppState, device_id: Option<String>) -> Result<(), String> {
     let mut audio = state.audio.lock().map_err(|e| e.to_string())?;
-    audio.set_input_device(device_id.clone()).map_err(|e| e.to_string())?;
+    audio
+        .set_input_device(device_id.clone())
+        .map_err(|e| e.to_string())?;
     audio.start_monitoring(true).map_err(|e| e.to_string())
 }
 
@@ -228,7 +236,9 @@ pub fn stop_mic_test(state: &AppState) -> Result<(), String> {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         config.get_audio_device_id()
     };
-    audio.set_input_device(device_id).map_err(|e| e.to_string())?;
+    audio
+        .set_input_device(device_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -291,14 +301,13 @@ pub fn get_downloaded_models() -> Vec<String> {
 // ── Output ───────────────────────────────────────────────────────────────────
 
 #[allow(dead_code)]
-pub fn process_transcription(
-    state: &AppState,
-    text: String,
-) -> Result<String, String> {
+pub fn process_transcription(state: &AppState, text: String) -> Result<String, String> {
     let config = state.config.lock().map_err(|e| e.to_string())?;
     let output_cfg = config.get_output();
     let output = state.output.lock().map_err(|e| e.to_string())?;
-    output.process_transcription(&text, OutputMode::from(output_cfg.mode)).map_err(|e| e.to_string())
+    output
+        .process_transcription(&text, OutputMode::from(output_cfg.mode))
+        .map_err(|e| e.to_string())
 }
 
 #[allow(dead_code)]
@@ -341,7 +350,13 @@ pub fn has_compositor() -> bool {
             return true;
         }
         const COMPOSITED_DESKTOPS: &[&str] = &[
-            "kde", "gnome", "unity", "cinnamon", "deepin", "pantheon", "enlightenment",
+            "kde",
+            "gnome",
+            "unity",
+            "cinnamon",
+            "deepin",
+            "pantheon",
+            "enlightenment",
         ];
         if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") {
             let d = desktop.to_lowercase();
@@ -402,10 +417,7 @@ pub fn get_recent_history(state: &AppState, days: Option<i64>) -> Vec<HistoryEnt
 // ── Window ─────────────────────────────────────────────────────────────────
 
 #[allow(dead_code)]
-pub fn set_always_on_top(
-    state: &AppState,
-    on_top: bool,
-) -> Result<(), String> {
+pub fn set_always_on_top(state: &AppState, on_top: bool) -> Result<(), String> {
     let config = state.config.lock().map_err(|e| e.to_string())?;
     config.set_always_on_top(on_top);
     let _ = config.save_settings();

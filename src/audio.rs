@@ -382,7 +382,9 @@ fn audio_thread_fn(rx: mpsc::Receiver<AudioCommand>, state: Arc<Mutex<AudioState
                     }
 
                     let stream = build_input_stream(&device, Arc::clone(&state))?;
-                    stream.play().map_err(|e| anyhow!("Failed to start audio stream: {}", e))?;
+                    stream
+                        .play()
+                        .map_err(|e| anyhow!("Failed to start audio stream: {}", e))?;
                     active_stream = Some(stream);
                     Ok(())
                 })();

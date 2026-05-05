@@ -1,16 +1,16 @@
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use log::{debug, error, info};
 use rdev::{listen, EventType, Key};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 struct GlobalHotKeyManagerWrapper(GlobalHotKeyManager);
 unsafe impl Send for GlobalHotKeyManagerWrapper {}
 unsafe impl Sync for GlobalHotKeyManagerWrapper {}
 
-static HOTKEY_MANAGER: std::sync::Mutex<Option<GlobalHotKeyManagerWrapper>> = std::sync::Mutex::new(None);
-static REGISTERED_HOTKEY: std::sync::Mutex<Option<global_hotkey::hotkey::HotKey>> = std::sync::Mutex::new(None);
+static HOTKEY_MANAGER: std::sync::Mutex<Option<GlobalHotKeyManagerWrapper>> =
+    std::sync::Mutex::new(None);
+static REGISTERED_HOTKEY: std::sync::Mutex<Option<global_hotkey::hotkey::HotKey>> =
+    std::sync::Mutex::new(None);
 
 // Single persistent listener thread. The callback becomes a no-op when
 // RECORDING_ACTIVE is false, avoiding per-session thread/hook leaks.
@@ -19,32 +19,64 @@ static LISTENER_STARTED: AtomicBool = AtomicBool::new(false);
 
 // Stored callback + modifier state for the persistent listener.
 type RecordingCallback = Box<dyn Fn(String) + Send>;
-static RECORDING_CALLBACK: std::sync::Mutex<Option<RecordingCallback>> = std::sync::Mutex::new(None);
+static RECORDING_CALLBACK: std::sync::Mutex<Option<RecordingCallback>> =
+    std::sync::Mutex::new(None);
 static MODIFIER_STATE: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 /// Map rdev Key to the key name format expected by global-hotkey.
 fn key_to_hotkey_name(key: &Key) -> Option<String> {
     Some(match key {
         // Letters
-        Key::KeyA => "A".into(), Key::KeyB => "B".into(), Key::KeyC => "C".into(),
-        Key::KeyD => "D".into(), Key::KeyE => "E".into(), Key::KeyF => "F".into(),
-        Key::KeyG => "G".into(), Key::KeyH => "H".into(), Key::KeyI => "I".into(),
-        Key::KeyJ => "J".into(), Key::KeyK => "K".into(), Key::KeyL => "L".into(),
-        Key::KeyM => "M".into(), Key::KeyN => "N".into(), Key::KeyO => "O".into(),
-        Key::KeyP => "P".into(), Key::KeyQ => "Q".into(), Key::KeyR => "R".into(),
-        Key::KeyS => "S".into(), Key::KeyT => "T".into(), Key::KeyU => "U".into(),
-        Key::KeyV => "V".into(), Key::KeyW => "W".into(), Key::KeyX => "X".into(),
-        Key::KeyY => "Y".into(), Key::KeyZ => "Z".into(),
+        Key::KeyA => "A".into(),
+        Key::KeyB => "B".into(),
+        Key::KeyC => "C".into(),
+        Key::KeyD => "D".into(),
+        Key::KeyE => "E".into(),
+        Key::KeyF => "F".into(),
+        Key::KeyG => "G".into(),
+        Key::KeyH => "H".into(),
+        Key::KeyI => "I".into(),
+        Key::KeyJ => "J".into(),
+        Key::KeyK => "K".into(),
+        Key::KeyL => "L".into(),
+        Key::KeyM => "M".into(),
+        Key::KeyN => "N".into(),
+        Key::KeyO => "O".into(),
+        Key::KeyP => "P".into(),
+        Key::KeyQ => "Q".into(),
+        Key::KeyR => "R".into(),
+        Key::KeyS => "S".into(),
+        Key::KeyT => "T".into(),
+        Key::KeyU => "U".into(),
+        Key::KeyV => "V".into(),
+        Key::KeyW => "W".into(),
+        Key::KeyX => "X".into(),
+        Key::KeyY => "Y".into(),
+        Key::KeyZ => "Z".into(),
         // Numbers
-        Key::Num0 => "0".into(), Key::Num1 => "1".into(), Key::Num2 => "2".into(),
-        Key::Num3 => "3".into(), Key::Num4 => "4".into(), Key::Num5 => "5".into(),
-        Key::Num6 => "6".into(), Key::Num7 => "7".into(), Key::Num8 => "8".into(),
+        Key::Num0 => "0".into(),
+        Key::Num1 => "1".into(),
+        Key::Num2 => "2".into(),
+        Key::Num3 => "3".into(),
+        Key::Num4 => "4".into(),
+        Key::Num5 => "5".into(),
+        Key::Num6 => "6".into(),
+        Key::Num7 => "7".into(),
+        Key::Num8 => "8".into(),
         Key::Num9 => "9".into(),
         // Function keys
-        Key::F1 => "F1".into(), Key::F2 => "F2".into(), Key::F3 => "F3".into(),
-        Key::F4 => "F4".into(), Key::F5 => "F5".into(), Key::F6 => "F6".into(),
-        Key::F7 => "F7".into(), Key::F8 => "F8".into(), Key::F9 => "F9".into(),
-        Key::F10 => "F10".into(), Key::F11 => "F11".into(), Key::F12 => "F12".into(),
+        Key::F1 => "F1".into(),
+        Key::F2 => "F2".into(),
+        Key::F3 => "F3".into(),
+        Key::F4 => "F4".into(),
+        Key::F5 => "F5".into(),
+        Key::F6 => "F6".into(),
+        Key::F7 => "F7".into(),
+        Key::F8 => "F8".into(),
+        Key::F9 => "F9".into(),
+        Key::F10 => "F10".into(),
+        Key::F11 => "F11".into(),
+        Key::F12 => "F12".into(),
         // Special keys
         Key::Space => "Space".into(),
         Key::Return => "Return".into(),
@@ -59,18 +91,24 @@ fn key_to_hotkey_name(key: &Key) -> Option<String> {
         Key::Insert => "Insert".into(),
         Key::CapsLock => "CapsLock".into(),
         // Arrow keys
-        Key::UpArrow => "Up".into(), Key::DownArrow => "Down".into(),
-        Key::LeftArrow => "Left".into(), Key::RightArrow => "Right".into(),
+        Key::UpArrow => "Up".into(),
+        Key::DownArrow => "Down".into(),
+        Key::LeftArrow => "Left".into(),
+        Key::RightArrow => "Right".into(),
         // Other
         Key::NumLock => "NumLock".into(),
         Key::PrintScreen => "Print".into(),
         Key::ScrollLock => "ScrollLock".into(),
         Key::Pause => "Pause".into(),
         // Modifiers — handled separately
-        Key::ControlLeft | Key::ControlRight
-        | Key::Alt | Key::AltGr
-        | Key::ShiftLeft | Key::ShiftRight
-        | Key::MetaLeft | Key::MetaRight => return None,
+        Key::ControlLeft
+        | Key::ControlRight
+        | Key::Alt
+        | Key::AltGr
+        | Key::ShiftLeft
+        | Key::ShiftRight
+        | Key::MetaLeft
+        | Key::MetaRight => return None,
         _ => format!("{:?}", key),
     })
 }
@@ -164,7 +202,10 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>, shortcut: &str
     };
 
     if let Err(e) = manager.register(hotkey) {
-        error!("Failed to register global shortcut '{}': {}", shortcut_str, e);
+        error!(
+            "Failed to register global shortcut '{}': {}",
+            shortcut_str, e
+        );
         let mut guard = HOTKEY_MANAGER.lock().unwrap();
         *guard = Some(GlobalHotKeyManagerWrapper(manager));
         return;
@@ -309,7 +350,10 @@ mod tests {
         assert_eq!(key_to_hotkey_name(&Key::Space), Some("Space".into()));
         assert_eq!(key_to_hotkey_name(&Key::Return), Some("Return".into()));
         assert_eq!(key_to_hotkey_name(&Key::Escape), Some("Escape".into()));
-        assert_eq!(key_to_hotkey_name(&Key::Backspace), Some("Backspace".into()));
+        assert_eq!(
+            key_to_hotkey_name(&Key::Backspace),
+            Some("Backspace".into())
+        );
         assert_eq!(key_to_hotkey_name(&Key::Tab), Some("Tab".into()));
         assert_eq!(key_to_hotkey_name(&Key::Delete), Some("Delete".into()));
         assert_eq!(key_to_hotkey_name(&Key::Home), Some("Home".into()));
@@ -332,7 +376,10 @@ mod tests {
     fn key_to_hotkey_name_other_known_keys() {
         assert_eq!(key_to_hotkey_name(&Key::NumLock), Some("NumLock".into()));
         assert_eq!(key_to_hotkey_name(&Key::PrintScreen), Some("Print".into()));
-        assert_eq!(key_to_hotkey_name(&Key::ScrollLock), Some("ScrollLock".into()));
+        assert_eq!(
+            key_to_hotkey_name(&Key::ScrollLock),
+            Some("ScrollLock".into())
+        );
         assert_eq!(key_to_hotkey_name(&Key::Pause), Some("Pause".into()));
     }
 
@@ -416,12 +463,18 @@ mod tests {
 
     #[test]
     fn convert_shortcut_format_no_change_when_no_replacements() {
-        assert_eq!(convert_shortcut_format("Control+Shift+A"), "Control+Shift+A");
+        assert_eq!(
+            convert_shortcut_format("Control+Shift+A"),
+            "Control+Shift+A"
+        );
     }
 
     #[test]
     fn convert_shortcut_format_preserves_non_meta_text() {
-        assert_eq!(convert_shortcut_format("Super+Shift+Space"), "Super+Shift+Space");
+        assert_eq!(
+            convert_shortcut_format("Super+Shift+Space"),
+            "Super+Shift+Space"
+        );
     }
 
     // ── parse_shortcut ────────────────────────────────────────────────────
@@ -495,6 +548,9 @@ mod tests {
         // Push something into modifier state
         MODIFIER_STATE.lock().unwrap().push("Control".into());
         stop_keyboard_recording();
-        assert!(MODIFIER_STATE.lock().unwrap().is_empty(), "modifiers should be cleared after stop");
+        assert!(
+            MODIFIER_STATE.lock().unwrap().is_empty(),
+            "modifiers should be cleared after stop"
+        );
     }
 }

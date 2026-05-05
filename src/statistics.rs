@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{DateTime, Local};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -141,7 +141,11 @@ impl StatisticsManager {
             .lock()
             .map(|h| {
                 h.iter()
-                    .filter(|entry| entry.timestamp >= cutoff_str)
+                    .filter(|entry| {
+                        DateTime::parse_from_rfc3339(&entry.timestamp)
+                            .map(|timestamp| timestamp.with_timezone(&Local) >= cutoff)
+                            .unwrap_or_else(|_| entry.timestamp >= cutoff_str)
+                    })
                     .cloned()
                     .collect()
             })

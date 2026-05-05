@@ -1,5 +1,5 @@
 use log::{debug, info, warn};
-use slint::{ComponentHandle, winit_030::WinitWindowAccessor};
+use slint::{winit_030::WinitWindowAccessor, ComponentHandle};
 
 /// Start a window drag operation via winit.
 /// Call this from the titlebar's TouchArea `pointer-event` on down.
@@ -118,19 +118,36 @@ mod tests {
         assert!(!rgba.is_empty(), "RGBA buffer should not be empty");
         assert!(w > 0, "width should be > 0");
         assert!(h > 0, "height should be > 0");
-        assert_eq!(rgba.len() as u32, w * h * 4, "RGBA buffer size should match w*h*4");
+        assert_eq!(
+            rgba.len() as u32,
+            w * h * 4,
+            "RGBA buffer size should match w*h*4"
+        );
     }
 
     #[test]
     fn taskbar_icon_bytes_for_known_themes() {
         let themes = [
-            "white", "warm_gray", "soft_beige", "blue_gray", "warm_taupe",
-            "soft_sage", "dark_charcoal", "dark_blue", "dark_purple",
-            "dark_forest", "dark_burgundy", "obsidian",
+            "white",
+            "warm_gray",
+            "soft_beige",
+            "blue_gray",
+            "warm_taupe",
+            "soft_sage",
+            "dark_charcoal",
+            "dark_blue",
+            "dark_purple",
+            "dark_forest",
+            "dark_burgundy",
+            "obsidian",
         ];
         for theme in themes {
             let bytes = taskbar_icon_bytes_for_theme(theme);
-            assert!(!bytes.is_empty(), "theme '{}' should have non-empty icon bytes", theme);
+            assert!(
+                !bytes.is_empty(),
+                "theme '{}' should have non-empty icon bytes",
+                theme
+            );
         }
     }
 

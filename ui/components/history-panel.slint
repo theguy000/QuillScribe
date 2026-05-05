@@ -1,60 +1,769 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
 
-export component HistoryPanel {
+export struct HistoryListEntry {
+    timestamp: string,
+    mode: string,
+    status: string,
+    success: bool,
+    duration-label: string,
+    transcription-label: string,
+    text-length-label: string,
+    summary: string,
+    text: string,
+}
+
+component HistoryContainer {
     in property <ThemeColors> theme-colors;
 
-    callback refresh();
+    accessible-role: groupbox;
+    accessible-label: "Recent transcription history";
+    accessible-description: "Browse, refresh, expand, and copy recent transcription sessions.";
 
     Rectangle {
-        background: theme-colors.bg_primary;
-        border-radius: 22px;
-        border-width: 1px;
-        border-color: theme-colors.border_light;
+        width: 100%;
+        height: 100%;
         clip: true;
+        border-radius: 18px;
+        border-width: 1px;
+        border-color: theme-colors.border_light.with-alpha(0.95);
+        background: theme-colors.bg_primary;
+
+        @children
+    }
+}
+
+component HistoryIconButton {
+    in property <ThemeColors> theme-colors;
+    in property <image> icon-source;
+    in property <string> label;
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    forward-focus: fs;
+    width: 36px;
+    height: 36px;
+
+    fs := FocusScope {
+        width: 100%;
+        height: 100%;
+        accessible-role: button;
+        accessible-label: label;
+        accessible-enabled: enabled;
+        accessible-checked: active;
+        accessible-action-default => {
+            if enabled { clicked(); }
+        }
+
+        KeyBinding {
+            keys: @keys(Return);
+            activated => {
+                if enabled { clicked(); }
+            }
+        }
+
+        KeyBinding {
+            keys: @keys(Space);
+            activated => {
+                if enabled { clicked(); }
+            }
+        }
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: active
+                    ? theme-colors.accent
+                    : touch.has-hover && enabled
+                        ? theme-colors.accent
+                        : theme-colors.border_light;
+            background: active
+                ? theme-colors.accent_glow
+                : touch.has-hover && enabled
+                    ? theme-colors.bg_tertiary
+                    : theme-colors.bg_primary.with-alpha(0.54);
+            opacity: enabled ? 1.0 : 0.48;
+
+            Image {
+                source: icon-source;
+                colorize: active || (touch.has-hover && enabled) ? theme-colors.accent : theme-colors.text_secondary;
+                width: 16px;
+                height: 16px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    fs.focus();
+                    if enabled { clicked(); }
+                }
+                mouse-cursor: enabled ? pointer : default;
+            }
+        }
+    }
+}
+
+component HistoryActionButton {
+    in property <ThemeColors> theme-colors;
+    in property <string> label;
+    in property <image> icon-source;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    forward-focus: fs;
+    width: 36px;
+    height: 36px;
+
+    fs := FocusScope {
+        width: 100%;
+        height: 100%;
+        accessible-role: button;
+        accessible-label: label;
+        accessible-enabled: enabled;
+        accessible-action-default => {
+            if enabled { clicked(); }
+        }
+
+        KeyBinding {
+            keys: @keys(Return);
+            activated => {
+                if enabled { clicked(); }
+            }
+        }
+
+        KeyBinding {
+            keys: @keys(Space);
+            activated => {
+                if enabled { clicked(); }
+            }
+        }
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: touch.has-hover && enabled
+                    ? theme-colors.accent
+                    : theme-colors.border_light;
+            background: touch.has-hover && enabled ? theme-colors.accent_glow : theme-colors.bg_primary.with-alpha(0.68);
+            opacity: enabled ? 1.0 : 0.5;
+
+            Image {
+                source: icon-source;
+                colorize: touch.has-hover && enabled ? theme-colors.accent : theme-colors.text_secondary;
+                width: 16px;
+                height: 16px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    fs.focus();
+                    if enabled { clicked(); }
+                }
+                mouse-cursor: enabled ? pointer : default;
+            }
+        }
+    }
+}
+
+component HistoryCopyButton {
+    in property <ThemeColors> theme-colors;
+    in property <string> label;
+    in property <string> text-to-copy;
+    callback copy(string);
+
+    property <bool> can-copy: text-to-copy != "";
+
+    forward-focus: fs;
+    width: 32px;
+    height: 32px;
+
+    fs := FocusScope {
+        width: 100%;
+        height: 100%;
+        accessible-role: button;
+        accessible-label: label;
+        accessible-enabled: can-copy;
+        accessible-action-default => {
+            if can-copy { copy(text-to-copy); }
+        }
+
+        KeyBinding {
+            keys: @keys(Return);
+            activated => {
+                if can-copy { copy(text-to-copy); }
+            }
+        }
+
+        KeyBinding {
+            keys: @keys(Space);
+            activated => {
+                if can-copy { copy(text-to-copy); }
+            }
+        }
+
+        Rectangle {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: touch.has-hover && can-copy
+                    ? theme-colors.accent
+                    : theme-colors.border_light;
+            background: touch.has-hover && can-copy ? theme-colors.accent_glow : theme-colors.bg_secondary.with-alpha(0.82);
+            opacity: can-copy ? 1.0 : 0.45;
+
+            Image {
+                source: @image-url("../icons/copy.svg");
+                colorize: touch.has-hover && can-copy ? theme-colors.accent : theme-colors.text_secondary;
+                width: 14px;
+                height: 14px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    fs.focus();
+                    if can-copy { copy(text-to-copy); }
+                }
+                mouse-cursor: can-copy ? pointer : default;
+            }
+        }
+    }
+}
+
+component HistoryMetricPill {
+    in property <ThemeColors> theme-colors;
+    in property <string> text;
+
+    Rectangle {
+        height: 22px;
+        border-radius: 11px;
+        border-width: 1px;
+        border-color: theme-colors.border_light.with-alpha(0.88);
+        background: theme-colors.bg_primary.with-alpha(0.64);
+
+        Text {
+            text: text;
+            color: theme-colors.text_secondary;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.1px;
+            x: 10px;
+            width: parent.width - 20px;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component HistoryEntryCard {
+    in property <ThemeColors> theme-colors;
+    in property <HistoryListEntry> entry;
+    in property <int> index;
+    in property <int> item-count;
+    in-out property <int> expanded-index;
+    in property <bool> compact-view;
+    callback copy(string);
+
+    property <bool> expanded: expanded-index == index;
+    property <string> mode-label: entry.mode == "api" ? "API MODE" : entry.mode == "local" ? "LOCAL MODE" : entry.mode + " MODE";
+    property <string> status-label: entry.success ? "SUCCESS" : "FAILED";
+    property <string> empty-summary: "No transcription text";
+
+    width: 100%;
+    height: compact-view ? 68px : expanded ? 260px : 100px;
+    preferred-height: self.height;
+
+    if compact-view: Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: theme-colors.border_light.with-alpha(0.95);
+        background: theme-colors.bg_secondary.with-alpha(0.76);
+
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 10px;
+            spacing: 12px;
+
+            compact-focus := FocusScope {
+                horizontal-stretch: 1;
+                height: 100%;
+                accessible-role: list-item;
+                accessible-label: entry.timestamp + ", " + entry.status + ", " + entry.summary;
+                accessible-description: "History session " + (index + 1) + " of " + item-count;
+
+                Rectangle {
+                    width: 100%;
+                    height: 32px;
+                    y: (parent.height - self.height) / 2;
+                    clip: true;
+                    background: transparent;
+
+                    Text {
+                        text: entry.summary != "" ? entry.summary : empty-summary;
+                        color: theme-colors.text_primary;
+                        font-size: 13px;
+                        font-weight: 450;
+                        width: parent.width;
+                        height: parent.height;
+                        wrap: word-wrap;
+                        vertical-alignment: top;
+                    }
+
+                    text-touch := TouchArea {
+                        clicked => { compact-focus.focus(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+
+            Text {
+                text: entry.timestamp;
+                color: theme-colors.text_muted;
+                font-size: 12px;
+                width: 96px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+            }
+
+            Rectangle {
+                width: 32px;
+                height: 100%;
+                background: transparent;
+
+                HistoryCopyButton {
+                    y: (parent.height - self.height) / 2;
+                    theme-colors: theme-colors;
+                    label: "Copy transcription from " + entry.timestamp;
+                    text-to-copy: entry.text;
+                    copy(text) => { copy(text); }
+                }
+            }
+        }
+
+    }
+
+    if !compact-view: Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: expanded
+                ? theme-colors.accent.with-alpha(0.72)
+                : theme-colors.border_light.with-alpha(0.96);
+        background: expanded ? theme-colors.bg_primary.with-alpha(0.72) : theme-colors.bg_secondary.with-alpha(0.78);
+        drop-shadow-blur: expanded ? 12px : 6px;
+        drop-shadow-color: theme-colors.shadow;
+        drop-shadow-offset-y: 3px;
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+
+            entry-focus := FocusScope {
+                height: 76px;
+                accessible-role: button;
+                accessible-label: (expanded ? "Collapse " : "Expand ") + "history session from " + entry.timestamp;
+                accessible-description: entry.status + ", " + entry.mode + " mode, " + entry.duration-label + " audio, " + entry.text-length-label;
+                accessible-expandable: true;
+                accessible-expanded: expanded;
+                accessible-item-index: index;
+                accessible-item-count: item-count;
+                accessible-action-default => {
+                    expanded-index = expanded ? -1 : index;
+                }
+                accessible-action-expand => {
+                    expanded-index = expanded ? -1 : index;
+                }
+
+                KeyBinding {
+                    keys: @keys(Return);
+                    activated => {
+                        expanded-index = expanded ? -1 : index;
+                    }
+                }
+
+                KeyBinding {
+                    keys: @keys(Space);
+                    activated => {
+                        expanded-index = expanded ? -1 : index;
+                    }
+                }
+
+                VerticalLayout {
+                    height: 100%;
+                    spacing: 0px;
+
+                    HorizontalLayout {
+                        alignment: space-between;
+                        spacing: 12px;
+
+                        VerticalLayout {
+                            spacing: 1px;
+                            Text {
+                                text: entry.timestamp;
+                                color: theme-colors.text_primary;
+                                font-size: 13px;
+                                font-weight: 650;
+                            }
+                            Text {
+                                text: mode-label;
+                                color: theme-colors.text_secondary;
+                                font-size: 11px;
+                                font-weight: 600;
+                                letter-spacing: 0.7px;
+                            }
+                        }
+
+                        Rectangle {
+                            width: entry.success ? 82px : 74px;
+                            height: 24px;
+                            border-radius: 12px;
+                            background: entry.success ? theme-colors.success.with-alpha(0.18) : theme-colors.danger.with-alpha(0.14);
+                            border-width: 1px;
+                            border-color: entry.success ? theme-colors.success.with-alpha(0.42) : theme-colors.danger.with-alpha(0.36);
+
+                            Text {
+                                text: status-label;
+                                color: entry.success ? theme-colors.success : theme-colors.danger;
+                                font-size: 11px;
+                                font-weight: 750;
+                                letter-spacing: 0.9px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: transparent;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+
+                        HistoryMetricPill { theme-colors: theme-colors; text: entry.duration-label + " audio"; width: 92px; }
+                        HistoryMetricPill { theme-colors: theme-colors; text: entry.transcription-label + " transcribed"; width: 134px; }
+                        HistoryMetricPill { theme-colors: theme-colors; text: entry.text-length-label; width: 86px; }
+                    }
+                }
+
+                header-touch := TouchArea {
+                    clicked => {
+                        entry-focus.focus();
+                        expanded-index = expanded ? -1 : index;
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+
+            if expanded: Rectangle {
+                height: 1px;
+                background: theme-colors.border_light.with-alpha(0.75);
+            }
+
+            if expanded: Rectangle {
+                height: 150px;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: theme-colors.border_light.with-alpha(0.78);
+                background: theme-colors.bg_primary.with-alpha(0.78);
+                clip: true;
+
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+
+                    HorizontalLayout {
+                        alignment: space-between;
+
+                        Text {
+                            text: "Transcription";
+                            color: theme-colors.text_muted;
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                        }
+
+                        HistoryCopyButton {
+                            theme-colors: theme-colors;
+                            label: "Copy transcription from " + entry.timestamp;
+                            text-to-copy: entry.text;
+                            copy(text) => { copy(text); }
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        clip: true;
+                        background: transparent;
+
+                        detail-flick := Flickable {
+                            width: 100%;
+                            height: 100%;
+                            interactive: true;
+                            viewport-height: detail-text.preferred-height;
+                            viewport-width: self.width;
+
+                            detail-text := Text {
+                                text: entry.text != "" ? entry.text : "No transcription text available for this session.";
+                                color: entry.text != "" ? theme-colors.text_primary : theme-colors.text_muted;
+                                font-size: 13px;
+                                font-weight: 450;
+                                width: parent.width;
+                                wrap: word-wrap;
+                                vertical-alignment: top;
+                            }
+                        }
+
+                        if detail-flick.viewport-height > detail-flick.height: Rectangle {
+                            width: 4px;
+                            height: detail-flick.height * (detail-flick.height / detail-flick.viewport-height);
+                            y: (-detail-flick.viewport-y) * (detail-flick.height / detail-flick.viewport-height);
+                            x: parent.width - 5px;
+                            border-radius: 2px;
+                            background: theme-colors.scrollbar_thumb;
+                        }
+                    }
+                }
+            }
+        }
+
+    }
+}
+
+export component HistoryPanel {
+    in property <ThemeColors> theme-colors;
+    in property <[HistoryListEntry]> entries: [];
+    in property <bool> loading: false;
+    in property <string> error-message: "";
+    in-out property <bool> compact-view: false;
+    in-out property <int> expanded-index: -1;
+
+    callback refresh();
+    callback copy(string);
+
+    property <bool> has-error: error-message != "";
+    property <bool> has-entries: entries.length > 0;
+    property <bool> show-loading-state: !has-error && loading && !has-entries;
+    property <bool> show-empty-state: !has-error && !loading && !has-entries;
+
+    min-width: 420px;
+    min-height: 320px;
+
+    HistoryContainer {
+        width: 100%;
+        height: 100%;
+        theme-colors: theme-colors;
 
         VerticalLayout {
             padding: 24px;
-            spacing: 16px;
+            spacing: 18px;
 
             HorizontalLayout {
+                height: 56px;
                 alignment: space-between;
 
-                Text {
-                    text: "History";
-                    color: theme-colors.text_primary;
-                    font-size: 20px;
-                    font-weight: 700;
-                }
-
-                Rectangle {
-                    width: 80px;
-                    height: 32px;
-                    background: theme-colors.accent;
-                    border-radius: 6px;
+                VerticalLayout {
+                    spacing: 4px;
 
                     Text {
-                        text: "Refresh";
-                        color: theme-colors.on_accent;
-                        font-size: 13px;
+                        text: "ARCHIVE";
+                        color: theme-colors.text_muted;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 1.1px;
                     }
 
-                    TouchArea {
-                        clicked => { refresh(); }
-                        mouse-cursor: pointer;
+                    Text {
+                        text: "Recent history";
+                        color: theme-colors.text_primary;
+                        font-size: 28px;
+                        font-weight: 750;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+
+                    HistoryIconButton {
+                        theme-colors: theme-colors;
+                        icon-source: compact-view ? @image-url("../icons/grid.svg") : @image-url("../icons/list.svg");
+                        label: compact-view ? "Switch history to detailed view" : "Switch history to compact view";
+                        active: compact-view;
+                        clicked => {
+                            compact-view = !compact-view;
+                            expanded-index = -1;
+                        }
+                    }
+
+                    HistoryActionButton {
+                        theme-colors: theme-colors;
+                        label: loading ? "Refreshing history" : "Refresh history";
+                        icon-source: @image-url("../icons/refresh.svg");
+                        enabled: !loading;
+                        clicked => {
+                            expanded-index = -1;
+                            refresh();
+                        }
                     }
                 }
             }
 
             Rectangle {
                 height: 1px;
-                background: theme-colors.border;
+                background: theme-colors.border_light.with-alpha(0.86);
             }
 
-            Text {
-                text: "History entries will appear here.";
-                color: theme-colors.text_secondary;
-                font-size: 14px;
+            if has-error: Rectangle {
+                vertical-stretch: 1;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: theme-colors.danger.with-alpha(0.32);
+                background: theme-colors.danger.with-alpha(0.08);
+                accessible-role: text;
+                accessible-label: "Could not load history. " + error-message;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    padding: 28px;
+
+                    Text {
+                        text: "Could not load history";
+                        color: theme-colors.text_primary;
+                        font-size: 18px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: error-message;
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            if show-loading-state: Rectangle {
+                vertical-stretch: 1;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: theme-colors.border_light.with-alpha(0.94);
+                background: theme-colors.bg_secondary.with-alpha(0.72);
+                accessible-role: text;
+                accessible-label: "Loading history";
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    padding: 28px;
+
+                    Text {
+                        text: "Loading history";
+                        color: theme-colors.text_primary;
+                        font-size: 18px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Pulling recent sessions from the local statistics store.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            if show-empty-state: Rectangle {
+                vertical-stretch: 1;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: theme-colors.border_light.with-alpha(0.94);
+                background: theme-colors.bg_secondary.with-alpha(0.72);
+                accessible-role: text;
+                accessible-label: "No sessions yet. Start a recording and completed sessions will appear here.";
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    padding: 28px;
+
+                    Text {
+                        text: "No sessions yet";
+                        color: theme-colors.text_primary;
+                        font-size: 18px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Start a recording and completed sessions will appear here.";
+                        color: theme-colors.text_secondary;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            if !has-error && has-entries: Rectangle {
+                width: 100%;
+                height: 100%;
+                vertical-stretch: 1;
+                clip: true;
+                accessible-role: list;
+                accessible-label: "Recent transcription sessions";
+
+                history-flick := Flickable {
+                    width: 100%;
+                    height: 100%;
+                    interactive: true;
+                    viewport-height: history-list.preferred-height;
+                    viewport-width: self.width;
+
+                    history-list := VerticalLayout {
+                        width: parent.width;
+                        spacing: 8px;
+                        padding-right: 12px;
+
+                        for entry[idx] in entries: HistoryEntryCard {
+                            theme-colors: theme-colors;
+                            entry: entry;
+                            index: idx;
+                            item-count: entries.length;
+                            compact-view: compact-view;
+                            expanded-index <=> expanded-index;
+                            copy(text) => { copy(text); }
+                        }
+                    }
+                }
+
+                if history-flick.viewport-height > history-flick.height: Rectangle {
+                    width: 5px;
+                    height: history-flick.height * (history-flick.height / history-flick.viewport-height);
+                    y: (-history-flick.viewport-y) * (history-flick.height / history-flick.viewport-height);
+                    x: parent.width - 7px;
+                    border-radius: 3px;
+                    background: theme-colors.scrollbar_thumb;
+                }
             }
         }
-}
+    }
 }

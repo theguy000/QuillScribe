@@ -101,8 +101,18 @@ fn build_tray_menu(
     let menu = Menu::new();
 
     let show_item = MenuItem::with_id(MenuId::new(MENU_ID_SHOW), "Show QuillScribe", true, None);
-    let start_item = MenuItem::with_id(MenuId::new(MENU_ID_START_RECORDING), "Start Recording", true, None);
-    let stop_item = MenuItem::with_id(MenuId::new(MENU_ID_STOP_RECORDING), "Stop Recording", false, None);
+    let start_item = MenuItem::with_id(
+        MenuId::new(MENU_ID_START_RECORDING),
+        "Start Recording",
+        true,
+        None,
+    );
+    let stop_item = MenuItem::with_id(
+        MenuId::new(MENU_ID_STOP_RECORDING),
+        "Stop Recording",
+        false,
+        None,
+    );
     let separator = PredefinedMenuItem::separator();
     let settings_item = MenuItem::with_id(MenuId::new(MENU_ID_SETTINGS), "Settings", true, None);
     let quit_item = MenuItem::with_id(MenuId::new(MENU_ID_EXIT), "Exit", true, None);
@@ -138,10 +148,7 @@ fn show_app(app_weak: &slint::Weak<crate::App>) {
     });
 }
 
-fn handle_menu_event(
-    id: &str,
-    app_weak: &slint::Weak<crate::App>,
-) {
+fn handle_menu_event(id: &str, app_weak: &slint::Weak<crate::App>) {
     match id {
         MENU_ID_SHOW => show_app(app_weak),
         MENU_ID_START_RECORDING => with_app(app_weak, |app| {
@@ -163,10 +170,7 @@ fn handle_menu_event(
     }
 }
 
-fn handle_tray_event(
-    event: TrayIconEvent,
-    app_weak: &slint::Weak<crate::App>,
-) {
+fn handle_tray_event(event: TrayIconEvent, app_weak: &slint::Weak<crate::App>) {
     if matches!(
         event,
         TrayIconEvent::Click {
@@ -198,6 +202,5 @@ pub fn set_tray_theme(theme: &str) {
 
 fn icon_from_png_bytes(png_bytes: &[u8]) -> Result<Icon, String> {
     let (rgba, w, h) = crate::window::decode_png_to_rgba(png_bytes)?;
-    Icon::from_rgba(rgba, w, h)
-        .map_err(|e| format!("Icon from RGBA error: {}", e))
+    Icon::from_rgba(rgba, w, h).map_err(|e| format!("Icon from RGBA error: {}", e))
 }

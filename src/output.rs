@@ -307,6 +307,10 @@ impl OutputManager {
     }
 
     pub fn copy_to_clipboard(&self, text: &str) -> Result<()> {
+        Self::copy_text_to_clipboard(text)
+    }
+
+    pub fn copy_text_to_clipboard(text: &str) -> Result<()> {
         let mut clipboard = Clipboard::new().context("Failed to initialize clipboard")?;
         clipboard
             .set_text(text.to_string())

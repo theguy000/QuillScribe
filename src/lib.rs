@@ -28,16 +28,123 @@ const THEME_MAP: &[(&str, &str)] = &[
 ];
 
 fn theme_key_to_display(key: &str) -> &str {
-    THEME_MAP.iter().find(|(k, _)| *k == key).map(|(_, d)| *d).unwrap_or("White")
+    THEME_MAP
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, d)| *d)
+        .unwrap_or("White")
 }
 
 fn theme_display_to_key(display: &str) -> &str {
-    THEME_MAP.iter().find(|(_, d)| *d == display).map(|(k, _)| *k).unwrap_or("white")
+    THEME_MAP
+        .iter()
+        .find(|(_, d)| *d == display)
+        .map(|(k, _)| *k)
+        .unwrap_or("white")
 }
 
 use commands::AppState;
 
 slint::include_modules!();
+
+const HISTORY_DAYS: i64 = 30;
+const HISTORY_SUMMARY_CHARS: usize = 140;
+
+fn format_history_timestamp(timestamp: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(timestamp)
+        .map(|dt| {
+            dt.with_timezone(&chrono::Local)
+                .format("%b %-d, %-I:%M %p")
+                .to_string()
+        })
+        .unwrap_or_else(|_| timestamp.to_string())
+}
+
+fn format_history_duration(seconds: f64) -> String {
+    if !seconds.is_finite() {
+        return "-".to_string();
+    }
+
+    if seconds < 60.0 {
+        return format!("{seconds:.1}s");
+    }
+
+    let total_seconds = seconds.round() as i64;
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let remaining_seconds = total_seconds % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{remaining_seconds:02}")
+    } else {
+        format!("{minutes}:{remaining_seconds:02}")
+    }
+}
+
+fn summarize_history_text(text: &str) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return "No transcription text".to_string();
+    }
+
+    let mut chars = normalized.chars();
+    let summary: String = chars.by_ref().take(HISTORY_SUMMARY_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{summary}...")
+    } else {
+        summary
+    }
+}
+
+fn format_history_word_count(text: &str) -> String {
+    let word_count = text.split_whitespace().count();
+    format!(
+        "{word_count} {}",
+        if word_count == 1 { "word" } else { "words" }
+    )
+}
+
+fn make_history_entries(entries: Vec<statistics::HistoryEntry>) -> Vec<HistoryListEntry> {
+    entries
+        .into_iter()
+        .rev()
+        .map(|entry| HistoryListEntry {
+            timestamp: format_history_timestamp(&entry.timestamp).into(),
+            mode: entry.mode.into(),
+            status: if entry.success { "Success" } else { "Failed" }.into(),
+            success: entry.success,
+            duration_label: format_history_duration(entry.duration_secs).into(),
+            transcription_label: format_history_duration(entry.transcription_time_secs).into(),
+            text_length_label: format_history_word_count(&entry.text).into(),
+            summary: summarize_history_text(&entry.text).into(),
+            text: entry.text.into(),
+        })
+        .collect()
+}
+
+fn make_history_model(entries: Vec<HistoryListEntry>) -> slint::ModelRc<HistoryListEntry> {
+    let model = std::rc::Rc::new(slint::VecModel::from(entries));
+    slint::ModelRc::from(model)
+}
+
+fn get_recent_history_entries(state: &AppState, days: i64) -> (i32, Vec<HistoryListEntry>) {
+    let history = state.statistics.get_recent_history(days);
+    (history.len() as i32, make_history_entries(history))
+}
+
+fn apply_history_ui(app: &App, count: i32, entries: Vec<HistoryListEntry>) {
+    app.set_session_count(count);
+    app.set_history_entries(make_history_model(entries));
+    app.set_history_loading(false);
+}
+
+fn refresh_history_ui(app: &App, state: &AppState, days: i64) {
+    app.set_history_loading(true);
+    app.set_history_error("".into());
+    app.set_history_expanded_index(-1);
+
+    let (count, entries) = get_recent_history_entries(state, days);
+    apply_history_ui(app, count, entries);
+}
 
 /// Shared application state for Slint callbacks.
 struct SharedAppState {
@@ -72,6 +179,28 @@ impl SharedAppState {
         }
         None
     }
+}
+
+fn refresh_history_ui_async(
+    shared: Arc<SharedAppState>,
+    rt_handle: tokio::runtime::Handle,
+    days: i64,
+) {
+    shared.with_ui(|app| {
+        app.set_history_loading(true);
+        app.set_history_error("".into());
+        app.set_history_expanded_index(-1);
+    });
+
+    rt_handle.spawn(async move {
+        let (count, entries) = get_recent_history_entries(&shared.state, days);
+
+        let _ = slint::invoke_from_event_loop(move || {
+            shared.with_ui(|app| {
+                apply_history_ui(&app, count, entries);
+            });
+        });
+    });
 }
 
 /// Helper: save a single-field config change.
@@ -173,7 +302,7 @@ pub fn run() {
                 function: *const libc::c_char,
                 err: libc::c_int,
                 fmt: *const libc::c_char,
-                ...,
+                ...
             );
         }
 
@@ -184,7 +313,7 @@ pub fn run() {
                 *const libc::c_char,
                 libc::c_int,
                 *const libc::c_char,
-                ...,
+                ...
             ) = quillscribe_silence_alsa_errors;
             let _ = alsa_sys::snd_lib_error_set_handler(Some(f));
         }
@@ -270,6 +399,7 @@ pub fn run() {
     app.set_settings_overlay_opacity(s.ui.overlay_opacity as f32);
     app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
+    refresh_history_ui(&app, &shared.state, HISTORY_DAYS);
 
     // ── Wire core Slint callbacks ────────────────────────────────────────
 
@@ -364,7 +494,9 @@ pub fn run() {
             // Spawn async transcription on Tokio runtime
             let s_async = Arc::clone(&s);
             rt_handle.spawn(async move {
-                let result = whisper_clone.transcribe_audio(audio_data, sample_rate).await;
+                let result = whisper_clone
+                    .transcribe_audio(audio_data, sample_rate)
+                    .await;
                 let transcription_time = start_time.elapsed().as_secs_f64();
                 let whisper_mode = {
                     let config = s_async.state.config.lock().unwrap();
@@ -389,7 +521,10 @@ pub fn run() {
                             let config = s_async.state.config.lock().unwrap();
                             let output_cfg = config.get_output();
                             let output = s_async.state.output.lock().unwrap();
-                            let _ = output.process_transcription(&text, output::OutputMode::from(output_cfg.mode));
+                            let _ = output.process_transcription(
+                                &text,
+                                output::OutputMode::from(output_cfg.mode),
+                            );
                         }
 
                         // Update UI from the Slint event loop thread
@@ -439,31 +574,39 @@ pub fn run() {
     });
 
     let shared_nav = Arc::clone(&shared);
+    let rt_handle_history_nav = rt_handle.clone();
     app.on_request_navigate(move |panel: slint::SharedString| {
         // Update active panel so the UI switches views
+        let should_load_history = panel == "history";
         shared_nav.with_ui(|app| {
             app.set_active_panel(panel.clone());
         });
-        let panel_str = panel.to_string();
-        if panel_str == "history" {
-            let _history = shared_nav.state.statistics.get_recent_history(7);
-            // TODO: feed history into UI
+        if should_load_history {
+            refresh_history_ui_async(
+                Arc::clone(&shared_nav),
+                rt_handle_history_nav.clone(),
+                HISTORY_DAYS,
+            );
         }
     });
 
-    let shared_copy = Arc::clone(&shared);
     app.on_copy_to_clipboard(move |text: slint::SharedString| {
-        let output = shared_copy.state.output.lock().unwrap();
-        let _ = output.copy_to_clipboard(&text.to_string());
+        let text = text.to_string();
+        std::thread::spawn(move || {
+            if let Err(e) = output::OutputManager::copy_text_to_clipboard(&text) {
+                log::error!("Failed to copy history text to clipboard: {}", e);
+            }
+        });
     });
 
     let shared_load = Arc::clone(&shared);
+    let rt_handle_history_load = rt_handle.clone();
     app.on_load_history(move || {
-        let history = shared_load.state.statistics.get_recent_history(30);
-        let count = history.len() as i32;
-        shared_load.with_ui(|app| {
-            app.set_session_count(count);
-        });
+        refresh_history_ui_async(
+            Arc::clone(&shared_load),
+            rt_handle_history_load.clone(),
+            HISTORY_DAYS,
+        );
     });
 
     let shared_update = Arc::clone(&shared);
@@ -492,7 +635,8 @@ pub fn run() {
                     let config = shared_cb.state.config.lock().unwrap();
                     config.get_blocklist()
                 };
-                audio.get_available_devices(blocklist)
+                audio
+                    .get_available_devices(blocklist)
                     .into_iter()
                     .find(|d| d.name == dev_name)
                     .map(|d| d.id)
@@ -543,27 +687,31 @@ pub fn run() {
     let shared_cb = Arc::clone(&shared);
     app.on_settings_add_blocklist_item(move |item: slint::SharedString| {
         let item_str = item.to_string();
-        if item_str.is_empty() { return; }
-        
+        if item_str.is_empty() {
+            return;
+        }
+
         save_config_field(&shared_cb, |s| {
             if !s.audio.blocklist.contains(&item_str) {
                 s.audio.blocklist.push(item_str);
             }
         });
-        
+
         refresh_blocklist_and_devices(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_remove_blocklist_item(move |idx: i32| {
-        if idx < 0 { return; }
-        
+        if idx < 0 {
+            return;
+        }
+
         save_config_field(&shared_cb, |s| {
             if (idx as usize) < s.audio.blocklist.len() {
                 s.audio.blocklist.remove(idx as usize);
             }
         });
-        
+
         refresh_blocklist_and_devices(&shared_cb);
     });
 
@@ -692,19 +840,24 @@ pub fn run() {
             let s3 = Arc::clone(&s);
             let s4 = Arc::clone(&s);
             rt_handle.spawn(async move {
-                match whisper::WhisperManager::download_model_with_progress(&model_name, move |downloaded, total| {
-                    let progress = if total > 0 {
-                        (downloaded as f32 / total as f32).min(1.0)
-                    } else {
-                        0.0
-                    };
-                    let s5 = Arc::clone(&s4);
-                    let _ = slint::invoke_from_event_loop(move || {
-                        s5.with_ui(|app| {
-                            app.set_settings_download_progress(progress);
+                match whisper::WhisperManager::download_model_with_progress(
+                    &model_name,
+                    move |downloaded, total| {
+                        let progress = if total > 0 {
+                            (downloaded as f32 / total as f32).min(1.0)
+                        } else {
+                            0.0
+                        };
+                        let s5 = Arc::clone(&s4);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            s5.with_ui(|app| {
+                                app.set_settings_download_progress(progress);
+                            });
                         });
-                    });
-                }).await {
+                    },
+                )
+                .await
+                {
                     Ok(_) => {
                         let _ = slint::invoke_from_event_loop(move || {
                             s2.with_ui(|app| {

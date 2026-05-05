@@ -343,7 +343,10 @@ mod tests {
     #[test]
     fn ui_config_has_correct_defaults() {
         let cfg = UiConfig::default();
-        assert!(cfg.custom_titlebar, "custom_titlebar should default to true");
+        assert!(
+            cfg.custom_titlebar,
+            "custom_titlebar should default to true"
+        );
         assert!(!cfg.always_on_top, "always_on_top should default to false");
         assert_eq!(cfg.theme, "white");
         assert_eq!(cfg.overlay_mode, "minimal");
@@ -389,6 +392,9 @@ mod tests {
         assert_eq!(parsed.ui.overlay_mode, original.ui.overlay_mode);
         assert_eq!(parsed.ui.overlay_style, original.ui.overlay_style);
         assert!((parsed.ui.overlay_opacity - original.ui.overlay_opacity).abs() < f64::EPSILON);
-        assert_eq!(parsed.advanced.max_history_entries, original.advanced.max_history_entries);
+        assert_eq!(
+            parsed.advanced.max_history_entries,
+            original.advanced.max_history_entries
+        );
     }
 }

@@ -170,7 +170,9 @@ impl WhisperManager {
     }
 
     fn is_valid_language(code: &str) -> bool {
-        Self::get_available_languages().iter().any(|(c, _)| c == code)
+        Self::get_available_languages()
+            .iter()
+            .any(|(c, _)| c == code)
     }
 
     // ── API transcription ────────────────────────────────────────────────
@@ -239,7 +241,9 @@ impl WhisperManager {
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow!(
                 "{} API request failed with status {}: {}",
-                provider_label, status, body
+                provider_label,
+                status,
+                body
             ));
         }
 
@@ -593,10 +597,22 @@ impl WhisperManager {
         let all_models = Self::get_available_local_models();
         match category {
             "General" => all_models,
-            "Tiny" => all_models.into_iter().filter(|m| m.starts_with("tiny")).collect(),
-            "Base" => all_models.into_iter().filter(|m| m.starts_with("base")).collect(),
-            "Small" => all_models.into_iter().filter(|m| m.starts_with("small")).collect(),
-            "Medium" => all_models.into_iter().filter(|m| m.starts_with("medium") || m.starts_with("distil-medium")).collect(),
+            "Tiny" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("tiny"))
+                .collect(),
+            "Base" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("base"))
+                .collect(),
+            "Small" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("small"))
+                .collect(),
+            "Medium" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("medium") || m.starts_with("distil-medium"))
+                .collect(),
             "Large" => all_models
                 .into_iter()
                 .filter(|m| m.starts_with("large") || m == "turbo" || m.starts_with("distil-large"))
@@ -611,9 +627,13 @@ impl WhisperManager {
             "base" | "base.en" => ModelInfo::new("142 MB", "~500 MB", "~7x", "Low-Medium"),
             "small" | "small.en" => ModelInfo::new("466 MB", "~1 GB", "~4x", "Medium"),
             "medium" | "medium.en" => ModelInfo::new("1.5 GB", "~2.6 GB", "~2x", "Medium-High"),
-            "large-v1" | "large-v2" | "large-v3" => ModelInfo::new("2.9 GB", "~4.7 GB", "~1x", "High"),
+            "large-v1" | "large-v2" | "large-v3" => {
+                ModelInfo::new("2.9 GB", "~4.7 GB", "~1x", "High")
+            }
             "turbo" => ModelInfo::new("1.5 GB", "~2.6 GB", "~8x", "High"),
-            "distil-large-v2" | "distil-large-v3" => ModelInfo::new("756 MB", "~1.5 GB", "~6x", "Medium-High"),
+            "distil-large-v2" | "distil-large-v3" => {
+                ModelInfo::new("756 MB", "~1.5 GB", "~6x", "Medium-High")
+            }
             "distil-medium.en" => ModelInfo::new("789 MB", "~1.5 GB", "~5x", "Medium"),
             "distil-small.en" => ModelInfo::new("332 MB", "~800 MB", "~6x", "Low-Medium"),
             "gpt-4o-transcribe" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),

@@ -4,7 +4,7 @@ import { Sidebar } from "components/sidebar.slint";
 import { RecordPanel } from "components/record-panel.slint";
 import { TranscriptionPanel } from "components/transcription-panel.slint";
 import { SettingsDialog } from "components/settings-dialog.slint";
-import { HistoryPanel } from "components/history-panel.slint";
+import { HistoryPanel, HistoryListEntry } from "components/history-panel.slint";
 import { ToastContainer } from "components/toast.slint";
 
 export { ThemeColors }
@@ -26,6 +26,10 @@ export component App inherits Window {
     in-out property <bool> custom-titlebar: true;
     in-out property <bool> has-update: false;
     in-out property <int> session-count: 0;
+    in-out property <[HistoryListEntry]> history-entries: [];
+    in-out property <bool> history-loading: false;
+    in-out property <string> history-error: "";
+    in-out property <int> history-expanded-index: -1;
 
     // ── Settings: Audio ──────────────────────────────────────────────────
     in-out property <string> settings-audio-device-id;
@@ -135,10 +139,10 @@ export component App inherits Window {
     callback settings-stop-recording-shortcut();
 
     title: "QuillScribe";
-    min-width: 800px;
-    min-height: 600px;
-    preferred-width: 960px;
-    preferred-height: 720px;
+    min-width: 860px;
+    min-height: 640px;
+    preferred-width: 1020px;
+    preferred-height: 760px;
     background: theme-colors.bg_primary;
     no-frame: custom-titlebar;
 
@@ -303,7 +307,14 @@ export component App inherits Window {
 
                     if active-panel == "history": HistoryPanel {
                         theme-colors: theme-colors;
+                        width: 100%;
+                        height: 100%;
+                        entries: history-entries;
+                        loading: history-loading;
+                        error-message: history-error;
+                        expanded-index <=> history-expanded-index;
                         refresh => { load-history(); }
+                        copy(text) => { copy-to-clipboard(text); }
                     }
                 }
             }
