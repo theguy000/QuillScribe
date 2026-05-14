@@ -18,7 +18,7 @@ use commands::{
     rebuild_tray_menu, save_settings, set_always_on_top, set_audio_device, set_sounds_enabled,
     set_taskbar_icon_theme, set_tray_theme, start_mic_test, start_monitoring, start_recording,
     stop_mic_test, stop_monitoring, stop_recording, test_clipboard, test_microphone,
-    validate_api_key,
+    validate_api_key, start_mouse_shortcut_recording, stop_mouse_shortcut_recording
 };
 use tauri::Manager;
 
@@ -116,6 +116,8 @@ pub fn run() {
             get_settings,
             save_settings,
             validate_api_key,
+            start_mouse_shortcut_recording,
+            stop_mouse_shortcut_recording,
             // Audio
             get_audio_devices,
             set_audio_device,

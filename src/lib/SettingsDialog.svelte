@@ -308,20 +308,43 @@
     return /** @type {HTMLInputElement} */ (event.currentTarget).checked
   }
 
-  function startRecordingShortcut() {
+  import { listen } from '@tauri-apps/api/event';
+
+  let unlistenMouseShortcut = null;
+
+  $effect(() => {
+    let unlistenPromise = listen('mouse-shortcut-recorded', (event) => {
+      if (recordingShortcut) {
+        localSettings.shortcuts.record_toggle = event.payload;
+        stopRecordingShortcut();
+      }
+    });
+
+    unlistenPromise.then(unlisten => {
+      unlistenMouseShortcut = unlisten;
+    });
+
+    return () => {
+      if (unlistenMouseShortcut) unlistenMouseShortcut();
+    };
+  });
+
+  async function startRecordingShortcut() {
     recordingShortcut = true
     superKeyPressed = false
     onshortcutrecordingchange(true)
+    await invoke('start_mouse_shortcut_recording');
     // Focus the input on next tick so it receives key events
     requestAnimationFrame(() => {
       shortcutInputEl?.focus()
     })
   }
 
-  function stopRecordingShortcut() {
+  async function stopRecordingShortcut() {
     recordingShortcut = false
     superKeyPressed = false
     onshortcutrecordingchange(false)
+    await invoke('stop_mouse_shortcut_recording');
   }
 
   function handleShortcutKeydown(e) {
@@ -366,6 +389,13 @@
 
     localSettings.shortcuts.record_toggle = parts.join('+')
     stopRecordingShortcut()
+  }
+
+  // Handle focus loss while recording
+  function handleShortcutBlur() {
+    if (recordingShortcut) {
+      stopRecordingShortcut()
+    }
   }
 </script>
 
@@ -826,14 +856,16 @@
             <div class="field">
               <span class="field-label">Record Toggle Shortcut</span>
               <div class="field-row">
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <input
                   bind:this={shortcutInputEl}
                   class="field-input shortcut-input"
                   class:recording-shortcut={recordingShortcut}
                   type="text"
-                  value={recordingShortcut ? 'Press a key combination...' : localSettings.shortcuts.record_toggle}
+                  value={recordingShortcut ? 'Press a key combination or mouse button...' : localSettings.shortcuts.record_toggle}
                   readonly
                   onkeydown={handleShortcutKeydown}
+                  onblur={handleShortcutBlur}
                   placeholder="e.g. Meta+Shift+`"
                 />
                 {#if recordingShortcut}

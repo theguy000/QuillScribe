@@ -39,6 +39,16 @@ pub fn get_settings(state: tauri::State<AppState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
+pub fn start_mouse_shortcut_recording() {
+    hotkey::start_mouse_shortcut_recording();
+}
+
+#[tauri::command]
+pub fn stop_mouse_shortcut_recording() {
+    hotkey::stop_mouse_shortcut_recording();
+}
+
+#[tauri::command]
 pub fn save_settings(
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
