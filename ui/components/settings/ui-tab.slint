@@ -17,6 +17,7 @@ export component UiTab inherits VerticalLayout {
     callback custom-titlebar-changed(bool);
     callback always-on-top-changed(bool);
     callback overlay-mode-changed(string);
+    callback max-history-entries-changed(int);
 
     spacing: 16px;
 
@@ -83,6 +84,7 @@ export component UiTab inherits VerticalLayout {
                     if max-history-entries > 1 {
                         max-history-entries = max-history-entries - 10;
                         if max-history-entries < 1 { max-history-entries = 1; }
+                        max-history-entries-changed(max-history-entries);
                     }
                 }
             }
@@ -111,6 +113,7 @@ export component UiTab inherits VerticalLayout {
                     if max-history-entries < 1000 {
                         max-history-entries = max-history-entries + 10;
                         if max-history-entries > 1000 { max-history-entries = 1000; }
+                        max-history-entries-changed(max-history-entries);
                     }
                 }
             }

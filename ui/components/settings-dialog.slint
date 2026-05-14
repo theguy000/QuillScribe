@@ -138,6 +138,7 @@ export component SettingsDialog inherits Rectangle {
     callback custom-titlebar-changed(bool);
     callback always-on-top-changed(bool);
     callback overlay-mode-changed(string);
+    callback max-history-entries-changed(int);
     callback output-mode-changed(int);
     callback start-recording-shortcut();
     callback stop-recording-shortcut();
@@ -307,13 +308,14 @@ export component SettingsDialog inherits Rectangle {
                                 custom-titlebar: custom-titlebar;
                                 always-on-top: always-on-top;
                                 overlay-mode: overlay-mode;
-                                max-history-entries: max-history-entries;
+                                max-history-entries <=> max-history-entries;
                                 themes: themes;
                                 overlay-modes: overlay-modes;
                                 theme-changed(val) => { theme-changed(val); }
                                 custom-titlebar-changed(val) => { custom-titlebar-changed(val); }
                                 always-on-top-changed(val) => { always-on-top-changed(val); }
                                 overlay-mode-changed(val) => { overlay-mode-changed(val); }
+                                max-history-entries-changed(val) => { max-history-entries-changed(val); }
                             }
 
                             if active-tab == "output": OutputTab {

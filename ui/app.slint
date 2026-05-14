@@ -135,6 +135,7 @@ export component App inherits Window {
     callback settings-custom-titlebar-changed(bool);
     callback settings-always-on-top-changed(bool);
     callback settings-overlay-mode-changed(string);
+    callback settings-max-history-entries-changed(int);
     callback settings-output-mode-changed(int);
     callback settings-start-recording-shortcut();
     callback settings-stop-recording-shortcut();
@@ -278,6 +279,7 @@ export component App inherits Window {
                         custom-titlebar-changed(val) => { settings-custom-titlebar-changed(val); }
                         always-on-top-changed(val) => { settings-always-on-top-changed(val); }
                         overlay-mode-changed(val) => { settings-overlay-mode-changed(val); }
+                        max-history-entries-changed(val) => { settings-max-history-entries-changed(val); }
 
                         // Output
                         output-mode <=> settings-output-mode;

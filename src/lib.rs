@@ -13,7 +13,10 @@ mod window;
 use log::warn;
 use std::{
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use crate::audio::AudioDevice;
@@ -33,6 +36,20 @@ const THEME_MAP: &[(&str, &str)] = &[
     ("dark_burgundy", "Dark Burgundy"),
     ("obsidian", "Obsidian"),
 ];
+
+const MIN_HISTORY_ENTRIES: usize = 1;
+const MAX_HISTORY_ENTRIES: usize = 1000;
+const HISTORY_SAVE_DEBOUNCE_MS: u64 = 500;
+
+fn clamp_max_history_entries(value: i32) -> usize {
+    (value
+        .max(MIN_HISTORY_ENTRIES as i32)
+        .min(MAX_HISTORY_ENTRIES as i32)) as usize
+}
+
+fn clamp_max_history_entries_usize(value: usize) -> usize {
+    value.clamp(MIN_HISTORY_ENTRIES, MAX_HISTORY_ENTRIES)
+}
 
 fn theme_key_to_display(key: &str) -> &str {
     THEME_MAP
@@ -380,6 +397,22 @@ where
     }
 }
 
+fn flush_pending_max_history_entries(
+    shared: &SharedAppState,
+    pending: &Mutex<Option<usize>>,
+    generation: &AtomicU64,
+) {
+    let Some(value) = pending.lock().unwrap().take() else {
+        return;
+    };
+
+    generation.fetch_add(1, Ordering::SeqCst);
+    let clamped = clamp_max_history_entries_usize(value);
+    save_config_field(shared, |s| {
+        s.advanced.max_history_entries = clamped;
+    });
+}
+
 /// Helper: refresh the blocklist model and audio device list in the UI.
 /// Also checks if the currently configured device is still visible (not blocklisted)
 /// and falls back to default if it isn't.
@@ -487,7 +520,7 @@ pub fn run() {
         let config = app_state.config.lock().unwrap();
         let device_id = config.get_audio_device_id();
         let sounds_enabled = config.get_sounds_enabled();
-        let max_history = config.get_max_history_entries();
+        let max_history = clamp_max_history_entries_usize(config.get_max_history_entries());
         drop(config);
 
         app_state.sound.set_sounds_enabled(sounds_enabled);
@@ -556,6 +589,17 @@ pub fn run() {
     app.set_settings_local_models(slint::ModelRc::from(model_rc));
     app.set_settings_local_model_category(initial_category.into());
 
+    let max_history_entries = clamp_max_history_entries_usize(s.advanced.max_history_entries);
+    if max_history_entries != s.advanced.max_history_entries {
+        save_config_field(&shared, |settings| {
+            settings.advanced.max_history_entries = max_history_entries;
+        });
+        shared
+            .state
+            .statistics
+            .set_max_history_entries(max_history_entries);
+    }
+
     // UI
     let theme_display = theme_key_to_display(&s.ui.theme);
     app.set_settings_theme(theme_display.into());
@@ -563,7 +607,7 @@ pub fn run() {
     app.set_settings_custom_titlebar(s.ui.custom_titlebar);
     app.set_settings_always_on_top(s.ui.always_on_top);
     app.set_settings_overlay_mode(s.ui.overlay_mode.clone().into());
-    app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
+    app.set_settings_max_history_entries(max_history_entries as i32);
     app.set_settings_app_version(env!("CARGO_PKG_VERSION").into());
     app.set_settings_is_linux(cfg!(target_os = "linux"));
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
@@ -731,6 +775,7 @@ pub fn run() {
                                 app.set_is_transcribing(false);
                                 app.set_transcription_text(text_for_ui.into());
                                 app.set_status_message("Transcription complete".into());
+                                refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
 
                                 // Trigger completion burst animation
                                 app.set_show_burst(true);
@@ -761,6 +806,7 @@ pub fn run() {
                             s_invoke.with_ui(|app| {
                                 app.set_is_transcribing(false);
                                 app.set_status_message(err_msg.into());
+                                refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
                             });
                         });
                     }
@@ -1266,6 +1312,51 @@ pub fn run() {
         });
     });
 
+    let max_history_save_generation = Arc::new(AtomicU64::new(0));
+    let pending_max_history_entries = Arc::new(Mutex::new(None::<usize>));
+
+    let shared_cb = Arc::clone(&shared);
+    let rt_handle_cb = rt_handle.clone();
+    let generation_cb = Arc::clone(&max_history_save_generation);
+    let pending_cb = Arc::clone(&pending_max_history_entries);
+    app.on_settings_max_history_entries_changed(move |entries: i32| {
+        let clamped = clamp_max_history_entries(entries);
+        if entries != clamped as i32 {
+            shared_cb.with_ui(|app| {
+                app.set_settings_max_history_entries(clamped as i32);
+            });
+        }
+
+        let history_changed = shared_cb.state.statistics.set_max_history_entries(clamped);
+        if history_changed {
+            shared_cb.with_ui(|app| {
+                if app.get_active_panel() == "history" {
+                    refresh_history_ui(&app, &shared_cb.state, HISTORY_DAYS);
+                }
+            });
+        }
+        *pending_cb.lock().unwrap() = Some(clamped);
+
+        let generation = generation_cb.fetch_add(1, Ordering::SeqCst) + 1;
+        let shared_save = Arc::clone(&shared_cb);
+        let generation_save = Arc::clone(&generation_cb);
+        let pending_save = Arc::clone(&pending_cb);
+        rt_handle_cb.spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(HISTORY_SAVE_DEBOUNCE_MS)).await;
+            if generation_save.load(Ordering::SeqCst) != generation {
+                return;
+            }
+
+            let Some(value) = pending_save.lock().unwrap().take() else {
+                return;
+            };
+            let clamped = clamp_max_history_entries_usize(value);
+            save_config_field(&shared_save, |s| {
+                s.advanced.max_history_entries = clamped;
+            });
+        });
+    });
+
     // Output
     let shared_cb = Arc::clone(&shared);
     app.on_settings_output_mode_changed(move |mode: i32| {
@@ -1336,7 +1427,11 @@ pub fn run() {
     });
 
     let app_weak_close = app.as_weak();
+    let shared_close = Arc::clone(&shared);
+    let generation_close = Arc::clone(&max_history_save_generation);
+    let pending_close = Arc::clone(&pending_max_history_entries);
     app.on_close_window(move || {
+        flush_pending_max_history_entries(&shared_close, &pending_close, &generation_close);
         if let Some(app) = app_weak_close.upgrade() {
             window::hide_to_tray(&app);
         }
@@ -1391,7 +1486,15 @@ pub fn run() {
 
     // Intercept native window close (Alt+F4, etc.) — hide to tray instead of quitting
     let app_weak_native_close = app.as_weak();
+    let shared_native_close = Arc::clone(&shared);
+    let generation_native_close = Arc::clone(&max_history_save_generation);
+    let pending_native_close = Arc::clone(&pending_max_history_entries);
     app.window().on_close_requested(move || {
+        flush_pending_max_history_entries(
+            &shared_native_close,
+            &pending_native_close,
+            &generation_native_close,
+        );
         if let Some(app) = app_weak_native_close.upgrade() {
             app.window().hide().ok();
         }
@@ -1404,6 +1507,12 @@ pub fn run() {
     app.window().show().ok();
     window::apply_always_on_top(&app, s.ui.always_on_top);
     slint::run_event_loop_until_quit().unwrap();
+
+    flush_pending_max_history_entries(
+        &shared,
+        &pending_max_history_entries,
+        &max_history_save_generation,
+    );
 
     // Clean up tray
     tray::cleanup_tray();

@@ -154,18 +154,24 @@ impl StatisticsManager {
 
     /// Updates the maximum number of history entries to keep.
     /// If the current history exceeds the new limit, the oldest entries are trimmed.
-    pub fn set_max_history_entries(&self, max: usize) {
+    pub fn set_max_history_entries(&self, max: usize) -> bool {
         let max = max.max(1);
+        let mut changed = false;
         if let Ok(mut m) = self.max_history_entries.lock() {
+            changed = *m != max;
             *m = max;
         }
         if let Ok(mut history) = self.history.lock() {
             if history.len() > max {
                 let excess = history.len() - max;
                 history.drain(0..excess);
+                changed = true;
             }
         }
-        self.save_history();
-        info!("Max history entries set to {}", max);
+        if changed {
+            self.save_history();
+            info!("Max history entries set to {}", max);
+        }
+        changed
     }
 }
