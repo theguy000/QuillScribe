@@ -334,55 +334,7 @@ pub fn is_linux() -> bool {
 
 #[allow(dead_code)]
 pub fn has_compositor() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        let is_wayland = std::env::var("XDG_SESSION_TYPE")
-            .map(|s| s.eq_ignore_ascii_case("wayland"))
-            .unwrap_or(false)
-            || std::env::var_os("WAYLAND_DISPLAY").is_some();
-        if is_wayland {
-            return true;
-        }
-
-        if std::env::var_os("KDE_FULL_SESSION").is_some()
-            || std::env::var_os("GNOME_DESKTOP_SESSION_ID").is_some()
-        {
-            return true;
-        }
-        const COMPOSITED_DESKTOPS: &[&str] = &[
-            "kde",
-            "gnome",
-            "unity",
-            "cinnamon",
-            "deepin",
-            "pantheon",
-            "enlightenment",
-        ];
-        if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") {
-            let d = desktop.to_lowercase();
-            if COMPOSITED_DESKTOPS.iter().any(|de| d.contains(de)) {
-                return true;
-            }
-        }
-
-        for name in ["picom", "compton", "xcompmgr"] {
-            if std::process::Command::new("pgrep")
-                .args(["-x", name])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        true
-    }
+    crate::window::has_compositor()
 }
 
 // ── Sound ────────────────────────────────────────────────────────────────────

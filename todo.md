@@ -16,4 +16,4 @@
 
 8. Update tray menu state dynamically, especially Start/Stop Recording enabled states and menu rebuilds after settings/model changes.
 
-9. Complete compositor fallback behavior for the recording overlay on non-composited Linux desktops.
+9. Complete compositor fallback behavior for the recording overlay on non-composited Linux desktops. [done]

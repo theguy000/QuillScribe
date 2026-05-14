@@ -201,6 +201,7 @@ fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, e
     overlay.set_mode(ui.overlay_mode.into());
     overlay.set_overlay_style(ui.overlay_style.into());
     overlay.set_overlay_opacity(ui.overlay_opacity as f32);
+    overlay.set_composited_desktop(window::has_compositor());
     overlay.set_elapsed_seconds(elapsed_secs);
     overlay.set_timer_running(is_full);
 

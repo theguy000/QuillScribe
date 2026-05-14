@@ -67,6 +67,73 @@ fn is_likely_native_wayland() -> bool {
 }
 
 #[cfg(target_os = "linux")]
+fn linux_has_compositor_from_env(
+    session_type: Option<&str>,
+    has_wayland_display: bool,
+    kde_full_session: bool,
+    gnome_desktop_session: bool,
+    current_desktop: Option<&str>,
+) -> bool {
+    if is_likely_native_wayland_from_env(session_type, has_wayland_display, None) {
+        return true;
+    }
+
+    if kde_full_session || gnome_desktop_session {
+        return true;
+    }
+
+    const COMPOSITED_DESKTOPS: &[&str] = &[
+        "kde",
+        "gnome",
+        "unity",
+        "cinnamon",
+        "deepin",
+        "pantheon",
+        "enlightenment",
+    ];
+    current_desktop
+        .map(|desktop| {
+            let desktop = desktop.to_lowercase();
+            COMPOSITED_DESKTOPS.iter().any(|de| desktop.contains(de))
+        })
+        .unwrap_or(false)
+}
+
+/// Returns true when transparent overlay windows are expected to render correctly.
+pub fn has_compositor() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if linux_has_compositor_from_env(
+            std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
+            std::env::var_os("WAYLAND_DISPLAY").is_some(),
+            std::env::var_os("KDE_FULL_SESSION").is_some(),
+            std::env::var_os("GNOME_DESKTOP_SESSION_ID").is_some(),
+            std::env::var("XDG_CURRENT_DESKTOP").ok().as_deref(),
+        ) {
+            return true;
+        }
+
+        for name in ["picom", "compton", "xcompmgr"] {
+            if std::process::Command::new("pgrep")
+                .args(["-x", name])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn is_winit_native_wayland(winit_win: &slint::winit_030::winit::window::Window) -> Option<bool> {
     use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -213,6 +280,39 @@ mod tests {
             Some("wayland"),
             true,
             Some("x11")
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_compositor_detection_uses_session_and_desktop_hints() {
+        assert!(linux_has_compositor_from_env(
+            Some("wayland"),
+            false,
+            false,
+            false,
+            None
+        ));
+        assert!(linux_has_compositor_from_env(
+            Some("x11"),
+            false,
+            true,
+            false,
+            None
+        ));
+        assert!(linux_has_compositor_from_env(
+            Some("x11"),
+            false,
+            false,
+            false,
+            Some("XFCE:GNOME")
+        ));
+        assert!(!linux_has_compositor_from_env(
+            Some("x11"),
+            false,
+            false,
+            false,
+            Some("XFCE")
         ));
     }
 
