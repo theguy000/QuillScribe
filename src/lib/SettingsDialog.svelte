@@ -1,5 +1,6 @@
 <script>
   import { invoke } from '@tauri-apps/api/core'
+  import { listen } from '@tauri-apps/api/event';
   import { getVersion } from '@tauri-apps/api/app'
   import { onDestroy } from 'svelte'
 
@@ -308,24 +309,16 @@
     return /** @type {HTMLInputElement} */ (event.currentTarget).checked
   }
 
-  import { listen } from '@tauri-apps/api/event';
-
-  let unlistenMouseShortcut = null;
-
   $effect(() => {
-    let unlistenPromise = listen('mouse-shortcut-recorded', (event) => {
+    const unlistenPromise = listen('mouse-shortcut-recorded', (event) => {
       if (recordingShortcut) {
         localSettings.shortcuts.record_toggle = event.payload;
         stopRecordingShortcut();
       }
     });
 
-    unlistenPromise.then(unlisten => {
-      unlistenMouseShortcut = unlisten;
-    });
-
     return () => {
-      if (unlistenMouseShortcut) unlistenMouseShortcut();
+      unlistenPromise.then(unlisten => unlisten());
     };
   });
 
@@ -394,7 +387,9 @@
   // Handle focus loss while recording
   function handleShortcutBlur() {
     if (recordingShortcut) {
-      stopRecordingShortcut()
+      // Don't immediately stop recording on blur, because clicking a mouse button outside the window
+      // triggers blur before the global mouse hook event arrives. We'll let the event handle it,
+      // or the user can click the "Cancel" button manually if they want to escape.
     }
   }
 </script>

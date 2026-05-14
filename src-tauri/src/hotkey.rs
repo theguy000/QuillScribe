@@ -89,8 +89,8 @@ fn parse_mouse_shortcut(shortcut: &str) -> Option<Button> {
     if shortcut == "Middle" {
         return Some(Button::Middle);
     }
-    if shortcut.starts_with("Unknown(") && shortcut.ends_with(")") {
-        let num_str = &shortcut["Unknown(".len()..shortcut.len() - 1];
+
+    if let Some(num_str) = shortcut.strip_prefix("Unknown(").and_then(|s| s.strip_suffix(')')) {
         if let Ok(num) = num_str.parse::<u8>() {
             return Some(Button::Unknown(num));
         }
