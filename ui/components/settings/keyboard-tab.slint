@@ -29,7 +29,7 @@ export component KeyboardTab inherits VerticalLayout {
                 border-color: recording-shortcut ? theme-colors.accent : theme-colors.border_light;
 
                 Text {
-                    text: recording-shortcut ? "Press a key combination..." : record-toggle-shortcut;
+                    text: recording-shortcut ? "Press keys or mouse..." : record-toggle-shortcut;
                     color: recording-shortcut ? theme-colors.accent : theme-colors.text_primary;
                     font-size: 12px;
                     vertical-alignment: center;
@@ -65,6 +65,6 @@ export component KeyboardTab inherits VerticalLayout {
 
     SettingsHint {
         theme-colors: theme-colors;
-        text: "Click Record, then press the key combination you want to use. At least one modifier key (Ctrl, Alt, Shift, Meta) is required.";
+        text: "Click Record, then press a key combination or mouse button. Mouse shortcuts can be Mouse3, Mouse4, Mouse5, or combined with modifiers.";
     }
 }

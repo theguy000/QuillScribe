@@ -1,6 +1,8 @@
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use log::{debug, error, info};
-use rdev::{listen, EventType, Key};
+#[cfg(not(test))]
+use rdev::{listen, EventType};
+use rdev::{Button, Key};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 struct GlobalHotKeyManagerWrapper(GlobalHotKeyManager);
@@ -11,17 +13,43 @@ static HOTKEY_MANAGER: std::sync::Mutex<Option<GlobalHotKeyManagerWrapper>> =
     std::sync::Mutex::new(None);
 static REGISTERED_HOTKEY: std::sync::Mutex<Option<global_hotkey::hotkey::HotKey>> =
     std::sync::Mutex::new(None);
+static REGISTERED_MOUSE_SHORTCUT: std::sync::Mutex<Option<MouseShortcut>> =
+    std::sync::Mutex::new(None);
 
-// Single persistent listener thread. The callback becomes a no-op when
-// RECORDING_ACTIVE is false, avoiding per-session thread/hook leaks.
+// Single persistent rdev listener thread for shortcut recording and mouse
+// shortcuts, avoiding per-session thread/hook leaks.
 static RECORDING_ACTIVE: AtomicBool = AtomicBool::new(false);
 static LISTENER_STARTED: AtomicBool = AtomicBool::new(false);
+static HOTKEY_EVENT_LISTENER_STARTED: AtomicBool = AtomicBool::new(false);
 
 // Stored callback + modifier state for the persistent listener.
 type RecordingCallback = Box<dyn Fn(String) + Send>;
+type TriggerCallback = Box<dyn Fn() + Send>;
 static RECORDING_CALLBACK: std::sync::Mutex<Option<RecordingCallback>> =
     std::sync::Mutex::new(None);
+static RECORD_TOGGLE_CALLBACK: std::sync::Mutex<Option<TriggerCallback>> =
+    std::sync::Mutex::new(None);
 static MODIFIER_STATE: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MouseShortcut {
+    button: u8,
+    modifiers: ShortcutModifiers,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ShortcutModifiers {
+    control: bool,
+    alt: bool,
+    alt_gr: bool,
+    shift: bool,
+    meta: bool,
+}
+
+enum RegisteredShortcut {
+    Keyboard(global_hotkey::hotkey::HotKey),
+    Mouse(MouseShortcut),
+}
 
 /// Map rdev Key to the key name format expected by global-hotkey.
 fn key_to_hotkey_name(key: &Key) -> Option<String> {
@@ -128,7 +156,141 @@ fn modifier_name(key: &Key) -> Option<&'static str> {
     }
 }
 
+fn shortcut_modifier_name(part: &str) -> Option<&'static str> {
+    match part.trim().to_ascii_lowercase().as_str() {
+        "control" | "ctrl" => Some("Control"),
+        "alt" => Some("Alt"),
+        "altgr" => Some("AltGr"),
+        "shift" => Some("Shift"),
+        "meta" | "super" | "cmd" | "command" => Some("Meta"),
+        _ => None,
+    }
+}
+
+fn modifiers_from_names(names: &[String]) -> ShortcutModifiers {
+    let mut modifiers = ShortcutModifiers::default();
+    for name in names {
+        match name.as_str() {
+            "Control" => modifiers.control = true,
+            "Alt" => modifiers.alt = true,
+            "AltGr" => modifiers.alt_gr = true,
+            "Shift" => modifiers.shift = true,
+            "Meta" => modifiers.meta = true,
+            _ => {}
+        }
+    }
+    modifiers
+}
+
+fn apply_modifier(modifiers: &mut ShortcutModifiers, name: &str) {
+    match name {
+        "Control" => modifiers.control = true,
+        "Alt" => modifiers.alt = true,
+        "AltGr" => modifiers.alt_gr = true,
+        "Shift" => modifiers.shift = true,
+        "Meta" => modifiers.meta = true,
+        _ => {}
+    }
+}
+
+fn mouse_button_number(button: &Button) -> u8 {
+    match button {
+        Button::Left => 1,
+        Button::Right => 2,
+        Button::Middle => 3,
+        Button::Unknown(number) => *number,
+    }
+}
+
+#[cfg(not(test))]
+fn mouse_button_name(button: &Button) -> String {
+    format!("Mouse{}", mouse_button_number(button))
+}
+
+fn parse_mouse_button(part: &str) -> Result<Option<u8>, String> {
+    let trimmed = part.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let number = lower
+        .strip_prefix("mouse")
+        .or_else(|| lower.strip_prefix("button"));
+
+    let Some(number) = number else {
+        return Ok(None);
+    };
+
+    if number.is_empty() {
+        return Err("Mouse shortcut must include a button number, like Mouse4".to_string());
+    }
+
+    let button = number
+        .parse::<u8>()
+        .map_err(|_| format!("Invalid mouse button '{}'", trimmed))?;
+    if button == 0 {
+        return Err("Mouse button numbers start at 1".to_string());
+    }
+
+    Ok(Some(button))
+}
+
+fn parse_mouse_shortcut(shortcut: &str) -> Result<Option<MouseShortcut>, String> {
+    let mut modifiers = ShortcutModifiers::default();
+    let mut button = None;
+    let mut saw_mouse_token = false;
+
+    for part in shortcut.split('+').map(str::trim).filter(|p| !p.is_empty()) {
+        if let Some(name) = shortcut_modifier_name(part) {
+            apply_modifier(&mut modifiers, name);
+            continue;
+        }
+
+        match parse_mouse_button(part) {
+            Ok(Some(parsed_button)) => {
+                saw_mouse_token = true;
+                if button.replace(parsed_button).is_some() {
+                    return Err("Mouse shortcuts can only contain one mouse button".to_string());
+                }
+            }
+            Ok(None) if button.is_some() || saw_mouse_token => {
+                return Err(format!(
+                    "Mouse shortcut contains unsupported part '{}'",
+                    part
+                ));
+            }
+            Ok(None) => return Ok(None),
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(button.map(|button| MouseShortcut { button, modifiers }))
+}
+
+fn mouse_shortcut_matches(shortcut: MouseShortcut, button: &Button, modifiers: &[String]) -> bool {
+    shortcut.button == mouse_button_number(button)
+        && shortcut.modifiers == modifiers_from_names(modifiers)
+}
+
+#[cfg(not(test))]
+fn finish_recording(shortcut: String) {
+    RECORDING_ACTIVE.store(false, Ordering::Relaxed);
+    MODIFIER_STATE.lock().unwrap().clear();
+
+    if let Ok(cb_guard) = RECORDING_CALLBACK.lock() {
+        if let Some(ref cb) = *cb_guard {
+            cb(shortcut);
+        }
+    }
+}
+
+fn trigger_record_toggle() {
+    if let Ok(cb_guard) = RECORD_TOGGLE_CALLBACK.lock() {
+        if let Some(ref cb) = *cb_guard {
+            cb();
+        }
+    }
+}
+
 /// Start the single persistent rdev listener thread (once, ever).
+#[cfg(not(test))]
 fn ensure_listener_started() {
     if LISTENER_STARTED.load(Ordering::Acquire) {
         return;
@@ -137,53 +299,105 @@ fn ensure_listener_started() {
     LISTENER_STARTED.store(true, Ordering::Release);
 
     std::thread::spawn(move || {
-        if let Err(e) = listen(move |event| {
-            if !RECORDING_ACTIVE.load(Ordering::Relaxed) {
-                return;
-            }
-
-            match event.event_type {
-                EventType::KeyPress(key) => {
-                    if is_modifier(&key) {
-                        let mut mods = MODIFIER_STATE.lock().unwrap();
-                        let name = modifier_name(&key).unwrap();
-                        if !mods.contains(&name.to_string()) {
-                            mods.push(name.to_string());
-                        }
-                    } else if let Some(key_name) = key_to_hotkey_name(&key) {
-                        let mut mods = MODIFIER_STATE.lock().unwrap();
+        if let Err(e) = listen(move |event| match event.event_type {
+            EventType::KeyPress(key) => {
+                if is_modifier(&key) {
+                    let mut mods = MODIFIER_STATE.lock().unwrap();
+                    let name = modifier_name(&key).unwrap();
+                    if !mods.contains(&name.to_string()) {
+                        mods.push(name.to_string());
+                    }
+                } else if RECORDING_ACTIVE.load(Ordering::Relaxed) {
+                    if let Some(key_name) = key_to_hotkey_name(&key) {
+                        let mods = MODIFIER_STATE.lock().unwrap();
                         if !mods.is_empty() {
                             let shortcut = format!("{}+{}", mods.join("+"), key_name);
-                            RECORDING_ACTIVE.store(false, Ordering::Relaxed);
-                            mods.clear();
                             drop(mods);
-                            // Invoke the stored callback
-                            if let Ok(cb_guard) = RECORDING_CALLBACK.lock() {
-                                if let Some(ref cb) = *cb_guard {
-                                    cb(shortcut);
-                                }
-                            }
+                            finish_recording(shortcut);
                         }
                     }
                 }
-                EventType::KeyRelease(key) => {
-                    if is_modifier(&key) {
-                        let mut mods = MODIFIER_STATE.lock().unwrap();
-                        if let Some(name) = modifier_name(&key) {
-                            mods.retain(|m| m != name);
-                        }
-                    }
-                }
-                _ => {}
             }
+            EventType::KeyRelease(key) => {
+                if is_modifier(&key) {
+                    let mut mods = MODIFIER_STATE.lock().unwrap();
+                    if let Some(name) = modifier_name(&key) {
+                        mods.retain(|m| m != name);
+                    }
+                }
+            }
+            EventType::ButtonPress(button) => {
+                if RECORDING_ACTIVE.load(Ordering::Relaxed) {
+                    let mods = MODIFIER_STATE.lock().unwrap();
+                    let shortcut = if mods.is_empty() {
+                        mouse_button_name(&button)
+                    } else {
+                        format!("{}+{}", mods.join("+"), mouse_button_name(&button))
+                    };
+                    drop(mods);
+                    finish_recording(shortcut);
+                } else {
+                    let shortcut = *REGISTERED_MOUSE_SHORTCUT.lock().unwrap();
+                    if let Some(shortcut) = shortcut {
+                        let mods = MODIFIER_STATE.lock().unwrap();
+                        if mouse_shortcut_matches(shortcut, &button, &mods) {
+                            drop(mods);
+                            debug!("Global mouse shortcut triggered: record toggle");
+                            trigger_record_toggle();
+                        }
+                    }
+                }
+            }
+            _ => {}
         }) {
-            error!("Failed to start keyboard listener: {:?}", e);
+            error!("Failed to start shortcut listener: {:?}", e);
             LISTENER_STARTED.store(false, Ordering::Release);
         }
     });
 }
 
+#[cfg(test)]
+fn ensure_listener_started() {
+    LISTENER_STARTED.store(true, Ordering::Release);
+}
+
+fn set_record_toggle_callback(app_weak: &slint::Weak<crate::App>) {
+    let weak = app_weak.clone();
+    let mut callback = RECORD_TOGGLE_CALLBACK.lock().unwrap();
+    *callback = Some(Box::new(move || {
+        let weak_clone = weak.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(app) = weak_clone.upgrade() {
+                app.invoke_toggle_recording();
+            }
+        });
+    }));
+}
+
+fn ensure_hotkey_event_listener_started() {
+    if HOTKEY_EVENT_LISTENER_STARTED.load(Ordering::Acquire) {
+        return;
+    }
+
+    HOTKEY_EVENT_LISTENER_STARTED.store(true, Ordering::Release);
+    std::thread::spawn(move || {
+        let receiver = GlobalHotKeyEvent::receiver();
+        loop {
+            if let Ok(event) = receiver.try_recv() {
+                if event.state == HotKeyState::Pressed {
+                    debug!("Global keyboard shortcut triggered: record toggle");
+                    trigger_record_toggle();
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
+}
+
 pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>, shortcut: &str) {
+    set_record_toggle_callback(app_weak);
+    ensure_hotkey_event_listener_started();
+
     let manager = match GlobalHotKeyManager::new() {
         Ok(m) => m,
         Err(e) => {
@@ -193,56 +407,46 @@ pub fn register_record_toggle(app_weak: &slint::Weak<crate::App>, shortcut: &str
     };
 
     let shortcut_str = shortcut.to_string();
-    let hotkey = match parse_shortcut(shortcut) {
-        Ok(h) => h,
+    let parsed_shortcut = match parse_shortcut(shortcut) {
+        Ok(parsed) => parsed,
         Err(e) => {
             error!("Failed to parse shortcut '{}': {}", shortcut_str, e);
             return;
         }
     };
 
-    if let Err(e) = manager.register(hotkey) {
-        error!(
-            "Failed to register global shortcut '{}': {}",
-            shortcut_str, e
-        );
-        let mut guard = HOTKEY_MANAGER.lock().unwrap();
-        *guard = Some(GlobalHotKeyManagerWrapper(manager));
-        return;
+    match parsed_shortcut {
+        RegisteredShortcut::Keyboard(hotkey) => {
+            if let Err(e) = manager.register(hotkey) {
+                error!(
+                    "Failed to register global shortcut '{}': {}",
+                    shortcut_str, e
+                );
+                let mut guard = HOTKEY_MANAGER.lock().unwrap();
+                *guard = Some(GlobalHotKeyManagerWrapper(manager));
+                return;
+            }
+
+            *REGISTERED_HOTKEY.lock().unwrap() = Some(hotkey);
+            *REGISTERED_MOUSE_SHORTCUT.lock().unwrap() = None;
+        }
+        RegisteredShortcut::Mouse(mouse_shortcut) => {
+            *REGISTERED_HOTKEY.lock().unwrap() = None;
+            *REGISTERED_MOUSE_SHORTCUT.lock().unwrap() = Some(mouse_shortcut);
+            ensure_listener_started();
+        }
     }
 
     info!("Registered global shortcut: {}", shortcut_str);
-    {
-        let mut rh = REGISTERED_HOTKEY.lock().unwrap();
-        *rh = Some(hotkey);
-    }
-    let weak = app_weak.clone();
-    std::thread::spawn(move || {
-        let receiver = GlobalHotKeyEvent::receiver();
-        loop {
-            if let Ok(event) = receiver.try_recv() {
-                if event.state == HotKeyState::Pressed {
-                    debug!("Global hotkey triggered: record toggle");
-                    let weak_clone = weak.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(app) = weak_clone.upgrade() {
-                            app.invoke_toggle_recording();
-                        }
-                    });
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-    });
 
     let mut guard = HOTKEY_MANAGER.lock().unwrap();
     *guard = Some(GlobalHotKeyManagerWrapper(manager));
 }
 
 /// Re-register the global hotkey with a new shortcut.
-/// Unregisters the previous hotkey first.
+/// Unregisters the previous keyboard hotkey first when needed.
 pub fn reregister_hotkey(shortcut: &str) -> Result<(), String> {
-    let hotkey = parse_shortcut(shortcut)?;
+    let parsed_shortcut = parse_shortcut(shortcut)?;
 
     let mut guard = HOTKEY_MANAGER.lock().unwrap();
     let manager = match guard.as_mut() {
@@ -251,6 +455,7 @@ pub fn reregister_hotkey(shortcut: &str) -> Result<(), String> {
     };
 
     let old_hotkey = *REGISTERED_HOTKEY.lock().unwrap();
+    let old_mouse_shortcut = *REGISTERED_MOUSE_SHORTCUT.lock().unwrap();
 
     if let Some(old) = old_hotkey {
         if let Err(e) = manager.unregister(old) {
@@ -258,31 +463,44 @@ pub fn reregister_hotkey(shortcut: &str) -> Result<(), String> {
         }
     }
 
-    if let Err(e) = manager.register(hotkey) {
-        if let Some(old) = old_hotkey {
-            if let Err(restore_error) = manager.register(old) {
-                error!("Failed to restore previous hotkey: {}", restore_error);
-                let mut rh = REGISTERED_HOTKEY.lock().unwrap();
-                *rh = None;
+    match parsed_shortcut {
+        RegisteredShortcut::Keyboard(hotkey) => {
+            if let Err(e) = manager.register(hotkey) {
+                if let Some(old) = old_hotkey {
+                    if let Err(restore_error) = manager.register(old) {
+                        error!("Failed to restore previous hotkey: {}", restore_error);
+                        *REGISTERED_HOTKEY.lock().unwrap() = None;
+                    } else {
+                        *REGISTERED_HOTKEY.lock().unwrap() = Some(old);
+                    }
+                }
+                *REGISTERED_MOUSE_SHORTCUT.lock().unwrap() = old_mouse_shortcut;
+                Err(format!("Failed to register shortcut '{}': {}", shortcut, e))
+            } else {
+                *REGISTERED_HOTKEY.lock().unwrap() = Some(hotkey);
+                *REGISTERED_MOUSE_SHORTCUT.lock().unwrap() = None;
+                info!("Re-registered global shortcut: {}", shortcut);
+                Ok(())
             }
         }
-        Err(format!("Failed to register shortcut '{}': {}", shortcut, e))
-    } else {
-        let mut rh = REGISTERED_HOTKEY.lock().unwrap();
-        *rh = Some(hotkey);
-        info!("Re-registered global shortcut: {}", shortcut);
-        Ok(())
+        RegisteredShortcut::Mouse(mouse_shortcut) => {
+            *REGISTERED_HOTKEY.lock().unwrap() = None;
+            *REGISTERED_MOUSE_SHORTCUT.lock().unwrap() = Some(mouse_shortcut);
+            ensure_listener_started();
+            info!("Re-registered global shortcut: {}", shortcut);
+            Ok(())
+        }
     }
 }
 
-/// Start recording a keyboard shortcut. The callback is invoked from a
+/// Start recording a keyboard or mouse shortcut. The callback is invoked from a
 /// background thread — callers must dispatch to the UI thread themselves.
-pub fn start_keyboard_recording<F>(callback: F) -> Result<(), String>
+pub fn start_shortcut_recording<F>(callback: F) -> Result<(), String>
 where
     F: Fn(String) + Send + 'static,
 {
     if RECORDING_ACTIVE.load(Ordering::Relaxed) {
-        return Err("Keyboard listener already active".to_string());
+        return Err("Shortcut listener already active".to_string());
     }
 
     // Store the callback for the persistent listener to use
@@ -303,15 +521,22 @@ where
     Ok(())
 }
 
-pub fn stop_keyboard_recording() {
+pub fn stop_shortcut_recording() {
     RECORDING_ACTIVE.store(false, Ordering::Relaxed);
     MODIFIER_STATE.lock().unwrap().clear();
     *RECORDING_CALLBACK.lock().unwrap() = None;
 }
 
-fn parse_shortcut(shortcut: &str) -> Result<global_hotkey::hotkey::HotKey, String> {
+fn parse_shortcut(shortcut: &str) -> Result<RegisteredShortcut, String> {
+    if let Some(mouse_shortcut) = parse_mouse_shortcut(shortcut)? {
+        return Ok(RegisteredShortcut::Mouse(mouse_shortcut));
+    }
+
     let converted = convert_shortcut_format(shortcut);
-    converted.parse().map_err(|e| format!("{}", e))
+    converted
+        .parse()
+        .map(RegisteredShortcut::Keyboard)
+        .map_err(|e| format!("{}", e))
 }
 
 fn convert_shortcut_format(shortcut: &str) -> String {
@@ -324,6 +549,14 @@ fn convert_shortcut_format(shortcut: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static HOTKEY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn hotkey_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        HOTKEY_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     // ── key_to_hotkey_name ─────────────────────────────────────────────────
 
@@ -439,6 +672,78 @@ mod tests {
         assert_eq!(modifier_name(&Key::F1), None);
     }
 
+    // ── mouse shortcuts ───────────────────────────────────────────────────
+
+    #[test]
+    fn mouse_button_number_maps_standard_buttons() {
+        assert_eq!(mouse_button_number(&Button::Left), 1);
+        assert_eq!(mouse_button_number(&Button::Right), 2);
+        assert_eq!(mouse_button_number(&Button::Middle), 3);
+        assert_eq!(mouse_button_number(&Button::Unknown(5)), 5);
+    }
+
+    #[test]
+    fn parse_mouse_button_accepts_mouse_and_button_prefixes() {
+        assert_eq!(parse_mouse_button("Mouse4").unwrap(), Some(4));
+        assert_eq!(parse_mouse_button("button5").unwrap(), Some(5));
+        assert_eq!(parse_mouse_button("A").unwrap(), None);
+    }
+
+    #[test]
+    fn parse_mouse_shortcut_accepts_bare_mouse_button() {
+        assert_eq!(
+            parse_mouse_shortcut("Mouse4").unwrap(),
+            Some(MouseShortcut {
+                button: 4,
+                modifiers: ShortcutModifiers::default(),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_mouse_shortcut_accepts_modifier_mouse_button() {
+        let mut modifiers = ShortcutModifiers::default();
+        modifiers.control = true;
+        modifiers.shift = true;
+
+        assert_eq!(
+            parse_mouse_shortcut("Control+Shift+Mouse5").unwrap(),
+            Some(MouseShortcut {
+                button: 5,
+                modifiers,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_mouse_shortcut_rejects_invalid_mouse_button() {
+        assert!(parse_mouse_shortcut("Mouse0").is_err());
+        assert!(parse_mouse_shortcut("MouseFoo").is_err());
+    }
+
+    #[test]
+    fn mouse_shortcut_matches_exact_modifiers() {
+        let shortcut = MouseShortcut {
+            button: 4,
+            modifiers: {
+                let mut modifiers = ShortcutModifiers::default();
+                modifiers.control = true;
+                modifiers
+            },
+        };
+
+        assert!(mouse_shortcut_matches(
+            shortcut,
+            &Button::Unknown(4),
+            &["Control".into()]
+        ));
+        assert!(!mouse_shortcut_matches(
+            shortcut,
+            &Button::Unknown(4),
+            &["Shift".into()]
+        ));
+    }
+
     // ── convert_shortcut_format ───────────────────────────────────────────
 
     #[test]
@@ -502,6 +807,22 @@ mod tests {
     }
 
     #[test]
+    fn parse_shortcut_valid_mouse_button() {
+        assert!(matches!(
+            parse_shortcut("Mouse4").unwrap(),
+            RegisteredShortcut::Mouse(MouseShortcut { button: 4, .. })
+        ));
+    }
+
+    #[test]
+    fn parse_shortcut_valid_modifier_mouse_button() {
+        assert!(matches!(
+            parse_shortcut("Control+Mouse5").unwrap(),
+            RegisteredShortcut::Mouse(MouseShortcut { button: 5, .. })
+        ));
+    }
+
+    #[test]
     fn parse_shortcut_rejects_empty() {
         assert!(parse_shortcut("").is_err());
     }
@@ -517,37 +838,40 @@ mod tests {
         assert!(parse_shortcut("Control").is_err());
     }
 
-    // ── start/stop_keyboard_recording state ───────────────────────────────
+    // ── start/stop_shortcut_recording state ───────────────────────────────
 
     #[test]
-    fn stop_keyboard_recording_deactivates_state() {
+    fn stop_shortcut_recording_deactivates_state() {
+        let _guard = hotkey_test_lock();
         // Ensure clean state first
-        stop_keyboard_recording();
+        stop_shortcut_recording();
         // Should not panic on double-stop
-        stop_keyboard_recording();
+        stop_shortcut_recording();
         // After stop, starting should succeed
-        let result = start_keyboard_recording(|_| {});
+        let result = start_shortcut_recording(|_| {});
         assert!(result.is_ok(), "should be able to start after stop");
         // Clean up
-        stop_keyboard_recording();
+        stop_shortcut_recording();
     }
 
     #[test]
-    fn start_keyboard_recording_rejects_when_already_active() {
-        stop_keyboard_recording();
-        let result = start_keyboard_recording(|_| {});
+    fn start_shortcut_recording_rejects_when_already_active() {
+        let _guard = hotkey_test_lock();
+        stop_shortcut_recording();
+        let result = start_shortcut_recording(|_| {});
         assert!(result.is_ok(), "first start should succeed");
-        let result2 = start_keyboard_recording(|_| {});
+        let result2 = start_shortcut_recording(|_| {});
         assert!(result2.is_err(), "second start should fail");
-        stop_keyboard_recording();
+        stop_shortcut_recording();
     }
 
     #[test]
-    fn stop_keyboard_recording_clears_modifier_state() {
-        stop_keyboard_recording();
+    fn stop_shortcut_recording_clears_modifier_state() {
+        let _guard = hotkey_test_lock();
+        stop_shortcut_recording();
         // Push something into modifier state
         MODIFIER_STATE.lock().unwrap().push("Control".into());
-        stop_keyboard_recording();
+        stop_shortcut_recording();
         assert!(
             MODIFIER_STATE.lock().unwrap().is_empty(),
             "modifiers should be cleared after stop"

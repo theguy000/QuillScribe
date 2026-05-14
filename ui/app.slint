@@ -87,7 +87,7 @@ export component App inherits Window {
     in-out property <bool> settings-show-paste-tool-warning: false;
     in-out property <string> settings-paste-tool-hint;
 
-    // ── Settings: Keyboard ───────────────────────────────────────────────
+    // ── Settings: Shortcuts ──────────────────────────────────────────────
     in-out property <string> settings-record-toggle-shortcut: "Meta+Shift+`";
     in-out property <bool> settings-recording-shortcut: false;
 
@@ -291,7 +291,7 @@ export component App inherits Window {
                         paste-tool-hint <=> settings-paste-tool-hint;
                         output-mode-changed(val) => { settings-output-mode-changed(val); }
 
-                        // Keyboard
+                        // Shortcuts
                         record-toggle-shortcut <=> settings-record-toggle-shortcut;
                         recording-shortcut <=> settings-recording-shortcut;
                         start-recording-shortcut => { settings-start-recording-shortcut(); }

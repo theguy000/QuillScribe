@@ -104,7 +104,7 @@ export component SettingsDialog inherits Rectangle {
     in-out property <bool> show-paste-tool-warning: false;
     in-out property <string> paste-tool-hint;
 
-    // Keyboard tab properties
+    // Shortcut tab properties
     in-out property <string> record-toggle-shortcut: "Meta+Shift+`";
     in-out property <bool> recording-shortcut: false;
 
@@ -201,7 +201,7 @@ export component SettingsDialog inherits Rectangle {
                 TabButton { tab-id: "whisper"; label: "Engine"; active-tab <=> active-tab; theme-colors: theme-colors; }
                 TabButton { tab-id: "ui"; label: "UI"; active-tab <=> active-tab; theme-colors: theme-colors; }
                 TabButton { tab-id: "output"; label: "Output"; active-tab <=> active-tab; theme-colors: theme-colors; }
-                TabButton { tab-id: "keyboard"; label: "Keyboard"; active-tab <=> active-tab; theme-colors: theme-colors; }
+                TabButton { tab-id: "keyboard"; label: "Shortcuts"; active-tab <=> active-tab; theme-colors: theme-colors; }
                 TabButton { tab-id: "about"; label: "About"; active-tab <=> active-tab; theme-colors: theme-colors; }
 
                 Rectangle {}

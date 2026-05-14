@@ -1073,7 +1073,7 @@ pub fn run() {
         });
     });
 
-    // Keyboard
+    // Shortcut
     let shared_cb = Arc::clone(&shared);
     app.on_settings_start_recording_shortcut(move || {
         shared_cb.with_ui(|app| {
@@ -1081,7 +1081,7 @@ pub fn run() {
         });
 
         let shared_cb2 = Arc::clone(&shared_cb);
-        if let Err(e) = hotkey::start_keyboard_recording(move |shortcut| {
+        if let Err(e) = hotkey::start_shortcut_recording(move |shortcut| {
             let shortcut_str = shortcut.clone();
             let shared_for_ui = Arc::clone(&shared_cb2);
             let _ = slint::invoke_from_event_loop(move || {
@@ -1101,7 +1101,7 @@ pub fn run() {
                 });
             });
         }) {
-            log::error!("Failed to start keyboard recording: {}", e);
+            log::error!("Failed to start shortcut recording: {}", e);
             shared_cb.with_ui(|app| {
                 app.set_settings_recording_shortcut(false);
             });
@@ -1113,7 +1113,7 @@ pub fn run() {
         shared_cb.with_ui(|app| {
             app.set_settings_recording_shortcut(false);
         });
-        hotkey::stop_keyboard_recording();
+        hotkey::stop_shortcut_recording();
     });
 
     // Window management callbacks
