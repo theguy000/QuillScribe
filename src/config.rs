@@ -91,22 +91,10 @@ pub struct UiConfig {
     pub custom_titlebar: bool,
     #[serde(default = "default_overlay_mode")]
     pub overlay_mode: String,
-    #[serde(default = "default_overlay_style")]
-    pub overlay_style: String,
-    #[serde(default = "default_overlay_opacity")]
-    pub overlay_opacity: f64,
 }
 
 fn default_overlay_mode() -> String {
     "minimal".to_string()
-}
-
-fn default_overlay_style() -> String {
-    "default".to_string()
-}
-
-fn default_overlay_opacity() -> f64 {
-    0.85
 }
 
 impl Default for UiConfig {
@@ -116,8 +104,6 @@ impl Default for UiConfig {
             always_on_top: false,
             custom_titlebar: true,
             overlay_mode: "minimal".to_string(),
-            overlay_style: "default".to_string(),
-            overlay_opacity: default_overlay_opacity(),
         }
     }
 }
@@ -350,8 +336,6 @@ mod tests {
         assert!(!cfg.always_on_top, "always_on_top should default to false");
         assert_eq!(cfg.theme, "white");
         assert_eq!(cfg.overlay_mode, "minimal");
-        assert_eq!(cfg.overlay_style, "default");
-        assert!((cfg.overlay_opacity - 0.85).abs() < f64::EPSILON * 2.0);
     }
 
     #[test]
@@ -363,8 +347,6 @@ mod tests {
         assert_eq!(parsed.always_on_top, original.always_on_top);
         assert_eq!(parsed.theme, original.theme);
         assert_eq!(parsed.overlay_mode, original.overlay_mode);
-        assert_eq!(parsed.overlay_style, original.overlay_style);
-        assert!((parsed.overlay_opacity - original.overlay_opacity).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -390,8 +372,6 @@ mod tests {
         assert_eq!(parsed.ui.always_on_top, original.ui.always_on_top);
         assert_eq!(parsed.ui.theme, original.ui.theme);
         assert_eq!(parsed.ui.overlay_mode, original.ui.overlay_mode);
-        assert_eq!(parsed.ui.overlay_style, original.ui.overlay_style);
-        assert!((parsed.ui.overlay_opacity - original.ui.overlay_opacity).abs() < f64::EPSILON);
         assert_eq!(
             parsed.advanced.max_history_entries,
             original.advanced.max_history_entries

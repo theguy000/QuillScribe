@@ -197,11 +197,8 @@ fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, e
     };
 
     let is_full = overlay_mode_is_full(&ui.overlay_mode);
-    let overlay_style = ui.overlay_style.clone();
     overlay.set_current_theme(ui.theme.into());
     overlay.set_mode(ui.overlay_mode.into());
-    overlay.set_overlay_style(overlay_style.clone().into());
-    overlay.set_overlay_opacity(ui.overlay_opacity as f32);
     overlay.set_composited_desktop(window::has_compositor());
     overlay.set_elapsed_seconds(elapsed_secs);
     overlay.set_timer_running(is_full);
@@ -210,7 +207,7 @@ fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, e
     overlay.window().show().ok();
     window::apply_overlay_topmost(overlay.window());
     position_recording_overlay(overlay, is_full);
-    window::harden_recording_overlay(overlay.window(), is_full, &overlay_style);
+    window::harden_recording_overlay(overlay.window(), is_full);
 }
 
 fn position_recording_overlay(overlay: &RecordingOverlay, is_full: bool) {
@@ -512,7 +509,6 @@ pub fn run() {
     window::harden_recording_overlay(
         recording_overlay.window(),
         overlay_mode_is_full(&s.ui.overlay_mode),
-        &s.ui.overlay_style,
     );
 
     // Audio devices, blocklist, and device selection
@@ -548,8 +544,6 @@ pub fn run() {
     app.set_settings_custom_titlebar(s.ui.custom_titlebar);
     app.set_settings_always_on_top(s.ui.always_on_top);
     app.set_settings_overlay_mode(s.ui.overlay_mode.clone().into());
-    app.set_settings_overlay_style(s.ui.overlay_style.clone().into());
-    app.set_settings_overlay_opacity(s.ui.overlay_opacity as f32);
     app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
     window::apply_always_on_top(&app, s.ui.always_on_top);
@@ -1149,14 +1143,6 @@ pub fn run() {
         let mode_str = mode.to_string();
         save_config_field(&shared_cb, |s| {
             s.ui.overlay_mode = mode_str;
-        });
-    });
-
-    let shared_cb = Arc::clone(&shared);
-    app.on_settings_overlay_style_changed(move |style: slint::SharedString| {
-        let style_str = style.to_string();
-        save_config_field(&shared_cb, |s| {
-            s.ui.overlay_style = style_str;
         });
     });
 

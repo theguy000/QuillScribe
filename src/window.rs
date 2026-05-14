@@ -199,11 +199,6 @@ pub fn apply_overlay_topmost(window: &slint::Window) {
 }
 
 #[cfg(target_os = "linux")]
-fn overlay_style_is_pill(style: &str) -> bool {
-    style == "Pill" || style == "pill"
-}
-
-#[cfg(target_os = "linux")]
 fn x11_window_id(winit_win: &slint::winit_030::winit::window::Window) -> Option<u32> {
     use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
@@ -294,7 +289,6 @@ fn harden_x11_overlay(window_id: u32, width: u16, height: u16, radius: u16) -> R
 fn harden_recording_overlay_impl(
     winit_win: &slint::winit_030::winit::window::Window,
     is_full: bool,
-    overlay_style: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(window_id) = x11_window_id(winit_win) else {
         return Ok(());
@@ -303,7 +297,7 @@ fn harden_recording_overlay_impl(
     let width = u16::try_from(size.width.min(u16::MAX as u32)).unwrap_or(u16::MAX).max(1);
     let height = u16::try_from(size.height.min(u16::MAX as u32)).unwrap_or(u16::MAX).max(1);
     let scale = winit_win.scale_factor();
-    let radius = if !is_full || overlay_style_is_pill(overlay_style) {
+    let radius = if !is_full {
         height / 2
     } else {
         ((16.0 * scale).round() as u16).max(1)
@@ -313,12 +307,12 @@ fn harden_recording_overlay_impl(
 }
 
 /// Apply X11-specific metadata and shape hints to reduce compositor shadows on the recording overlay.
-pub fn harden_recording_overlay(window: &slint::Window, is_full: bool, overlay_style: &str) {
+pub fn harden_recording_overlay(window: &slint::Window, is_full: bool) {
     #[cfg(target_os = "linux")]
     {
         if window
             .with_winit_window(|winit_win| {
-                if let Err(e) = harden_recording_overlay_impl(winit_win, is_full, overlay_style) {
+                if let Err(e) = harden_recording_overlay_impl(winit_win, is_full) {
                     debug!("Failed to harden X11 recording overlay: {}", e);
                 }
             })
@@ -330,7 +324,7 @@ pub fn harden_recording_overlay(window: &slint::Window, is_full: bool, overlay_s
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (window, is_full, overlay_style);
+        let _ = (window, is_full);
     }
 }
 

@@ -77,12 +77,9 @@ export component App inherits Window {
     in-out property <bool> settings-custom-titlebar: true;
     in-out property <bool> settings-always-on-top: false;
     in-out property <string> settings-overlay-mode: "minimal";
-    in-out property <string> settings-overlay-style: "default";
-    in-out property <float> settings-overlay-opacity: 0.85;
     in-out property <int> settings-max-history-entries: 100;
     in property <[string]> settings-themes: ["White", "Warm Gray", "Soft Beige", "Blue Gray", "Warm Taupe", "Soft Sage", "Dark Charcoal", "Dark Blue", "Dark Purple", "Dark Forest", "Dark Burgundy", "Obsidian"];
     in property <[string]> settings-overlay-modes: ["Minimal (bars only)", "Full (bars, timer, stop button)"];
-    in property <[string]> settings-overlay-styles: ["Default", "Glass", "Neon", "Pill"];
 
     // ── Settings: Output ─────────────────────────────────────────────────
     in-out property <int> settings-output-mode: 2;
@@ -138,7 +135,6 @@ export component App inherits Window {
     callback settings-custom-titlebar-changed(bool);
     callback settings-always-on-top-changed(bool);
     callback settings-overlay-mode-changed(string);
-    callback settings-overlay-style-changed(string);
     callback settings-output-mode-changed(int);
     callback settings-start-recording-shortcut();
     callback settings-stop-recording-shortcut();
@@ -275,17 +271,13 @@ export component App inherits Window {
                         custom-titlebar <=> settings-custom-titlebar;
                         always-on-top <=> settings-always-on-top;
                         overlay-mode <=> settings-overlay-mode;
-                        overlay-style <=> settings-overlay-style;
-                        overlay-opacity <=> settings-overlay-opacity;
                         max-history-entries <=> settings-max-history-entries;
                         themes: settings-themes;
                         overlay-modes: settings-overlay-modes;
-                        overlay-styles: settings-overlay-styles;
                         theme-changed(val) => { settings-theme-changed(val); }
                         custom-titlebar-changed(val) => { settings-custom-titlebar-changed(val); }
                         always-on-top-changed(val) => { settings-always-on-top-changed(val); }
                         overlay-mode-changed(val) => { settings-overlay-mode-changed(val); }
-                        overlay-style-changed(val) => { settings-overlay-style-changed(val); }
 
                         // Output
                         output-mode <=> settings-output-mode;

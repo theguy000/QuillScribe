@@ -40,8 +40,6 @@ export component RecordingOverlay inherits Window {
     }
 
     in-out property <string> mode: "minimal";
-    in-out property <string> overlay-style: "default";
-    in-out property <float> overlay-opacity: 0.85;
     in-out property <bool> composited-desktop: true;
     in-out property <float> audio-level: 0;
     in-out property <int> elapsed-seconds: 0;
@@ -51,23 +49,17 @@ export component RecordingOverlay inherits Window {
     callback drag-overlay();
 
     property <bool> full-mode: mode == "full" || mode == "Full (bars, timer, stop button)";
-    property <bool> glass-style: overlay-style == "Glass" || overlay-style == "glass" || overlay-style == "frosted_glass" || overlay-style == "gradient_glass";
-    property <bool> neon-style: overlay-style == "Neon" || overlay-style == "neon" || overlay-style == "neon_glow";
-    property <bool> pill-style: overlay-style == "Pill" || overlay-style == "pill";
-    property <color> glass-bg: theme-colors.bg_secondary.with-alpha(Math.max(0.0, Math.min(1.0, overlay-opacity)));
-    property <color> overlay-bg: composited-desktop && glass-style ? glass-bg : theme-colors.bg_secondary;
     property <int> bar-count: full-mode ? 20 : 16;
     property <length> content-row-height: full-mode ? 22px : 20px;
     property <length> minimal-bars-width: 62px;
     property <string> formatted-time: Math.floor(elapsed-seconds / 60) + ":" + (Math.mod(elapsed-seconds, 60) < 10 ? "0" : "") + Math.mod(elapsed-seconds, 60);
-    property <float> glow-phase: 0;
     property <float> dot-phase: 0;
     property <bool> drag-toggle: false;
 
     title: "Recording";
     no-frame: true;
     always-on-top: true;
-    background: composited-desktop ? transparent : overlay-bg;
+    background: composited-desktop ? transparent : theme-colors.bg_secondary;
     width: full-mode ? 240px : 120px;
     height: full-mode ? 48px : 32px;
 
@@ -75,12 +67,6 @@ export component RecordingOverlay inherits Window {
         interval: 1s;
         running: timer-running && full-mode;
         triggered => { elapsed-seconds += 1; }
-    }
-
-    Timer {
-        interval: 50ms;
-        running: neon-style;
-        triggered => { root.glow-phase = Math.mod(root.glow-phase + 0.18, 6.28318); }
     }
 
     Timer {
@@ -92,10 +78,10 @@ export component RecordingOverlay inherits Window {
     Rectangle {
         width: 100%;
         height: 100%;
-        border-radius: !composited-desktop ? 0px : (pill-style || !full-mode ? root.height / 2 : 16px);
-        background: overlay-bg;
-        border-width: pill-style ? 0px : (neon-style ? 2px : 1px);
-        border-color: neon-style ? theme-colors.accent.with-alpha(0.45) : theme-colors.border.with-alpha(glass-style ? 0.35 : 0.6);
+        border-radius: !composited-desktop ? 0px : (!full-mode ? root.height / 2 : 16px);
+        background: theme-colors.bg_secondary;
+        border-width: 1px;
+        border-color: theme-colors.border.with-alpha(0.6);
         clip: true;
 
         ta1 := TouchArea {

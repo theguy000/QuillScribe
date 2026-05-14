@@ -92,12 +92,9 @@ export component SettingsDialog inherits Rectangle {
     in-out property <bool> custom-titlebar: true;
     in-out property <bool> always-on-top: false;
     in-out property <string> overlay-mode: "minimal";
-    in-out property <string> overlay-style: "default";
-    in-out property <float> overlay-opacity: 0.85;
     in-out property <int> max-history-entries: 100;
     in property <[string]> themes: ["White", "Warm Gray", "Soft Beige", "Blue Gray", "Warm Taupe", "Soft Sage", "Dark Charcoal", "Dark Blue", "Dark Purple", "Dark Forest", "Dark Burgundy", "Obsidian"];
     in property <[string]> overlay-modes: ["Minimal (bars only)", "Full (bars, timer, stop button)"];
-    in property <[string]> overlay-styles: ["Default", "Glass", "Neon", "Pill"];
 
     // Output tab properties
     in-out property <int> output-mode: 2;
@@ -141,7 +138,6 @@ export component SettingsDialog inherits Rectangle {
     callback custom-titlebar-changed(bool);
     callback always-on-top-changed(bool);
     callback overlay-mode-changed(string);
-    callback overlay-style-changed(string);
     callback output-mode-changed(int);
     callback start-recording-shortcut();
     callback stop-recording-shortcut();
@@ -308,17 +304,13 @@ export component SettingsDialog inherits Rectangle {
                                 custom-titlebar: custom-titlebar;
                                 always-on-top: always-on-top;
                                 overlay-mode: overlay-mode;
-                                overlay-style: overlay-style;
-                                overlay-opacity: overlay-opacity;
                                 max-history-entries: max-history-entries;
                                 themes: themes;
                                 overlay-modes: overlay-modes;
-                                overlay-styles: overlay-styles;
                                 theme-changed(val) => { theme-changed(val); }
                                 custom-titlebar-changed(val) => { custom-titlebar-changed(val); }
                                 always-on-top-changed(val) => { always-on-top-changed(val); }
                                 overlay-mode-changed(val) => { overlay-mode-changed(val); }
-                                overlay-style-changed(val) => { overlay-style-changed(val); }
                             }
 
                             if active-tab == "output": OutputTab {

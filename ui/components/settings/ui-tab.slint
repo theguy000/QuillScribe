@@ -1,5 +1,5 @@
 import { ThemeColors } from "../../themes/theme-definitions.slint";
-import { SettingsField, SettingsHint, SettingsSelect, SettingsCheckbox, SettingsSlider, StepButton } from "shared.slint";
+import { SettingsField, SettingsHint, SettingsSelect, SettingsCheckbox, StepButton } from "shared.slint";
 
 export component UiTab inherits VerticalLayout {
     in property <ThemeColors> theme-colors;
@@ -8,19 +8,15 @@ export component UiTab inherits VerticalLayout {
     in-out property <bool> custom-titlebar;
     in-out property <bool> always-on-top;
     in-out property <string> overlay-mode;
-    in-out property <string> overlay-style;
-    in-out property <float> overlay-opacity;
     in-out property <int> max-history-entries;
 
     in property <[string]> themes;
     in property <[string]> overlay-modes;
-    in property <[string]> overlay-styles;
 
     callback theme-changed(string);
     callback custom-titlebar-changed(bool);
     callback always-on-top-changed(bool);
     callback overlay-mode-changed(string);
-    callback overlay-style-changed(string);
 
     spacing: 16px;
 
@@ -69,78 +65,6 @@ export component UiTab inherits VerticalLayout {
     SettingsHint {
         theme-colors: theme-colors;
         text: "Style of the floating overlay shown when recording and the app is unfocused.";
-    }
-
-    // Overlay Visual Style
-    SettingsField {
-        label: "OVERLAY VISUAL STYLE";
-        theme-colors: theme-colors;
-
-        SettingsSelect {
-            theme-colors: theme-colors;
-            options: overlay-styles;
-            current-value <=> overlay-style;
-            value-changed(val) => { overlay-style-changed(val); }
-        }
-    }
-
-    SettingsHint {
-        theme-colors: theme-colors;
-        text: "Visual appearance of the recording overlay (background, border, shadows).";
-    }
-
-    // Overlay Opacity
-    if overlay-style == "Glass": VerticalLayout {
-        spacing: 6px;
-
-        HorizontalLayout {
-            spacing: 8px;
-            alignment: start;
-
-            Text {
-                text: "OVERLAY OPACITY";
-                color: theme-colors.text_secondary;
-                font-size: 12px;
-                font-weight: 500;
-                letter-spacing: 0.4px;
-                vertical-alignment: center;
-            }
-
-            Rectangle {
-                height: 20px;
-                min-width: 42px;
-                border-radius: 10px;
-                border-width: 1px;
-                border-color: theme-colors.border;
-                background: transparent;
-
-                HorizontalLayout {
-                    padding-left: 8px;
-                    padding-right: 8px;
-                    alignment: center;
-
-                    Text {
-                        text: Math.round(overlay-opacity * 100) + "%";
-                        color: theme-colors.text_secondary;
-                        font-size: 11px;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-        }
-
-        SettingsSlider {
-            theme-colors: theme-colors;
-            value <=> overlay-opacity;
-            minimum: 0;
-            maximum: 1.0;
-        }
-    }
-
-    if overlay-style == "Glass": SettingsHint {
-        theme-colors: theme-colors;
-        text: "Controls the background transparency of the glass overlay. Lower values are more transparent.";
     }
 
     // Max Recent History

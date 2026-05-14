@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QuillScribe Overlay Style Preview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --accent: #7c5cff;
+      --accent-2: #28d6c8;
+      --danger: #ff5c7a;
+      --ink: #f7f4ff;
+      --muted: #b9b0cf;
+      --panel: rgba(24, 22, 34, 0.84);
+      --panel-solid: #181622;
+      --line: rgba(255, 255, 255, 0.14);
+      --shadow: rgba(0, 0, 0, 0.34);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #121019;
+      color: var(--ink);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 16% 20%, rgba(124, 92, 255, 0.26), transparent 28rem),
+        radial-gradient(circle at 78% 14%, rgba(40, 214, 200, 0.14), transparent 24rem),
+        linear-gradient(135deg, #15121e, #0c0b10 60%, #17131f);
+    }
+
+    main {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 56px 0 72px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 0.95;
+      letter-spacing: -0.06em;
+    }
+
+    .intro {
+      max-width: 720px;
+      margin: 0 0 34px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .scene {
+      position: relative;
+      min-height: 360px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 28px;
+      background:
+        linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+        linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+      background-size: 36px 36px, 36px 36px, auto;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.32);
+    }
+
+    .fake-app {
+      position: absolute;
+      inset: 34px;
+      border-radius: 22px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 28px;
+    }
+
+    .fake-line {
+      height: 12px;
+      width: var(--w);
+      border-radius: 999px;
+      margin: 16px 0;
+      background: rgba(255,255,255,0.12);
+    }
+
+    .overlay-row {
+      position: absolute;
+      left: 50%;
+      bottom: 44px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: 18px;
+      width: min(820px, calc(100% - 42px));
+    }
+
+    .card {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(10, 9, 14, 0.45);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .tag {
+      padding: 4px 7px;
+      border-radius: 999px;
+      background: rgba(124,92,255,0.18);
+      color: #d9d0ff;
+      font-size: 10px;
+    }
+
+    .overlay {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 240px;
+      height: 48px;
+      padding: 0 12px;
+      color: var(--ink);
+    }
+
+    .overlay.minimal {
+      width: 120px;
+      height: 32px;
+      justify-content: center;
+      padding: 0 8px;
+    }
+
+    .quiet-glass {
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: linear-gradient(180deg, rgba(30,28,42,0.82), rgba(17,16,25,0.74));
+      box-shadow: 0 14px 36px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.12);
+      backdrop-filter: blur(18px) saturate(1.25);
+    }
+
+    .compact-pill {
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #171520;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+    }
+
+    .signal-strip {
+      position: relative;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 1px solid rgba(124,92,255,0.28);
+      background: linear-gradient(110deg, rgba(20,18,28,0.96), rgba(31,25,50,0.92));
+      box-shadow: 0 18px 42px rgba(45,28,125,0.32);
+    }
+
+    .signal-strip::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: linear-gradient(var(--accent), var(--accent-2));
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 14px rgba(255,92,122,0.8);
+    }
+
+    .rec {
+      color: #ff7890;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+    }
+
+    .time {
+      min-width: 34px;
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .bars {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      height: 22px;
+      flex: 1;
+    }
+
+    .bar {
+      width: 2px;
+      height: var(--h);
+      min-height: 3px;
+      border-radius: 999px;
+      background: linear-gradient(var(--accent-2), var(--accent));
+    }
+
+    .stop {
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #ff6b86, #ee3d65);
+      box-shadow: 0 6px 16px rgba(255,92,122,0.34);
+    }
+
+    .stop::after {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 2px;
+      background: white;
+    }
+
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 22px;
+    }
+
+    .note {
+      padding: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.055);
+    }
+
+    .note h2 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    @media (max-width: 840px) {
+      .scene { min-height: 640px; }
+      .overlay-row, .notes { grid-template-columns: 1fr; }
+      .overlay-row { bottom: 28px; }
+      .overlay { width: 100%; max-width: 260px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Overlay Style Direction</h1>
+    <p class="intro">These are visual-only concepts for the recording overlay. My recommendation is to keep one polished default instead of multiple settings: quiet glass for composited desktops, with a solid fallback using the same shape and spacing.</p>
+
+    <section class="scene" aria-label="Overlay previews on a fake desktop">
+      <div class="fake-app">
+        <div class="fake-line" style="--w: 42%"></div>
+        <div class="fake-line" style="--w: 68%"></div>
+        <div class="fake-line" style="--w: 54%"></div>
+        <div class="fake-line" style="--w: 76%"></div>
+      </div>
+
+      <div class="overlay-row">
+        <article class="card">
+          <div class="label"><span>Quiet Glass</span><span class="tag">Recommended</span></div>
+          <div class="overlay quiet-glass">
+            <span class="dot"></span><span class="rec">REC</span><span class="time">0:18</span>
+            <span class="bars" aria-hidden="true"><span class="bar" style="--h:6px"></span><span class="bar" style="--h:15px"></span><span class="bar" style="--h:10px"></span><span class="bar" style="--h:19px"></span><span class="bar" style="--h:8px"></span><span class="bar" style="--h:14px"></span></span>
+            <span class="stop"></span>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="label"><span>Compact Pill</span><span>Minimal</span></div>
+          <div class="overlay minimal compact-pill">
+            <span class="bars" aria-hidden="true"><span class="bar" style="--h:8px"></span><span class="bar" style="--h:18px"></span><span class="bar" style="--h:11px"></span><span class="bar" style="--h:22px"></span><span class="bar" style="--h:13px"></span><span class="bar" style="--h:16px"></span><span class="bar" style="--h:7px"></span></span>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="label"><span>Signal Strip</span><span>More Branded</span></div>
+          <div class="overlay signal-strip">
+            <span class="dot"></span><span class="rec">REC</span><span class="time">1:04</span>
+            <span class="bars" aria-hidden="true"><span class="bar" style="--h:5px"></span><span class="bar" style="--h:12px"></span><span class="bar" style="--h:20px"></span><span class="bar" style="--h:9px"></span><span class="bar" style="--h:17px"></span><span class="bar" style="--h:11px"></span></span>
+            <span class="stop"></span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="notes" aria-label="Design notes">
+      <article class="note">
+        <h2>Recommended Default</h2>
+        <p>Use Quiet Glass when transparency/compositing is available. It feels native, stays legible, and does not compete with the app content.</p>
+      </article>
+      <article class="note">
+        <h2>Fallback</h2>
+        <p>Use the same dimensions with a solid background when blur/transparency is not reliable, especially on Linux/X11 desktops.</p>
+      </article>
+      <article class="note">
+        <h2>Avoid</h2>
+        <p>Avoid neon-heavy borders, strong glow, and too many style choices. The overlay should communicate recording state without becoming a theme picker.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
