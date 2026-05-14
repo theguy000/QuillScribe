@@ -1,5 +1,10 @@
 use log::{debug, info, warn};
 use slint::{winit_030::WinitWindowAccessor, ComponentHandle};
+#[cfg(target_os = "linux")]
+use std::sync::Once;
+
+#[cfg(target_os = "linux")]
+static WAYLAND_TOPMOST_WARNING: Once = Once::new();
 
 /// Start a window drag operation via winit.
 /// Call this from the titlebar's TouchArea `pointer-event` on down.
@@ -31,10 +36,99 @@ pub fn quit_app(app: &crate::App) {
     slint::quit_event_loop().ok();
 }
 
-/// Apply always-on-top setting.
-/// TODO: Implement with Slint/winit window API.
-pub fn apply_always_on_top(on_top: bool) {
+/// Returns true when the current Linux session appears to be native Wayland.
+#[cfg(target_os = "linux")]
+fn is_likely_native_wayland_from_env(
+    session_type: Option<&str>,
+    has_wayland_display: bool,
+    winit_backend: Option<&str>,
+) -> bool {
+    let session_is_wayland = session_type
+        .map(|value| value.eq_ignore_ascii_case("wayland"))
+        .unwrap_or(false);
+    let forced_x11 = winit_backend
+        .map(|value| value.eq_ignore_ascii_case("x11"))
+        .unwrap_or(false);
+
+    (session_is_wayland || has_wayland_display) && !forced_x11
+}
+
+#[cfg(target_os = "linux")]
+fn is_likely_native_wayland() -> bool {
+    let session_type = std::env::var("XDG_SESSION_TYPE").ok();
+    let has_wayland_display = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let winit_backend = std::env::var("WINIT_UNIX_BACKEND").ok();
+
+    is_likely_native_wayland_from_env(
+        session_type.as_deref(),
+        has_wayland_display,
+        winit_backend.as_deref(),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn is_winit_native_wayland(winit_win: &slint::winit_030::winit::window::Window) -> Option<bool> {
+    use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    match winit_win.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Wayland(_) => Some(true),
+        RawWindowHandle::Xlib(_) | RawWindowHandle::Xcb(_) => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn warn_native_wayland_topmost_limitation_once() {
+    WAYLAND_TOPMOST_WARNING.call_once(|| {
+        warn!(
+            "Native Wayland does not support winit WindowLevel::AlwaysOnTop; overlay/window stacking is best-effort"
+        );
+    });
+}
+
+/// Apply a winit window level to a Slint window when the native window exists.
+pub fn apply_window_level(window: &slint::Window, on_top: bool) {
+    let level = if on_top {
+        slint::winit_030::winit::window::WindowLevel::AlwaysOnTop
+    } else {
+        slint::winit_030::winit::window::WindowLevel::Normal
+    };
+
+    if window
+        .with_winit_window(|winit_win| {
+            #[cfg(target_os = "linux")]
+            if on_top && is_winit_native_wayland(winit_win).unwrap_or_else(is_likely_native_wayland)
+            {
+                warn_native_wayland_topmost_limitation_once();
+            }
+
+            winit_win.set_window_level(level);
+        })
+        .is_some()
+    {
+        debug!("Applied window level {:?}", level);
+    } else {
+        #[cfg(target_os = "linux")]
+        if on_top && is_likely_native_wayland() {
+            warn_native_wayland_topmost_limitation_once();
+        }
+
+        debug!(
+            "Native winit window unavailable while applying level {:?}",
+            level
+        );
+    }
+}
+
+/// Apply the main-window always-on-top setting.
+pub fn apply_always_on_top(app: &crate::App, on_top: bool) {
+    apply_window_level(app.window(), on_top);
     info!("Always-on-top set to {}", on_top);
+}
+
+/// Reassert topmost behavior for the recording overlay.
+pub fn apply_overlay_topmost(window: &slint::Window) {
+    apply_window_level(window, true);
 }
 
 /// Apply the custom-titlebar toggle.
@@ -105,10 +199,21 @@ pub fn set_window_icon_theme(app: &crate::App, theme: &str) {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
     #[test]
-    fn apply_always_on_top_does_not_panic() {
-        apply_always_on_top(true);
-        apply_always_on_top(false);
+    fn native_wayland_detection_uses_session_and_backend_hints() {
+        assert!(is_likely_native_wayland_from_env(
+            Some("wayland"),
+            false,
+            None
+        ));
+        assert!(is_likely_native_wayland_from_env(None, true, None));
+        assert!(!is_likely_native_wayland_from_env(Some("x11"), false, None));
+        assert!(!is_likely_native_wayland_from_env(
+            Some("wayland"),
+            true,
+            Some("x11")
+        ));
     }
 
     #[test]

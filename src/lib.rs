@@ -204,7 +204,9 @@ fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, e
     overlay.set_elapsed_seconds(elapsed_secs);
     overlay.set_timer_running(is_full);
 
+    window::apply_overlay_topmost(overlay.window());
     overlay.window().show().ok();
+    window::apply_overlay_topmost(overlay.window());
     position_recording_overlay(overlay, is_full);
 }
 
@@ -490,6 +492,7 @@ pub fn run() {
 
     let app = App::new().unwrap();
     let recording_overlay = RecordingOverlay::new().unwrap();
+    window::apply_overlay_topmost(recording_overlay.window());
     recording_overlay.window().hide().ok();
 
     // Store weak handle for callbacks that need to update UI
@@ -541,6 +544,7 @@ pub fn run() {
     app.set_settings_overlay_opacity(s.ui.overlay_opacity as f32);
     app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
+    window::apply_always_on_top(&app, s.ui.always_on_top);
     refresh_history_ui(&app, &shared.state, HISTORY_DAYS);
 
     // ── Wire core Slint callbacks ────────────────────────────────────────
@@ -1127,7 +1131,9 @@ pub fn run() {
         save_config_field(&shared_cb, |s| {
             s.ui.always_on_top = on_top;
         });
-        window::apply_always_on_top(on_top);
+        shared_cb.with_ui(|app| {
+            window::apply_always_on_top(&app, on_top);
+        });
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -1282,6 +1288,7 @@ pub fn run() {
     // stays alive in the tray even after the window is hidden.
     // (app.run() would exit as soon as the last window is hidden.)
     app.window().show().ok();
+    window::apply_always_on_top(&app, s.ui.always_on_top);
     slint::run_event_loop_until_quit().unwrap();
 
     // Clean up tray
