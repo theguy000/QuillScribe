@@ -76,6 +76,24 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
+      # ── Package ────────────────────────────────────────────────────────
+      - name: Package binary (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          mkdir -p release-pkg
+          cp target/release/quillscribe release-pkg/quillscribe
+          chmod +x release-pkg/quillscribe
+          tar -czf quillscribe-x86_64-unknown-linux-gnu.tar.gz -C release-pkg quillscribe
+
+      - name: Package binary (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p release-pkg
+          cp target/release/quillscribe.exe release-pkg/quillscribe.exe
+          tar -czf quillscribe-x86_64-pc-windows-msvc.tar.gz -C release-pkg quillscribe.exe
+
       # ── Upload ─────────────────────────────────────────────────────────
       - name: Upload binary to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -88,7 +106,7 @@ jobs:
             ## QuillScribe ${{ github.ref_name }}
 
             See the assets below to download and install.
-          draft: true
+          draft: false
           prerelease: false
           files: |
-            target/release/quillscribe${{ matrix.platform == 'windows-latest' && '.exe' || '' }}
+            quillscribe*.tar.gz

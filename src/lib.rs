@@ -6,6 +6,7 @@ mod output;
 mod sound;
 mod statistics;
 mod tray;
+mod updater;
 mod whisper;
 mod window;
 
@@ -563,6 +564,8 @@ pub fn run() {
     app.set_settings_always_on_top(s.ui.always_on_top);
     app.set_settings_overlay_mode(s.ui.overlay_mode.clone().into());
     app.set_settings_max_history_entries(s.advanced.max_history_entries as i32);
+    app.set_settings_app_version(env!("CARGO_PKG_VERSION").into());
+    app.set_settings_is_linux(cfg!(target_os = "linux"));
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
     window::apply_always_on_top(&app, s.ui.always_on_top);
     refresh_history_ui(&app, &shared.state, HISTORY_DAYS);
@@ -803,15 +806,114 @@ pub fn run() {
     });
 
     let shared_update = Arc::clone(&shared);
+    let rt_handle_update = rt_handle.clone();
     app.on_check_for_update(move || {
-        let _ = shared_update;
-        // TODO: implement self_update check
+        shared_update.with_ui(|app| {
+            app.set_settings_update_checking(true);
+            app.set_settings_update_downloading(false);
+            app.set_settings_update_progress(0.0);
+            app.set_settings_update_notes("".into());
+            app.set_status_message("Checking for updates...".into());
+        });
+
+        let shared = Arc::clone(&shared_update);
+        rt_handle_update.spawn(async move {
+            let result = tokio::task::spawn_blocking(updater::check_for_update).await;
+            let result = match result {
+                Ok(result) => result,
+                Err(e) => Err(format!("Update check task failed: {e}")),
+            };
+
+            let _ = slint::invoke_from_event_loop(move || {
+                shared.with_ui(|app| {
+                    app.set_settings_update_checking(false);
+                    match result {
+                        Ok(Some(update)) => {
+                            log::info!(
+                                "Update available: version {}, asset {}, url {}",
+                                update.version,
+                                update.asset_name,
+                                update.download_url
+                            );
+                            let notes = if update.notes.trim().is_empty() {
+                                format!("Asset: {}", update.asset_name)
+                            } else {
+                                update.notes
+                            };
+                            app.set_has_update(true);
+                            app.set_settings_update_version(update.version.into());
+                            app.set_settings_update_notes(notes.into());
+                            app.set_settings_update_progress(0.0);
+                            app.set_status_message("Update available".into());
+                        }
+                        Ok(None) => {
+                            app.set_has_update(false);
+                            app.set_settings_update_version("".into());
+                            app.set_settings_update_notes("".into());
+                            app.set_settings_update_progress(0.0);
+                            app.set_status_message("QuillScribe is up to date".into());
+                        }
+                        Err(error) => {
+                            app.set_has_update(false);
+                            app.set_settings_update_version("".into());
+                            app.set_settings_update_notes(
+                                format!("Update check failed: {error}").into(),
+                            );
+                            app.set_status_message("Update check failed".into());
+                        }
+                    }
+                });
+            });
+        });
     });
 
     let shared_install = Arc::clone(&shared);
+    let rt_handle_install = rt_handle.clone();
     app.on_install_update(move || {
-        let _ = shared_install;
-        // TODO: implement self_update install
+        shared_install.with_ui(|app| {
+            app.set_settings_update_downloading(true);
+            app.set_settings_update_progress(0.0);
+            app.set_status_message("Downloading update...".into());
+        });
+
+        let shared = Arc::clone(&shared_install);
+        rt_handle_install.spawn(async move {
+            let progress_shared = Arc::clone(&shared);
+            let result = updater::install_update(move |progress| {
+                let progress_shared = Arc::clone(&progress_shared);
+                let progress = progress.round().clamp(0.0, 100.0);
+                let _ = slint::invoke_from_event_loop(move || {
+                    progress_shared.with_ui(|app| {
+                        app.set_settings_update_progress(progress);
+                    });
+                });
+            })
+            .await;
+
+            let _ = slint::invoke_from_event_loop(move || {
+                shared.with_ui(|app| {
+                    app.set_settings_update_downloading(false);
+                    match result {
+                        Ok(version) => {
+                            app.set_settings_update_progress(100.0);
+                            app.set_settings_update_version(version.into());
+                            app.set_settings_update_notes(
+                                "Update installed. Restart QuillScribe to finish.".into(),
+                            );
+                            app.set_status_message(
+                                "Update installed. Restart QuillScribe to finish.".into(),
+                            );
+                        }
+                        Err(error) => {
+                            app.set_settings_update_notes(
+                                format!("Update install failed: {error}").into(),
+                            );
+                            app.set_status_message("Update install failed".into());
+                        }
+                    }
+                });
+            });
+        });
     });
 
     // ── Settings callbacks ───────────────────────────────────────────────
