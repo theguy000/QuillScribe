@@ -9,9 +9,9 @@ license=('MIT')
 options=('!lto')
 depends=(
   'hicolor-icon-theme'
-  'libappindicator-gtk3'
   'alsa-lib'
   'libgl'
+  'dbus'
 )
 makedepends=(
   'rust'

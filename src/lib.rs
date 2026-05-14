@@ -1145,14 +1145,6 @@ pub fn run() {
         }
     });
 
-    // Initialize GTK on Linux (required by tray-icon/libappindicator before building the tray)
-    #[cfg(target_os = "linux")]
-    {
-        if let Err(e) = gtk::init() {
-            warn!("Failed to initialize GTK: {}", e);
-        }
-    }
-
     // Set up system tray
     if let Err(e) = tray::setup_tray(&initial_theme, &app.as_weak()) {
         warn!("Failed to set up system tray: {}", e);
@@ -1188,27 +1180,6 @@ pub fn run() {
             });
         },
     );
-
-    // On Linux, pump the GLib main context on the main thread so that
-    // libappindicator's D-Bus registration (from tray-icon) completes.
-    #[cfg(target_os = "linux")]
-    {
-        let glib_timer = slint::Timer::default();
-        glib_timer.start(
-            slint::TimerMode::Repeated,
-            std::time::Duration::from_millis(50),
-            move || {
-                let ctx = glib::MainContext::default();
-                for _ in 0..10 {
-                    if !ctx.iteration(false) {
-                        break;
-                    }
-                }
-            },
-        );
-        // Timer must outlive this block — forget prevents it from being dropped.
-        std::mem::forget(glib_timer);
-    }
 
     // Intercept native window close (Alt+F4, etc.) — hide to tray instead of quitting
     let app_weak_native_close = app.as_weak();

@@ -1,4 +1,6 @@
 use log::{debug, info};
+
+#[cfg(not(target_os = "linux"))]
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem},
     Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
@@ -7,7 +9,17 @@ use tray_icon::{
 use slint::ComponentHandle;
 
 thread_local! {
+    #[cfg(target_os = "linux")]
+    static TRAY_ICON: std::cell::RefCell<Option<ksni::Handle<LinuxTray>>> = const { std::cell::RefCell::new(None) };
+
+    #[cfg(not(target_os = "linux"))]
     static TRAY_ICON: std::cell::RefCell<Option<tray_icon::TrayIcon>> = std::cell::RefCell::new(None);
+}
+
+#[cfg(target_os = "linux")]
+struct LinuxTray {
+    theme: String,
+    app_weak: slint::Weak<crate::App>,
 }
 
 const MENU_ID_SHOW: &str = "show";
@@ -57,6 +69,22 @@ pub fn setup_tray(
     theme: &str,
     app_weak: &slint::Weak<crate::App>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "linux")]
+    {
+        return setup_linux_tray(theme, app_weak);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        return setup_tray_icon_tray(theme, app_weak);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn setup_tray_icon_tray(
+    theme: &str,
+    app_weak: &slint::Weak<crate::App>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_tray_menu(app_weak)?;
 
     let icon_image = icon_from_png_bytes(tray_icon_bytes_for_theme(theme))
@@ -95,6 +123,28 @@ pub fn setup_tray(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn setup_linux_tray(
+    theme: &str,
+    app_weak: &slint::Weak<crate::App>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tray = LinuxTray {
+        theme: theme.to_string(),
+        app_weak: app_weak.clone(),
+    };
+    let service = ksni::TrayService::new(tray);
+    let handle = service.handle();
+    service.spawn();
+
+    TRAY_ICON.with(|t| {
+        *t.borrow_mut() = Some(handle);
+    });
+
+    info!("Linux StatusNotifier tray initialized with theme: {}", theme);
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
 fn build_tray_menu(
     _app_weak: &slint::Weak<crate::App>,
 ) -> Result<Menu, Box<dyn std::error::Error>> {
@@ -170,6 +220,7 @@ fn handle_menu_event(id: &str, app_weak: &slint::Weak<crate::App>) {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn handle_tray_event(event: TrayIconEvent, app_weak: &slint::Weak<crate::App>) {
     if matches!(
         event,
@@ -191,6 +242,15 @@ pub fn cleanup_tray() {
 
 pub fn set_tray_theme(theme: &str) {
     TRAY_ICON.with(|t| {
+        #[cfg(target_os = "linux")]
+        if let Some(ref handle) = *t.borrow() {
+            handle.update(|tray| {
+                tray.theme = theme.to_string();
+            });
+            debug!("Tray icon updated for theme: {}", theme);
+        }
+
+        #[cfg(not(target_os = "linux"))]
         if let Some(ref tray) = *t.borrow() {
             if let Ok(icon) = icon_from_png_bytes(tray_icon_bytes_for_theme(theme)) {
                 tray.set_icon(Some(icon)).ok();
@@ -200,6 +260,82 @@ pub fn set_tray_theme(theme: &str) {
     });
 }
 
+#[cfg(target_os = "linux")]
+impl ksni::Tray for LinuxTray {
+    fn id(&self) -> String {
+        "quillscribe".into()
+    }
+
+    fn title(&self) -> String {
+        "QuillScribe".into()
+    }
+
+    fn category(&self) -> ksni::Category {
+        ksni::Category::ApplicationStatus
+    }
+
+    fn status(&self) -> ksni::Status {
+        ksni::Status::Active
+    }
+
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        icon_pixmap_for_theme(&self.theme).into_iter().collect()
+    }
+
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            title: "QuillScribe".into(),
+            description: "Voice to Text".into(),
+            ..Default::default()
+        }
+    }
+
+    fn activate(&mut self, _x: i32, _y: i32) {
+        show_app(&self.app_weak);
+    }
+
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        vec![
+            linux_menu_item("Show QuillScribe", true, MENU_ID_SHOW).into(),
+            linux_menu_item("Start Recording", true, MENU_ID_START_RECORDING).into(),
+            linux_menu_item("Stop Recording", false, MENU_ID_STOP_RECORDING).into(),
+            ksni::MenuItem::Separator,
+            linux_menu_item("Settings", true, MENU_ID_SETTINGS).into(),
+            ksni::MenuItem::Separator,
+            linux_menu_item("Exit", true, MENU_ID_EXIT).into(),
+        ]
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_menu_item(
+    label: &str,
+    enabled: bool,
+    id: &'static str,
+) -> ksni::menu::StandardItem<LinuxTray> {
+    ksni::menu::StandardItem {
+        label: label.into(),
+        enabled,
+        activate: Box::new(move |tray: &mut LinuxTray| handle_menu_event(id, &tray.app_weak)),
+        ..Default::default()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn icon_pixmap_for_theme(theme: &str) -> Option<ksni::Icon> {
+    let (mut data, width, height) = crate::window::decode_png_to_rgba(tray_icon_bytes_for_theme(theme)).ok()?;
+    for pixel in data.chunks_exact_mut(4) {
+        pixel.rotate_right(1);
+    }
+
+    Some(ksni::Icon {
+        width: width as i32,
+        height: height as i32,
+        data,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
 fn icon_from_png_bytes(png_bytes: &[u8]) -> Result<Icon, String> {
     let (rgba, w, h) = crate::window::decode_png_to_rgba(png_bytes)?;
     Icon::from_rgba(rgba, w, h).map_err(|e| format!("Icon from RGBA error: {}", e))
