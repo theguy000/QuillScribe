@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use arboard::Clipboard;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
+use std::sync::{Mutex, OnceLock};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -71,6 +72,12 @@ pub struct PasteToolStatus {
 /// Cached paste tool status — computed once, reused for the lifetime of the process.
 #[cfg(target_os = "linux")]
 static PASTE_TOOL_STATUS: std::sync::OnceLock<PasteToolStatus> = std::sync::OnceLock::new();
+
+// Keep the X11 clipboard owner alive for the lifetime of the process. Without
+// this, clipboard contents can disappear as soon as the temporary Clipboard is
+// dropped on systems without a clipboard manager that eagerly persists data.
+#[cfg(target_os = "linux")]
+static CLIPBOARD: OnceLock<Mutex<Option<Clipboard>>> = OnceLock::new();
 
 /// Detect which paste tool is available on Linux. Result is cached after the first call.
 ///
@@ -204,6 +211,9 @@ const XDOTOOL_PASTE_ARGS: [&str; 3] = ["key", "--clearmodifiers", "ctrl+v"];
 #[cfg(target_os = "linux")]
 const XDOTOOL_RELEASE_ARGS: [&str; 4] = ["keyup", "Control_L", "Control_R", "v"];
 
+#[cfg(target_os = "linux")]
+const XDOTOOL_TYPE_ARGS: [&str; 5] = ["type", "--clearmodifiers", "--delay", "0", "--"];
+
 // 29 = KEY_LEFTCTRL, 47 = KEY_V; :1 = key down, :0 = key up.
 #[cfg(target_os = "linux")]
 const YDOTOOL_PASTE_ARGS: [&str; 5] = ["key", "29:1", "47:1", "47:0", "29:0"];
@@ -220,6 +230,11 @@ fn xdotool_paste_args() -> [&'static str; 3] {
 #[cfg(all(test, target_os = "linux"))]
 fn xdotool_release_args() -> [&'static str; 4] {
     XDOTOOL_RELEASE_ARGS
+}
+
+#[cfg(all(test, target_os = "linux"))]
+fn xdotool_type_args() -> [&'static str; 5] {
+    XDOTOOL_TYPE_ARGS
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -248,6 +263,33 @@ fn release_paste_keys(command: &str, args: impl IntoIterator<Item = &'static str
     let _ = std::process::Command::new(command).args(args).status();
 }
 
+#[cfg(target_os = "linux")]
+fn run_xdotool_type_command(text: &str) -> Result<std::process::ExitStatus> {
+    std::process::Command::new("xdotool")
+        .args(XDOTOOL_TYPE_ARGS)
+        .arg(text)
+        .status()
+        .context("Failed to execute xdotool type")
+}
+
+#[cfg(target_os = "linux")]
+fn with_clipboard<T>(operation: impl FnOnce(&mut Clipboard) -> Result<T>) -> Result<T> {
+    let lock = CLIPBOARD.get_or_init(|| Mutex::new(None));
+    let mut clipboard = lock.lock().expect("clipboard mutex poisoned");
+
+    if clipboard.is_none() {
+        *clipboard = Some(Clipboard::new().context("Failed to initialize clipboard")?);
+    }
+
+    operation(clipboard.as_mut().expect("clipboard initialized"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn with_clipboard<T>(operation: impl FnOnce(&mut Clipboard) -> Result<T>) -> Result<T> {
+    let mut clipboard = Clipboard::new().context("Failed to initialize clipboard")?;
+    operation(&mut clipboard)
+}
+
 // ── OutputManager ────────────────────────────────────────────────────────────
 
 pub struct OutputManager;
@@ -272,10 +314,10 @@ impl OutputManager {
             }
             OutputMode::TypeToApp => {
                 // Type text into the active window without polluting the clipboard.
-                // Save current clipboard → copy text → paste → restore clipboard.
+                // Save current clipboard for paste-based fallback tools.
                 let original_clipboard = self.get_clipboard_content().ok();
                 self.copy_to_clipboard(text)?;
-                self.simulate_paste()?;
+                self.type_text_to_active_window(text)?;
                 // Wait for the paste to complete before restoring the clipboard.
                 sleep(Duration::from_millis(150));
                 // Restore the original clipboard contents.
@@ -297,7 +339,10 @@ impl OutputManager {
                 // Copy text to clipboard AND type it into the active window.
                 // Clipboard retains the transcription text.
                 self.copy_to_clipboard(text)?;
-                self.simulate_paste()?;
+                self.type_text_to_active_window(text)?;
+                // X11 clipboard ownership can be lost while synthetic input is running;
+                // re-copy after typing so Copy & Type always leaves this text available.
+                self.copy_to_clipboard(text)?;
                 "Text copied to clipboard and typed to active window".to_string()
             }
             OutputMode::DisplayOnly => "Text displayed in app".to_string(),
@@ -311,21 +356,20 @@ impl OutputManager {
     }
 
     pub fn copy_text_to_clipboard(text: &str) -> Result<()> {
-        let mut clipboard = Clipboard::new().context("Failed to initialize clipboard")?;
-        clipboard
-            .set_text(text.to_string())
-            .context("Failed to copy text to clipboard")?;
+        with_clipboard(|clipboard| {
+            clipboard
+                .set_text(text.to_string())
+                .context("Failed to copy text to clipboard")
+        })
+        .context("Failed to copy text to clipboard")?;
         debug!("Copied {} characters to clipboard", text.len());
-        // On Linux (X11), the clipboard is owned by the process that set it.
-        // Give clipboard managers time to read the contents before dropping.
-        #[cfg(target_os = "linux")]
-        sleep(Duration::from_millis(100));
         Ok(())
     }
 
     /// Simulate a Ctrl+V paste into the currently active application.
     /// - Windows: uses the Win32 SendInput API.
     /// - Linux: uses xdotool (X11) or ydotool (Wayland/X11), whichever was detected.
+    #[allow(dead_code)]
     pub fn simulate_paste(&self) -> Result<()> {
         #[cfg(windows)]
         {
@@ -341,6 +385,24 @@ impl OutputManager {
         {
             warn!("Paste simulation is not yet supported on this platform");
             anyhow::bail!("Paste simulation is not supported on this platform");
+        }
+
+        Ok(())
+    }
+
+    /// Type text into the active window.
+    ///
+    /// On Linux with xdotool, this sends actual text-entry key events instead of
+    /// Ctrl+V so Copy & Type still works when paste is blocked by the target app.
+    fn type_text_to_active_window(&self, text: &str) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        {
+            self.linux_type_text(text)?;
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.simulate_paste()?;
         }
 
         Ok(())
@@ -495,17 +557,46 @@ impl OutputManager {
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
+    fn linux_type_text(&self, text: &str) -> Result<()> {
+        let status = check_paste_tool();
+
+        match &status.detected_tool {
+            LinuxPasteTool::Xdotool => {
+                debug!("Typing text via xdotool type (Linux/X11)");
+                release_paste_keys("xdotool", XDOTOOL_RELEASE_ARGS.iter().copied());
+                let result = run_xdotool_type_command(text)?;
+                release_paste_keys("xdotool", XDOTOOL_RELEASE_ARGS.iter().copied());
+
+                if !result.success() {
+                    anyhow::bail!(
+                        "xdotool type exited with non-zero status: {:?}",
+                        result.code()
+                    );
+                }
+
+                Ok(())
+            }
+            LinuxPasteTool::Ydotool => self.linux_paste(),
+            LinuxPasteTool::None => {
+                anyhow::bail!(
+                    "No paste tool available on this system.\n{}",
+                    status.setup_hint
+                );
+            }
+        }
+    }
+
     pub fn get_clipboard_content(&self) -> Result<String> {
-        let mut clipboard = Clipboard::new().context("Failed to initialize clipboard")?;
-        let text = clipboard
-            .get_text()
-            .context("Failed to get clipboard content")?;
-        Ok(text)
+        with_clipboard(|clipboard| {
+            clipboard
+                .get_text()
+                .context("Failed to get clipboard content")
+        })
     }
 
     pub fn clear_clipboard(&self) -> Result<()> {
-        let mut clipboard = Clipboard::new().context("Failed to initialize clipboard")?;
-        clipboard.clear().context("Failed to clear clipboard")?;
+        with_clipboard(|clipboard| clipboard.clear().context("Failed to clear clipboard"))?;
         debug!("Clipboard cleared");
         Ok(())
     }
@@ -550,6 +641,14 @@ mod tests {
     }
 
     #[test]
+    fn xdotool_type_uses_text_entry_with_clear_modifiers() {
+        assert_eq!(
+            xdotool_type_args(),
+            ["type", "--clearmodifiers", "--delay", "0", "--"]
+        );
+    }
+
+    #[test]
     fn ydotool_paste_releases_keys_after_pressing_them() {
         assert_eq!(
             ydotool_paste_args(),
@@ -560,5 +659,19 @@ mod tests {
     #[test]
     fn ydotool_release_releases_v_and_ctrl_keys() {
         assert_eq!(ydotool_release_args(), ["key", "47:0", "29:0", "97:0"]);
+    }
+
+    #[test]
+    fn clipboard_content_survives_after_copy_handle_scope() {
+        let output = OutputManager::new();
+        let text = "quillscribe_clipboard_retention_test";
+
+        OutputManager::copy_text_to_clipboard(text).expect("copy text to clipboard");
+        sleep(Duration::from_millis(250));
+
+        assert_eq!(
+            output.get_clipboard_content().expect("read clipboard"),
+            text
+        );
     }
 }
