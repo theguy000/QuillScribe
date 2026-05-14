@@ -325,13 +325,27 @@ impl WhisperManager {
                 return Ok(p);
             }
         }
-        Ok(Self::get_model_path(&self.local_model))
+        Self::get_model_path(&self.local_model)
     }
 
     /// Return the default cache path for a model:
     /// `~/.config/quillscribe/models/ggml-{model_name}.bin`
-    pub fn get_model_path(model_name: &str) -> PathBuf {
-        Self::models_dir().join(format!("ggml-{}.bin", model_name))
+    pub fn get_model_path(model_name: &str) -> Result<PathBuf> {
+        // Security: Prevent path traversal by ensuring model_name is just a file name.
+        let path = std::path::Path::new(model_name);
+        let file_name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| anyhow!("Invalid model name: {}", model_name))?;
+
+        if file_name != model_name {
+            return Err(anyhow!(
+                "Invalid model name '{}': path traversal detected",
+                model_name
+            ));
+        }
+
+        Ok(Self::models_dir().join(format!("ggml-{}.bin", model_name)))
     }
 
     /// Return the models directory: `~/.config/quillscribe/models/`
@@ -342,7 +356,9 @@ impl WhisperManager {
 
     /// Check whether the model file exists on disk.
     pub fn is_model_downloaded(model_name: &str) -> bool {
-        Self::get_model_path(model_name).exists()
+        Self::get_model_path(model_name)
+            .map(|p| p.exists())
+            .unwrap_or(false)
     }
 
     /// List all model names that have been downloaded (by scanning the models dir).
@@ -374,7 +390,7 @@ impl WhisperManager {
 
     /// Delete a downloaded model file.
     pub fn delete_model(model_name: &str) -> Result<()> {
-        let path = Self::get_model_path(model_name);
+        let path = Self::get_model_path(model_name)?;
         if path.exists() {
             fs::remove_file(&path)
                 .map_err(|e| anyhow!("Failed to delete model '{}': {}", model_name, e))?;
@@ -390,7 +406,7 @@ impl WhisperManager {
     /// Returns the path to the downloaded file.
     pub async fn download_model(model_name: &str) -> Result<String> {
         let url = Self::model_download_url(model_name);
-        let dest = Self::get_model_path(model_name);
+        let dest = Self::get_model_path(model_name)?;
 
         // Ensure models directory exists.
         let dir = Self::models_dir();
@@ -721,5 +737,27 @@ impl WhisperManager {
         .into_iter()
         .map(|(code, name)| (code.to_string(), name.to_string()))
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_model_path_traversal() {
+        let malicious_name = "../../etc/passwd";
+        let result = WhisperManager::get_model_path(malicious_name);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("path traversal detected"));
+    }
+
+    #[test]
+    fn test_get_model_path_safe() {
+        let safe_name = "base";
+        let result = WhisperManager::get_model_path(safe_name);
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.to_string_lossy().ends_with("ggml-base.bin"));
     }
 }
