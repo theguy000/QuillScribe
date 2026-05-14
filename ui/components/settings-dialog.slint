@@ -1,6 +1,6 @@
 import { ThemeColors } from "../themes/theme-definitions.slint";
 import { AudioTab } from "settings/audio-tab.slint";
-import { BlocklistDeviceEntry } from "settings/blocklist-dialog.slint";
+import { BlocklistDialog, BlocklistDeviceEntry } from "settings/blocklist-dialog.slint";
 import { WhisperTab } from "settings/whisper-tab.slint";
 import { UiTab } from "settings/ui-tab.slint";
 import { OutputTab } from "settings/output-tab.slint";
@@ -254,7 +254,10 @@ export component SettingsDialog inherits Rectangle {
                                 start-mic-test => { start-mic-test(); }
                                 stop-mic-test => { stop-mic-test(); }
                                 audio-device-changed(val) => { audio-device-changed(val); }
-                                manage-blocklist => { manage-blocklist(); }
+                                manage-blocklist => {
+                                    blocklist-popup.show();
+                                    manage-blocklist();
+                                }
                                 blocklist: audio-blocklist;
                                 add-blocklist-item(val) => { add-blocklist-item(val); }
                                 remove-blocklist-item(idx) => { remove-blocklist-item(idx); }
@@ -356,6 +359,26 @@ export component SettingsDialog inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    blocklist-popup := PopupWindow {
+        width: Math.min(root.width - 48px, 520px);
+        height: Math.min(root.height - 48px, 560px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        close-policy: close-on-click-outside;
+
+        BlocklistDialog {
+            width: 100%;
+            height: 100%;
+            theme-colors: theme-colors;
+            blocklist: audio-blocklist;
+            devices: audio-blocklist-devices;
+            add-item(val) => { add-blocklist-item(val); }
+            remove-item(idx) => { remove-blocklist-item(idx); }
+            unhide-device(id) => { unhide-blocklist-device(id); }
+            close => { blocklist-popup.close(); }
         }
     }
 }
