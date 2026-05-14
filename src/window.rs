@@ -210,14 +210,23 @@ fn x11_window_id(winit_win: &slint::winit_030::winit::window::Window) -> Option<
 }
 
 #[cfg(target_os = "linux")]
-fn rounded_rectangles(width: u16, height: u16, radius: u16) -> Vec<x11rb::protocol::xproto::Rectangle> {
+fn rounded_rectangles(
+    width: u16,
+    height: u16,
+    radius: u16,
+) -> Vec<x11rb::protocol::xproto::Rectangle> {
     use x11rb::protocol::xproto::Rectangle;
 
     let width = width.max(1);
     let height = height.max(1);
     let radius = radius.min(width / 2).min(height / 2);
     if radius == 0 {
-        return vec![Rectangle { x: 0, y: 0, width, height }];
+        return vec![Rectangle {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        }];
     }
 
     let mut rects = Vec::with_capacity(height as usize);
@@ -226,7 +235,11 @@ fn rounded_rectangles(width: u16, height: u16, radius: u16) -> Vec<x11rb::protoc
         let top = y < radius;
         let bottom = y >= height - radius;
         let inset = if top || bottom {
-            let cy = if top { r - 0.5 } else { height as f64 - r - 0.5 };
+            let cy = if top {
+                r - 0.5
+            } else {
+                height as f64 - r - 0.5
+            };
             let dy = (y as f64 + 0.5 - cy).abs();
             let dx = (r * r - dy * dy).max(0.0).sqrt();
             (r - dx).ceil() as u16
@@ -234,13 +247,23 @@ fn rounded_rectangles(width: u16, height: u16, radius: u16) -> Vec<x11rb::protoc
             0
         };
         let rect_width = width.saturating_sub(inset.saturating_mul(2)).max(1);
-        rects.push(Rectangle { x: inset as i16, y: y as i16, width: rect_width, height: 1 });
+        rects.push(Rectangle {
+            x: inset as i16,
+            y: y as i16,
+            width: rect_width,
+            height: 1,
+        });
     }
     rects
 }
 
 #[cfg(target_os = "linux")]
-fn harden_x11_overlay(window_id: u32, width: u16, height: u16, radius: u16) -> Result<(), Box<dyn std::error::Error>> {
+fn harden_x11_overlay(
+    window_id: u32,
+    width: u16,
+    height: u16,
+    radius: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
     use x11rb::connection::Connection;
     use x11rb::protocol::shape::{self, ConnectionExt as ShapeConnectionExt};
     use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, PropMode};
@@ -253,16 +276,40 @@ fn harden_x11_overlay(window_id: u32, width: u16, height: u16, radius: u16) -> R
     };
 
     let wm_class = b"quillscribe-overlay\0QuillScribeOverlay\0";
-    conn.change_property8(PropMode::REPLACE, window, AtomEnum::WM_CLASS, AtomEnum::STRING, wm_class)?;
-    conn.change_property8(PropMode::REPLACE, window, AtomEnum::WM_NAME, AtomEnum::STRING, b"QuillScribe Recording Overlay")?;
-    conn.change_property8(PropMode::REPLACE, window, atom(b"_NET_WM_NAME")?, atom(b"UTF8_STRING")?, b"QuillScribe Recording Overlay")?;
+    conn.change_property8(
+        PropMode::REPLACE,
+        window,
+        AtomEnum::WM_CLASS,
+        AtomEnum::STRING,
+        wm_class,
+    )?;
+    conn.change_property8(
+        PropMode::REPLACE,
+        window,
+        AtomEnum::WM_NAME,
+        AtomEnum::STRING,
+        b"QuillScribe Recording Overlay",
+    )?;
+    conn.change_property8(
+        PropMode::REPLACE,
+        window,
+        atom(b"_NET_WM_NAME")?,
+        atom(b"UTF8_STRING")?,
+        b"QuillScribe Recording Overlay",
+    )?;
 
     let window_types = [
         atom(b"_NET_WM_WINDOW_TYPE_TOOLTIP")?,
         atom(b"_NET_WM_WINDOW_TYPE_NOTIFICATION")?,
         atom(b"_NET_WM_WINDOW_TYPE_UTILITY")?,
     ];
-    conn.change_property32(PropMode::REPLACE, window, atom(b"_NET_WM_WINDOW_TYPE")?, AtomEnum::ATOM, &window_types)?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        window,
+        atom(b"_NET_WM_WINDOW_TYPE")?,
+        AtomEnum::ATOM,
+        &window_types,
+    )?;
 
     let states = [
         atom(b"_NET_WM_STATE_ABOVE")?,
@@ -270,17 +317,57 @@ fn harden_x11_overlay(window_id: u32, width: u16, height: u16, radius: u16) -> R
         atom(b"_NET_WM_STATE_SKIP_TASKBAR")?,
         atom(b"_NET_WM_STATE_SKIP_PAGER")?,
     ];
-    conn.change_property32(PropMode::REPLACE, window, atom(b"_NET_WM_STATE")?, AtomEnum::ATOM, &states)?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        window,
+        atom(b"_NET_WM_STATE")?,
+        AtomEnum::ATOM,
+        &states,
+    )?;
 
     let motif_hints: [u32; 5] = [2, 0, 0, 0, 0];
-    conn.change_property32(PropMode::REPLACE, window, atom(b"_MOTIF_WM_HINTS")?, atom(b"_MOTIF_WM_HINTS")?, &motif_hints)?;
-    conn.change_property32(PropMode::REPLACE, window, atom(b"_NET_WM_BYPASS_COMPOSITOR")?, AtomEnum::CARDINAL, &[2])?;
-    conn.change_property32(PropMode::REPLACE, window, atom(b"_NET_WM_WINDOW_OPACITY")?, AtomEnum::CARDINAL, &[u32::MAX])?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        window,
+        atom(b"_MOTIF_WM_HINTS")?,
+        atom(b"_MOTIF_WM_HINTS")?,
+        &motif_hints,
+    )?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        window,
+        atom(b"_NET_WM_BYPASS_COMPOSITOR")?,
+        AtomEnum::CARDINAL,
+        &[2],
+    )?;
+    conn.change_property32(
+        PropMode::REPLACE,
+        window,
+        atom(b"_NET_WM_WINDOW_OPACITY")?,
+        AtomEnum::CARDINAL,
+        &[u32::MAX],
+    )?;
     conn.delete_property(window, atom(b"_KDE_NET_WM_SHADOW")?)?;
 
     let rects = rounded_rectangles(width, height, radius);
-    conn.shape_rectangles(shape::SO::SET, shape::SK::BOUNDING, x11rb::protocol::xproto::ClipOrdering::UNSORTED, window, 0, 0, &rects)?;
-    conn.shape_rectangles(shape::SO::SET, shape::SK::INPUT, x11rb::protocol::xproto::ClipOrdering::UNSORTED, window, 0, 0, &rects)?;
+    conn.shape_rectangles(
+        shape::SO::SET,
+        shape::SK::BOUNDING,
+        x11rb::protocol::xproto::ClipOrdering::UNSORTED,
+        window,
+        0,
+        0,
+        &rects,
+    )?;
+    conn.shape_rectangles(
+        shape::SO::SET,
+        shape::SK::INPUT,
+        x11rb::protocol::xproto::ClipOrdering::UNSORTED,
+        window,
+        0,
+        0,
+        &rects,
+    )?;
     conn.flush()?;
     Ok(())
 }
@@ -289,14 +376,19 @@ fn harden_x11_overlay(window_id: u32, width: u16, height: u16, radius: u16) -> R
 fn harden_recording_overlay_impl(
     winit_win: &slint::winit_030::winit::window::Window,
     is_full: bool,
+    logical_width: f32,
+    logical_height: f32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(window_id) = x11_window_id(winit_win) else {
         return Ok(());
     };
-    let size = winit_win.inner_size();
-    let width = u16::try_from(size.width.min(u16::MAX as u32)).unwrap_or(u16::MAX).max(1);
-    let height = u16::try_from(size.height.min(u16::MAX as u32)).unwrap_or(u16::MAX).max(1);
     let scale = winit_win.scale_factor();
+    let width = (f64::from(logical_width) * scale)
+        .round()
+        .clamp(1.0, u16::MAX as f64) as u16;
+    let height = (f64::from(logical_height) * scale)
+        .round()
+        .clamp(1.0, u16::MAX as f64) as u16;
     let radius = if !is_full {
         height / 2
     } else {
@@ -307,12 +399,19 @@ fn harden_recording_overlay_impl(
 }
 
 /// Apply X11-specific metadata and shape hints to reduce compositor shadows on the recording overlay.
-pub fn harden_recording_overlay(window: &slint::Window, is_full: bool) {
+pub fn harden_recording_overlay(
+    window: &slint::Window,
+    is_full: bool,
+    logical_width: f32,
+    logical_height: f32,
+) {
     #[cfg(target_os = "linux")]
     {
         if window
             .with_winit_window(|winit_win| {
-                if let Err(e) = harden_recording_overlay_impl(winit_win, is_full) {
+                if let Err(e) =
+                    harden_recording_overlay_impl(winit_win, is_full, logical_width, logical_height)
+                {
                     debug!("Failed to harden X11 recording overlay: {}", e);
                 }
             })
@@ -324,7 +423,7 @@ pub fn harden_recording_overlay(window: &slint::Window, is_full: bool) {
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (window, is_full);
+        let _ = (window, is_full, logical_width, logical_height);
     }
 }
 

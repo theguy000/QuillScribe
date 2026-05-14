@@ -140,6 +140,10 @@ slint::include_modules!();
 
 const HISTORY_DAYS: i64 = 30;
 const HISTORY_SUMMARY_CHARS: usize = 140;
+const OVERLAY_MINIMAL_WIDTH: f32 = 120.0;
+const OVERLAY_MINIMAL_HEIGHT: f32 = 32.0;
+const OVERLAY_FULL_WIDTH: f32 = 240.0;
+const OVERLAY_FULL_HEIGHT: f32 = 48.0;
 
 fn format_history_timestamp(timestamp: &str) -> String {
     chrono::DateTime::parse_from_rfc3339(timestamp)
@@ -190,6 +194,14 @@ fn overlay_mode_is_full(mode: &str) -> bool {
     mode == "full" || mode == "Full (bars, timer, stop button)"
 }
 
+fn recording_overlay_size(is_full: bool) -> (f32, f32) {
+    if is_full {
+        (OVERLAY_FULL_WIDTH, OVERLAY_FULL_HEIGHT)
+    } else {
+        (OVERLAY_MINIMAL_WIDTH, OVERLAY_MINIMAL_HEIGHT)
+    }
+}
+
 fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, elapsed_secs: i32) {
     let ui = {
         let config = shared.state.config.lock().unwrap();
@@ -202,24 +214,26 @@ fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, e
     overlay.set_composited_desktop(window::has_compositor());
     overlay.set_elapsed_seconds(elapsed_secs);
     overlay.set_timer_running(is_full);
+    let (width, height) = recording_overlay_size(is_full);
+    overlay
+        .window()
+        .set_size(slint::LogicalSize::new(width, height));
 
     window::apply_overlay_topmost(overlay.window());
     overlay.window().show().ok();
     window::apply_overlay_topmost(overlay.window());
     position_recording_overlay(overlay, is_full);
-    window::harden_recording_overlay(overlay.window(), is_full);
+    window::harden_recording_overlay(overlay.window(), is_full, width, height);
 }
 
 fn position_recording_overlay(overlay: &RecordingOverlay, is_full: bool) {
-    let (width, height) = if is_full {
-        (240.0, 48.0)
-    } else {
-        (120.0, 32.0)
-    };
+    let (width, height) = recording_overlay_size(is_full);
     overlay.window().with_winit_window(|winit_win| {
         use slint::winit_030::winit::dpi::{LogicalPosition, LogicalSize};
 
         let _ = winit_win.request_inner_size(LogicalSize::new(width, height));
+        let width = f64::from(width);
+        let height = f64::from(height);
         let monitor = winit_win
             .current_monitor()
             .or_else(|| winit_win.primary_monitor())
@@ -506,9 +520,13 @@ pub fn run() {
         let config = shared.state.config.lock().unwrap();
         config.get_settings()
     };
+    let is_overlay_full = overlay_mode_is_full(&s.ui.overlay_mode);
+    let (overlay_width, overlay_height) = recording_overlay_size(is_overlay_full);
     window::harden_recording_overlay(
         recording_overlay.window(),
-        overlay_mode_is_full(&s.ui.overlay_mode),
+        is_overlay_full,
+        overlay_width,
+        overlay_height,
     );
 
     // Audio devices, blocklist, and device selection
