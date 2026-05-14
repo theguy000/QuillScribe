@@ -99,6 +99,7 @@ opt-level = 1      # light optimization for deps (faster compile than opt-level 
 ksni = "0.2.2"
 alsa-sys = "0.3.1"
 libc = "0.2"
+x11rb = { version = "0.13", features = ["shape"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 # System tray (Tauri doesn't provide one in Slint mode)

@@ -96,9 +96,6 @@ export component RecordingOverlay inherits Window {
         background: overlay-bg;
         border-width: pill-style ? 0px : (neon-style ? 2px : 1px);
         border-color: neon-style ? theme-colors.accent.with-alpha(0.45) : theme-colors.border.with-alpha(glass-style ? 0.35 : 0.6);
-        drop-shadow-color: composited-desktop ? (neon-style ? theme-colors.accent_glow : theme-colors.shadow) : transparent;
-        drop-shadow-blur: composited-desktop ? (neon-style ? 18px + 4px * Math.sin(root.glow-phase * 1deg) : (pill-style ? 8px : 12px)) : 0px;
-        drop-shadow-offset-y: composited-desktop ? (pill-style ? 2px : 3px) : 0px;
         clip: true;
 
         ta1 := TouchArea {

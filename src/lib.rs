@@ -197,9 +197,10 @@ fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, e
     };
 
     let is_full = overlay_mode_is_full(&ui.overlay_mode);
+    let overlay_style = ui.overlay_style.clone();
     overlay.set_current_theme(ui.theme.into());
     overlay.set_mode(ui.overlay_mode.into());
-    overlay.set_overlay_style(ui.overlay_style.into());
+    overlay.set_overlay_style(overlay_style.clone().into());
     overlay.set_overlay_opacity(ui.overlay_opacity as f32);
     overlay.set_composited_desktop(window::has_compositor());
     overlay.set_elapsed_seconds(elapsed_secs);
@@ -209,6 +210,7 @@ fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, e
     overlay.window().show().ok();
     window::apply_overlay_topmost(overlay.window());
     position_recording_overlay(overlay, is_full);
+    window::harden_recording_overlay(overlay.window(), is_full, &overlay_style);
 }
 
 fn position_recording_overlay(overlay: &RecordingOverlay, is_full: bool) {
@@ -507,6 +509,11 @@ pub fn run() {
         let config = shared.state.config.lock().unwrap();
         config.get_settings()
     };
+    window::harden_recording_overlay(
+        recording_overlay.window(),
+        overlay_mode_is_full(&s.ui.overlay_mode),
+        &s.ui.overlay_style,
+    );
 
     // Audio devices, blocklist, and device selection
     refresh_blocklist_and_devices(&shared);
