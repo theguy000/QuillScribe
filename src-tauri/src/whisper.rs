@@ -749,7 +749,10 @@ mod tests {
         let malicious_name = "../../etc/passwd";
         let result = WhisperManager::get_model_path(malicious_name);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("path traversal detected"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("path traversal detected"));
     }
 
     #[test]
