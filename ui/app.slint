@@ -7,8 +7,10 @@ import { SettingsDialog } from "components/settings-dialog.slint";
 import { BlocklistDeviceEntry } from "components/settings/blocklist-dialog.slint";
 import { HistoryPanel, HistoryListEntry } from "components/history-panel.slint";
 import { ToastContainer } from "components/toast.slint";
+import { RecordingOverlay } from "recording-overlay.slint";
 
 export { ThemeColors }
+export { RecordingOverlay }
 
 export component App inherits Window {
     in-out property <ThemeColors> theme-colors <=> Theme.current;

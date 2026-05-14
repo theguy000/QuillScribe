@@ -1,0 +1,234 @@
+import { Theme, ThemeColors } from "themes/theme-definitions.slint";
+
+component OverlayBar inherits Rectangle {
+    in property <int> index;
+    in property <int> count;
+    in property <float> audio-level;
+    in property <color> accent;
+    in property <length> area-height;
+
+    property <float> center: (count - 1) / 2;
+    property <float> dist: Math.abs(index - center) / center;
+    property <float> wave: 1.0 - dist * 0.5;
+    property <float> seed: Math.sin(index * 137.507deg) * 0.5 + 0.5;
+    property <float> offset: 0.6 + seed * 0.8;
+    property <float> boosted: Math.min(1.0, audio-level * 6.0);
+    property <float> base: boosted > 0.0 ? Math.pow(boosted, 0.45) : 0.0;
+    property <float> level: Math.min(1.0, Math.max(0.05, base * wave * offset));
+
+    width: 2px;
+    height: area-height;
+    vertical-stretch: 0;
+    background: transparent;
+
+    Rectangle {
+        width: 100%;
+        height: Math.max(2px, root.area-height * root.level);
+        y: (parent.height - self.height) / 2;
+        border-radius: 1px;
+        background: root.accent;
+    }
+
+    animate level { duration: 40ms; }
+}
+
+export component RecordingOverlay inherits Window {
+    in-out property <ThemeColors> theme-colors <=> Theme.current;
+    in-out property <string> current-theme: "white";
+    changed current-theme => {
+        Theme.current = Theme.get-theme(self.current-theme);
+    }
+
+    in-out property <string> mode: "minimal";
+    in-out property <string> overlay-style: "default";
+    in-out property <float> overlay-opacity: 0.85;
+    in-out property <float> audio-level: 0;
+    in-out property <int> elapsed-seconds: 0;
+    in-out property <bool> timer-running: false;
+
+    callback stop-recording();
+    callback drag-overlay();
+
+    property <bool> full-mode: mode == "full" || mode == "Full (bars, timer, stop button)";
+    property <bool> glass-style: overlay-style == "Glass" || overlay-style == "glass" || overlay-style == "frosted_glass" || overlay-style == "gradient_glass";
+    property <bool> neon-style: overlay-style == "Neon" || overlay-style == "neon" || overlay-style == "neon_glow";
+    property <bool> pill-style: overlay-style == "Pill" || overlay-style == "pill";
+    property <color> glass-bg: theme-colors.bg_secondary.with-alpha(Math.max(0.0, Math.min(1.0, overlay-opacity)));
+    property <color> overlay-bg: glass-style ? glass-bg : theme-colors.bg_secondary;
+    property <int> bar-count: full-mode ? 20 : 16;
+    property <length> content-row-height: full-mode ? 22px : 20px;
+    property <length> minimal-bars-width: 62px;
+    property <string> formatted-time: Math.floor(elapsed-seconds / 60) + ":" + (Math.mod(elapsed-seconds, 60) < 10 ? "0" : "") + Math.mod(elapsed-seconds, 60);
+    property <float> glow-phase: 0;
+    property <float> dot-phase: 0;
+    property <bool> drag-toggle: false;
+
+    title: "Recording";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    width: full-mode ? 240px : 120px;
+    height: full-mode ? 48px : 32px;
+
+    Timer {
+        interval: 1s;
+        running: timer-running && full-mode;
+        triggered => { elapsed-seconds += 1; }
+    }
+
+    Timer {
+        interval: 50ms;
+        running: neon-style;
+        triggered => { root.glow-phase = Math.mod(root.glow-phase + 0.18, 6.28318); }
+    }
+
+    Timer {
+        interval: 80ms;
+        running: full-mode;
+        triggered => { root.dot-phase = Math.mod(root.dot-phase + 24.0, 360.0); }
+    }
+
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: pill-style || !full-mode ? root.height / 2 : 16px;
+        background: overlay-bg;
+        border-width: pill-style ? 0px : (neon-style ? 2px : 1px);
+        border-color: neon-style ? theme-colors.accent.with-alpha(0.45) : theme-colors.border.with-alpha(glass-style ? 0.35 : 0.6);
+        drop-shadow-color: neon-style ? theme-colors.accent_glow : theme-colors.shadow;
+        drop-shadow-blur: neon-style ? 18px + 4px * Math.sin(root.glow-phase * 1deg) : (pill-style ? 8px : 12px);
+        drop-shadow-offset-y: pill-style ? 2px : 3px;
+        clip: true;
+
+        ta1 := TouchArea {
+            enabled: !root.drag-toggle;
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    root.drag-toggle = true;
+                    root.drag-overlay();
+                }
+            }
+        }
+
+        ta2 := TouchArea {
+            enabled: root.drag-toggle;
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down {
+                    root.drag-toggle = false;
+                    root.drag-overlay();
+                }
+            }
+        }
+
+        Rectangle {
+            width: 100%;
+            height: root.content-row-height;
+            y: (parent.height - self.height) / 2;
+            background: transparent;
+
+            HorizontalLayout {
+                width: 100%;
+                height: 100%;
+                padding-left: full-mode ? 12px : 6px;
+                padding-right: full-mode ? 12px : 6px;
+                spacing: full-mode ? 10px : 0px;
+                alignment: center;
+
+                if full-mode: HorizontalLayout {
+                    height: root.content-row-height;
+                    vertical-stretch: 0;
+                    spacing: 5px;
+                    alignment: center;
+
+                    Rectangle {
+                        vertical-stretch: 0;
+                        width: 7px;
+                        height: root.content-row-height;
+                        background: transparent;
+
+                        Rectangle {
+                            width: 7px;
+                            height: 7px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 3.5px;
+                            background: theme-colors.accent;
+                            opacity: 0.7 + 0.3 * Math.sin(root.dot-phase * 1deg);
+                            drop-shadow-color: theme-colors.accent_glow;
+                            drop-shadow-blur: 5px;
+                        }
+                    }
+
+                    Text {
+                        height: root.content-row-height;
+                        vertical-stretch: 0;
+                        text: "REC";
+                        color: theme-colors.accent;
+                        font-size: 9px;
+                        font-weight: 700;
+                        letter-spacing: 1px;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        height: root.content-row-height;
+                        vertical-stretch: 0;
+                        text: root.formatted-time;
+                        color: theme-colors.text_primary;
+                        font-size: 10px;
+                        font-weight: 600;
+                        min-width: 28px;
+                        vertical-alignment: center;
+                    }
+                }
+
+                HorizontalLayout {
+                    vertical-stretch: 0;
+                    spacing: full-mode ? 1.5px : 2px;
+                    alignment: center;
+                    height: root.content-row-height;
+                    width: full-mode ? self.preferred-width : root.minimal-bars-width;
+
+                    for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]: OverlayBar {
+                        visible: i < root.bar-count;
+                        index: i;
+                        count: root.bar-count;
+                        audio-level: root.audio-level;
+                        accent: theme-colors.accent;
+                        area-height: parent.height;
+                    }
+                }
+
+                if full-mode: Rectangle {
+                    vertical-stretch: 0;
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 6px;
+                    background: stop-touch.pressed ? theme-colors.accent_hover : theme-colors.accent;
+                    drop-shadow-color: theme-colors.accent_glow;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-offset-y: 1px;
+
+                    Path {
+                        width: 10px;
+                        height: 10px;
+                        x: 6px;
+                        y: 6px;
+                        viewbox-width: 10;
+                        viewbox-height: 10;
+                        fill: theme-colors.on_accent;
+                        MoveTo { x: 1; y: 1; }
+                        LineTo { x: 9; y: 1; }
+                        LineTo { x: 9; y: 9; }
+                        LineTo { x: 1; y: 9; }
+                        Close {}
+                    }
+
+                    stop-touch := TouchArea {
+                        clicked => { root.stop-recording(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+    }
+}

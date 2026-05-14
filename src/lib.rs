@@ -16,6 +16,7 @@ use std::{
 };
 
 use crate::audio::AudioDevice;
+use slint::winit_030::WinitWindowAccessor;
 
 const THEME_MAP: &[(&str, &str)] = &[
     ("white", "White"),
@@ -183,6 +184,60 @@ fn summarize_history_text(text: &str) -> String {
     } else {
         summary
     }
+}
+
+fn overlay_mode_is_full(mode: &str) -> bool {
+    mode == "full" || mode == "Full (bars, timer, stop button)"
+}
+
+fn show_recording_overlay(overlay: &RecordingOverlay, shared: &SharedAppState, elapsed_secs: i32) {
+    let ui = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_settings().ui
+    };
+
+    let is_full = overlay_mode_is_full(&ui.overlay_mode);
+    overlay.set_current_theme(ui.theme.into());
+    overlay.set_mode(ui.overlay_mode.into());
+    overlay.set_overlay_style(ui.overlay_style.into());
+    overlay.set_overlay_opacity(ui.overlay_opacity as f32);
+    overlay.set_elapsed_seconds(elapsed_secs);
+    overlay.set_timer_running(is_full);
+
+    overlay.window().show().ok();
+    position_recording_overlay(overlay, is_full);
+}
+
+fn position_recording_overlay(overlay: &RecordingOverlay, is_full: bool) {
+    let (width, height) = if is_full {
+        (240.0, 48.0)
+    } else {
+        (120.0, 32.0)
+    };
+    overlay.window().with_winit_window(|winit_win| {
+        use slint::winit_030::winit::dpi::{LogicalPosition, LogicalSize};
+
+        let _ = winit_win.request_inner_size(LogicalSize::new(width, height));
+        let monitor = winit_win
+            .current_monitor()
+            .or_else(|| winit_win.primary_monitor())
+            .or_else(|| winit_win.available_monitors().next());
+
+        if let Some(monitor) = monitor {
+            let scale = monitor.scale_factor();
+            let position = monitor.position().to_logical::<f64>(scale);
+            let size = monitor.size().to_logical::<f64>(scale);
+            let x = position.x + ((size.width - width) / 2.0).round();
+            let y = position.y + (size.height - height - 60.0).round();
+            winit_win.set_outer_position(LogicalPosition::new(x, y));
+        }
+    });
+}
+
+fn hide_recording_overlay(overlay: &RecordingOverlay) {
+    overlay.set_timer_running(false);
+    overlay.set_audio_level(0.0);
+    overlay.window().hide().ok();
 }
 
 fn format_history_word_count(text: &str) -> String {
@@ -434,6 +489,8 @@ pub fn run() {
     });
 
     let app = App::new().unwrap();
+    let recording_overlay = RecordingOverlay::new().unwrap();
+    recording_overlay.window().hide().ok();
 
     // Store weak handle for callbacks that need to update UI
     {
@@ -488,8 +545,29 @@ pub fn run() {
 
     // ── Wire core Slint callbacks ────────────────────────────────────────
 
+    let app_weak_overlay_stop = app.as_weak();
+    recording_overlay.on_stop_recording(move || {
+        if let Some(app) = app_weak_overlay_stop.upgrade() {
+            if app.get_is_recording() {
+                app.invoke_toggle_recording();
+            }
+        }
+    });
+
+    let overlay_weak_drag = recording_overlay.as_weak();
+    recording_overlay.on_drag_overlay(move || {
+        if let Some(overlay) = overlay_weak_drag.upgrade() {
+            overlay.window().with_winit_window(|winit_win| {
+                if let Err(e) = winit_win.drag_window() {
+                    log::warn!("overlay drag_window failed: {}", e);
+                }
+            });
+        }
+    });
+
     let shared_toggle = Arc::clone(&shared);
     let rt_handle_toggle = rt_handle.clone();
+    let overlay_toggle = recording_overlay.as_weak();
     app.on_toggle_recording(move || {
         let rt_handle = rt_handle_toggle.clone();
         let s = Arc::clone(&shared_toggle);
@@ -520,6 +598,9 @@ pub fn run() {
                 app.set_is_recording(true);
                 app.set_status_message("Recording...".into());
             });
+            if let Some(overlay) = overlay_toggle.upgrade() {
+                show_recording_overlay(&overlay, &s, 0);
+            }
         } else {
             // Stop recording — synchronous UI update on UI thread
             s.with_ui(|app| {
@@ -527,6 +608,9 @@ pub fn run() {
                 app.set_is_transcribing(true);
                 app.set_status_message("Transcribing...".into());
             });
+            if let Some(overlay) = overlay_toggle.upgrade() {
+                hide_recording_overlay(&overlay);
+            }
 
             let (audio_data, sample_rate) = {
                 let mut audio = s.state.audio.lock().unwrap();
@@ -1163,6 +1247,7 @@ pub fn run() {
 
     // Audio level polling timer
     let shared_audio = Arc::clone(&shared);
+    let overlay_audio = recording_overlay.as_weak();
     let timer = slint::Timer::default();
     timer.start(
         slint::TimerMode::Repeated,
@@ -1178,6 +1263,9 @@ pub fn run() {
             shared_audio.with_ui(|app| {
                 app.set_audio_level(level);
             });
+            if let Some(overlay) = overlay_audio.upgrade() {
+                overlay.set_audio_level(level);
+            }
         },
     );
 

@@ -140,7 +140,10 @@ fn setup_linux_tray(
         *t.borrow_mut() = Some(handle);
     });
 
-    info!("Linux StatusNotifier tray initialized with theme: {}", theme);
+    info!(
+        "Linux StatusNotifier tray initialized with theme: {}",
+        theme
+    );
     Ok(())
 }
 
@@ -323,7 +326,8 @@ fn linux_menu_item(
 
 #[cfg(target_os = "linux")]
 fn icon_pixmap_for_theme(theme: &str) -> Option<ksni::Icon> {
-    let (mut data, width, height) = crate::window::decode_png_to_rgba(tray_icon_bytes_for_theme(theme)).ok()?;
+    let (mut data, width, height) =
+        crate::window::decode_png_to_rgba(tray_icon_bytes_for_theme(theme)).ok()?;
     for pixel in data.chunks_exact_mut(4) {
         pixel.rotate_right(1);
     }
