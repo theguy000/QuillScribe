@@ -30,20 +30,6 @@ jobs:
           echo "Setting version to $VERSION"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
-      - name: Commit version bump back to repo
-        if: matrix.platform == 'ubuntu-22.04'
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          BRANCH="${{ github.event.repository.default_branch }}"
-          git fetch origin "$BRANCH:$BRANCH"
-          git checkout "$BRANCH"
-          git add Cargo.toml
-          git diff --cached --quiet && echo "No version changes to commit" && exit 0
-          git commit -m "chore: bump version to ${{ github.ref_name }}"
-          git push origin "$BRANCH"
-
       # ── Rust ────────────────────────────────────────────────────────────
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

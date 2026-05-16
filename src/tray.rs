@@ -28,25 +28,6 @@ const MENU_ID_STOP_RECORDING: &str = "stop-recording";
 const MENU_ID_SETTINGS: &str = "settings";
 const MENU_ID_EXIT: &str = "exit";
 
-#[cfg(windows)]
-fn shortcut_ico_bytes_for_theme(theme: &str) -> &'static [u8] {
-    match theme {
-        "white" => include_bytes!("../icons/taskbar/white.ico"),
-        "warm_gray" => include_bytes!("../icons/taskbar/warm_gray.ico"),
-        "soft_beige" => include_bytes!("../icons/taskbar/soft_beige.ico"),
-        "blue_gray" => include_bytes!("../icons/taskbar/blue_gray.ico"),
-        "warm_taupe" => include_bytes!("../icons/taskbar/warm_taupe.ico"),
-        "soft_sage" => include_bytes!("../icons/taskbar/soft_sage.ico"),
-        "dark_charcoal" => include_bytes!("../icons/taskbar/dark_charcoal.ico"),
-        "dark_blue" => include_bytes!("../icons/taskbar/dark_blue.ico"),
-        "dark_purple" => include_bytes!("../icons/taskbar/dark_purple.ico"),
-        "dark_forest" => include_bytes!("../icons/taskbar/dark_forest.ico"),
-        "dark_burgundy" => include_bytes!("../icons/taskbar/dark_burgundy.ico"),
-        "obsidian" => include_bytes!("../icons/taskbar/obsidian.ico"),
-        _ => include_bytes!("../icons/taskbar/white.ico"),
-    }
-}
-
 fn tray_icon_bytes_for_theme(theme: &str) -> &'static [u8] {
     match theme {
         "white" => include_bytes!("../icons/tray/white.png"),
