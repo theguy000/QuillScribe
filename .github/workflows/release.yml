@@ -9,20 +9,23 @@ permissions:
   contents: write
 
 jobs:
-  build-release:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-20.04
-          - platform: windows-latest
-
-    runs-on: ${{ matrix.platform }}
+  build-linux-release:
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
 
     steps:
+      - name: Install base tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            ca-certificates \
+            curl \
+            git \
+            build-essential
+
       - uses: actions/checkout@v4
 
-      # ── Set version from git tag ───────────────────────────────────────
+      # -- Set version from git tag ----------------------------------------
       - name: Set version from tag
         shell: bash
         run: |
@@ -31,19 +34,18 @@ jobs:
           echo "Setting version to $VERSION"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
-      # ── Rust ────────────────────────────────────────────────────────────
+      # -- Rust -------------------------------------------------------------
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      # ── Linux system dependencies ──────────────────────────────────────
+      # -- Linux system dependencies ---------------------------------------
       - name: Install dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-20.04'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
             libdbus-1-dev \
             libfuse2 \
             pkg-config \
@@ -62,18 +64,12 @@ jobs:
             mold \
             wget
 
-      # ── Windows: ensure cmake is available (for whisper.cpp build) ─────
-      - name: Verify cmake (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: cmake --version
-
-      # ── Build ─────────────────────────────────────────────────────────
+      # -- Build ------------------------------------------------------------
       - name: Build release binary
         run: cargo build --release
 
-      # ── Package ────────────────────────────────────────────────────────
+      # -- Package ----------------------------------------------------------
       - name: Package Linux artifacts
-        if: matrix.platform == 'ubuntu-20.04'
         shell: bash
         run: |
           set -euo pipefail
@@ -124,16 +120,7 @@ jobs:
             --output appimage
           mv "QuillScribe-${VERSION}-x86_64.AppImage" "quillscribe-${VERSION}-x86_64.AppImage"
 
-      - name: Package binary (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: bash
-        run: |
-          mkdir -p release-pkg
-          cp target/release/quillscribe.exe release-pkg/quillscribe.exe
-          cp target/release/quillscribe.exe quillscribe-x86_64-pc-windows-msvc.exe
-          tar -czf quillscribe-x86_64-pc-windows-msvc.tar.gz -C release-pkg quillscribe.exe
-
-      # ── Upload ─────────────────────────────────────────────────────────
+      # -- Upload -----------------------------------------------------------
       - name: Upload binary to GitHub Release
         uses: softprops/action-gh-release@v2
         env:
@@ -151,4 +138,59 @@ jobs:
             quillscribe*.tar.gz
             quillscribe*.AppImage
             quillscribe*.deb
+
+  build-windows-release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # -- Set version from git tag ----------------------------------------
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Setting version to $VERSION"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+
+      # -- Rust -------------------------------------------------------------
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      # -- Windows: ensure cmake is available (for whisper.cpp build) -------
+      - name: Verify cmake (Windows)
+        run: cmake --version
+
+      # -- Build ------------------------------------------------------------
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package binary (Windows)
+        shell: bash
+        run: |
+          mkdir -p release-pkg
+          cp target/release/quillscribe.exe release-pkg/quillscribe.exe
+          cp target/release/quillscribe.exe quillscribe-x86_64-pc-windows-msvc.exe
+          tar -czf quillscribe-x86_64-pc-windows-msvc.tar.gz -C release-pkg quillscribe.exe
+
+      # -- Upload -----------------------------------------------------------
+      - name: Upload binary to GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "QuillScribe ${{ github.ref_name }}"
+          body: |
+            ## QuillScribe ${{ github.ref_name }}
+
+            See the assets below to download and install.
+          draft: false
+          prerelease: false
+          files: |
+            quillscribe*.tar.gz
             quillscribe*.exe
