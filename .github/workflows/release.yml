@@ -137,7 +137,7 @@ jobs:
           wget -q "$appimagetool_url" -O appimagetool-x86_64.AppImage
           wget -q "$runtime_url" -O runtime-x86_64
           chmod +x appimagetool-x86_64.AppImage runtime-x86_64
-          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage \
+          ARCH=x86_64 APPIMAGE_COMP=xz APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage \
             --runtime-file runtime-x86_64 \
             appdir \
             "$appimage_target"
