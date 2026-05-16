@@ -161,13 +161,12 @@ jobs:
             fi
           }
 
-          smoke_appimage "Ubuntu runner" env APPIMAGE_EXTRACT_AND_RUN=1 "./${appimage_target}" --appimage-version
+          smoke_appimage "Ubuntu runner" bash -lc "./${appimage_target} --appimage-extract >/dev/null && test -x squashfs-root/AppRun && rm -rf squashfs-root"
           smoke_appimage "Arch Linux container" docker run --rm \
-            -e APPIMAGE_EXTRACT_AND_RUN=1 \
             -v "$PWD:/work" \
             -w /work \
             archlinux:latest \
-            bash -lc "./${appimage_target} --appimage-version"
+            bash -lc "./${appimage_target} --appimage-extract >/dev/null && test -x squashfs-root/AppRun && rm -rf squashfs-root"
 
           cat > release-body.md <<EOF
           ## QuillScribe ${GITHUB_REF_NAME}
