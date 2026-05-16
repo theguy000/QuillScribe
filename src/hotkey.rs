@@ -318,12 +318,10 @@ fn ensure_listener_started() {
                     }
                 }
             }
-            EventType::KeyRelease(key) => {
-                if is_modifier(&key) {
-                    let mut mods = MODIFIER_STATE.lock().unwrap();
-                    if let Some(name) = modifier_name(&key) {
-                        mods.retain(|m| m != name);
-                    }
+            EventType::KeyRelease(key) if is_modifier(&key) => {
+                let mut mods = MODIFIER_STATE.lock().unwrap();
+                if let Some(name) = modifier_name(&key) {
+                    mods.retain(|m| m != name);
                 }
             }
             EventType::ButtonPress(button) => {

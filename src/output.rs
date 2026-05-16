@@ -2,9 +2,11 @@ use anyhow::{Context, Result};
 use arboard::Clipboard;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, OnceLock};
 use std::thread::sleep;
 use std::time::Duration;
+
+#[cfg(target_os = "linux")]
+use std::sync::{Mutex, OnceLock};
 
 /// Output modes control how transcription results are delivered.
 ///
@@ -395,6 +397,9 @@ impl OutputManager {
     /// On Linux with xdotool, this sends actual text-entry key events instead of
     /// Ctrl+V so Copy & Type still works when paste is blocked by the target app.
     fn type_text_to_active_window(&self, text: &str) -> Result<()> {
+        #[cfg(not(target_os = "linux"))]
+        let _ = text;
+
         #[cfg(target_os = "linux")]
         {
             self.linux_type_text(text)?;

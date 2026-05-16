@@ -1440,7 +1440,7 @@ pub fn run() {
     let app_weak_icon = app.as_weak();
     app.on_set_window_icon_theme(move |theme: slint::SharedString| {
         if let Some(app) = app_weak_icon.upgrade() {
-            window::set_window_icon_theme(&app, &theme.to_string());
+            window::set_window_icon_theme(&app, theme.as_ref());
         }
     });
 

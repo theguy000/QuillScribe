@@ -36,7 +36,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          BRANCH=$(git remote show origin | grep 'HEAD branch' | awk '{print $NF}')
+          BRANCH="${{ github.event.repository.default_branch }}"
+          git fetch origin "$BRANCH:$BRANCH"
           git checkout "$BRANCH"
           git add Cargo.toml
           git diff --cached --quiet && echo "No version changes to commit" && exit 0

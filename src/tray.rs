@@ -13,7 +13,7 @@ thread_local! {
     static TRAY_ICON: std::cell::RefCell<Option<ksni::Handle<LinuxTray>>> = const { std::cell::RefCell::new(None) };
 
     #[cfg(not(target_os = "linux"))]
-    static TRAY_ICON: std::cell::RefCell<Option<tray_icon::TrayIcon>> = std::cell::RefCell::new(None);
+    static TRAY_ICON: std::cell::RefCell<Option<tray_icon::TrayIcon>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(target_os = "linux")]
@@ -71,12 +71,12 @@ pub fn setup_tray(
 ) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "linux")]
     {
-        return setup_linux_tray(theme, app_weak);
+        setup_linux_tray(theme, app_weak)
     }
 
     #[cfg(not(target_os = "linux"))]
     {
-        return setup_tray_icon_tray(theme, app_weak);
+        setup_tray_icon_tray(theme, app_weak)
     }
 }
 

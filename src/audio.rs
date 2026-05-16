@@ -310,10 +310,7 @@ where
     F: FnOnce() -> R,
 {
     unsafe {
-        let dev_null = libc::open(
-            b"/dev/null\0".as_ptr() as *const libc::c_char,
-            libc::O_WRONLY,
-        );
+        let dev_null = libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY);
         if dev_null < 0 {
             return f();
         }
@@ -444,20 +441,22 @@ fn enumerate_devices(host: &cpal::Host, blocklist: &[String]) -> Vec<AudioDevice
                 return None;
             }
 
-            let mut display_name = name.clone();
             #[cfg(target_os = "linux")]
-            {
+            let display_name = {
                 if name.starts_with("sysdefault:CARD=") {
-                    display_name = name.replace("sysdefault:CARD=", "");
+                    name.replace("sysdefault:CARD=", "")
                 } else {
-                    display_name = match name.as_str() {
+                    match name.as_str() {
                         "pulse" => "PulseAudio".to_string(),
                         "pipewire" => "PipeWire".to_string(),
                         "default" => "System Default".to_string(),
-                        _ => display_name,
-                    };
+                        _ => name.clone(),
+                    }
                 }
-            }
+            };
+
+            #[cfg(not(target_os = "linux"))]
+            let display_name = name.clone();
 
             let config = device.default_input_config().ok()?;
             Some(AudioDevice {
