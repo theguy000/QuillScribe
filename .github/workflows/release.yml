@@ -66,7 +66,8 @@ jobs:
             libxkbcommon-dev \
             libgl1-mesa-dev \
             cmake \
-            clang
+            clang \
+            mold
 
       # ── Windows: ensure cmake is available (for whisper.cpp build) ─────
       - name: Verify cmake (Windows)
