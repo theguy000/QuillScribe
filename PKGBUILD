@@ -56,6 +56,6 @@ Exec=quillscribe
 Icon=quillscribe
 Type=Application
 Categories=AudioVideo;Audio;Utility;
-StartupWMClass=QuillScribe
+StartupWMClass=quillscribe
 EOF
 }

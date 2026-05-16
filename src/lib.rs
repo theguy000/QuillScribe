@@ -475,6 +475,8 @@ pub fn run() {
     // Initialize logging
     env_logger::init();
 
+    window::select_backend();
+
     // Create a Tokio runtime for async tasks (Slint's event loop is not a Tokio runtime)
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
     let rt_handle = rt.handle().clone();
@@ -1290,6 +1292,7 @@ pub fn run() {
         });
         shared_cb.with_ui(|app| {
             app.set_current_theme(key.clone().into());
+            window::set_window_icon_theme(&app, &key);
         });
         tray::set_tray_theme(&key);
     });
@@ -1515,6 +1518,7 @@ pub fn run() {
     // stays alive in the tray even after the window is hidden.
     // (app.run() would exit as soon as the last window is hidden.)
     app.window().show().ok();
+    window::set_window_icon_theme(&app, &initial_theme);
     window::apply_always_on_top(&app, s.ui.always_on_top);
     slint::run_event_loop_until_quit().unwrap();
 

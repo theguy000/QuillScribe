@@ -4,7 +4,36 @@ use slint::{winit_030::WinitWindowAccessor, ComponentHandle};
 use std::sync::Once;
 
 #[cfg(target_os = "linux")]
+pub const LINUX_DESKTOP_ID: &str = "quillscribe";
+
+#[cfg(target_os = "linux")]
 static WAYLAND_TOPMOST_WARNING: Once = Once::new();
+
+/// Configure Slint's backend before any Slint windows are created.
+pub fn select_backend() {
+    #[cfg(target_os = "linux")]
+    {
+        let result = slint::BackendSelector::new()
+            .with_winit_window_attributes_hook(|attrs| {
+                let attrs = slint::winit_030::winit::platform::wayland::WindowAttributesExtWayland::with_name(
+                    attrs,
+                    LINUX_DESKTOP_ID,
+                    LINUX_DESKTOP_ID,
+                );
+                slint::winit_030::winit::platform::x11::WindowAttributesExtX11::with_name(
+                    attrs,
+                    LINUX_DESKTOP_ID,
+                    LINUX_DESKTOP_ID,
+                )
+            })
+            .select();
+
+        match result {
+            Ok(()) => debug!("Configured Linux window identity: {}", LINUX_DESKTOP_ID),
+            Err(e) => warn!("Could not configure Slint backend window identity: {}", e),
+        }
+    }
+}
 
 /// Start a window drag operation via winit.
 /// Call this from the titlebar's TouchArea `pointer-event` on down.
@@ -477,18 +506,30 @@ fn icon_from_png_bytes(png_bytes: &[u8]) -> Result<slint::winit_030::winit::wind
 }
 
 /// Set the window (taskbar) icon to match the current theme.
-pub fn set_window_icon_theme(app: &crate::App, theme: &str) {
+pub fn set_window_icon_theme(app: &crate::App, theme: &str) -> bool {
     let icon = match icon_from_png_bytes(taskbar_icon_bytes_for_theme(theme)) {
         Ok(icon) => icon,
         Err(e) => {
             warn!("Failed to set window icon for theme {}: {}", theme, e);
-            return;
+            return false;
         }
     };
-    app.window().with_winit_window(|winit_win| {
-        winit_win.set_window_icon(Some(icon));
-    });
-    debug!("Window icon updated for theme: {}", theme);
+    if app
+        .window()
+        .with_winit_window(|winit_win| {
+            winit_win.set_window_icon(Some(icon));
+        })
+        .is_some()
+    {
+        debug!("Window icon updated for theme: {}", theme);
+        true
+    } else {
+        debug!(
+            "Native winit window unavailable while setting icon for theme: {}",
+            theme
+        );
+        false
+    }
 }
 
 #[cfg(test)]

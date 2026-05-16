@@ -92,7 +92,7 @@ jobs:
           Icon=quillscribe
           Type=Application
           Categories=AudioVideo;Audio;Utility;
-          StartupWMClass=QuillScribe
+          StartupWMClass=quillscribe
           Terminal=false
           EOF
           cp appdir/usr/share/applications/quillscribe.desktop appdir/quillscribe.desktop
@@ -161,12 +161,12 @@ jobs:
             fi
           }
 
-          smoke_appimage "Ubuntu runner" bash -lc "./${appimage_target} --appimage-extract >/dev/null && test -x squashfs-root/AppRun && rm -rf squashfs-root"
+          smoke_appimage "Ubuntu runner" bash -lc "./${appimage_target} --appimage-extract >/dev/null && test -x squashfs-root/AppRun && test -f squashfs-root/quillscribe.desktop && grep -Fxq 'Icon=quillscribe' squashfs-root/quillscribe.desktop && grep -Fxq 'StartupWMClass=quillscribe' squashfs-root/quillscribe.desktop && test -f squashfs-root/quillscribe.png && rm -rf squashfs-root"
           smoke_appimage "Arch Linux container" docker run --rm \
             -v "$PWD:/work" \
             -w /work \
             archlinux:latest \
-            bash -lc "./${appimage_target} --appimage-extract >/dev/null && test -x squashfs-root/AppRun && rm -rf squashfs-root"
+            bash -lc "./${appimage_target} --appimage-extract >/dev/null && test -x squashfs-root/AppRun && test -f squashfs-root/quillscribe.desktop && grep -Fxq 'Icon=quillscribe' squashfs-root/quillscribe.desktop && grep -Fxq 'StartupWMClass=quillscribe' squashfs-root/quillscribe.desktop && test -f squashfs-root/quillscribe.png && rm -rf squashfs-root"
 
           cat > release-body.md <<EOF
           ## QuillScribe ${GITHUB_REF_NAME}

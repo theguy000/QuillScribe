@@ -353,6 +353,7 @@ Name=QuillScribe
 Comment=AI-powered voice dictation
 Exec=${SELECTED_EXEC}
 Icon=quillscribe
+StartupWMClass=quillscribe
 Terminal=false
 Categories=Utility;Accessibility;
 Keywords=dictation;voice;speech;transcription;AI;
