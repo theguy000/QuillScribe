@@ -130,14 +130,14 @@ jobs:
           dpkg-deb --build deb "quillscribe_${VERSION}_amd64.deb"
 
           appimage_target="quillscribe-${VERSION}-x86_64.AppImage"
-          appimagetool_version="1.9.0"
           appimagekit_version="13"
-          appimagetool_url="https://github.com/AppImage/appimagetool/releases/download/${appimagetool_version}/appimagetool-x86_64.AppImage"
+          appimagetool_url="https://github.com/AppImage/AppImageKit/releases/download/${appimagekit_version}/obsolete-appimagetool-x86_64.AppImage"
           runtime_url="https://github.com/AppImage/AppImageKit/releases/download/${appimagekit_version}/obsolete-runtime-x86_64"
           wget -q "$appimagetool_url" -O appimagetool-x86_64.AppImage
           wget -q "$runtime_url" -O runtime-x86_64
           chmod +x appimagetool-x86_64.AppImage runtime-x86_64
-          ARCH=x86_64 APPIMAGE_COMP=xz APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage \
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage \
+            --comp xz \
             --runtime-file runtime-x86_64 \
             appdir \
             "$appimage_target"
