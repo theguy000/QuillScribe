@@ -41,6 +41,7 @@ jobs:
             ca-certificates \
             clang \
             cmake \
+            desktop-file-utils \
             libasound2-dev \
             libdbus-1-dev \
             libfontconfig1-dev \
