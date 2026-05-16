@@ -22,6 +22,15 @@
 curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.sh | bash
 ```
 
+The installer uses the AppImage by default, validates the AppImage runtime before installing it, and falls back to the native Linux tarball if the AppImage runtime is incompatible with your distro.
+
+To force a specific Linux package format:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.sh | QUILLSCRIBE_INSTALL_FORMAT=appimage bash
+curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.sh | QUILLSCRIBE_INSTALL_FORMAT=tarball bash
+```
+
 **Windows / Manual download:** [Latest Release](https://github.com/theguy000/QuillScribe/releases/latest)
 
 ---

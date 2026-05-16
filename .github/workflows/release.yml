@@ -94,6 +94,14 @@ jobs:
           StartupWMClass=QuillScribe
           Terminal=false
           EOF
+          cp appdir/usr/share/applications/quillscribe.desktop appdir/quillscribe.desktop
+          cp appdir/usr/share/icons/hicolor/256x256/apps/quillscribe.png appdir/quillscribe.png
+          cat > appdir/AppRun <<'EOF'
+          #!/usr/bin/env sh
+          HERE=$(dirname "$(readlink -f "$0")")
+          exec "$HERE/usr/bin/quillscribe" "$@"
+          EOF
+          chmod 755 appdir/AppRun
 
           mkdir -p \
             deb/DEBIAN \
@@ -120,30 +128,45 @@ jobs:
           EOF
           dpkg-deb --build deb "quillscribe_${VERSION}_amd64.deb"
 
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
-          APPIMAGE_EXTRACT_AND_RUN=1 ./linuxdeploy-x86_64.AppImage \
-            --appdir appdir \
-            --executable appdir/usr/bin/quillscribe \
-            --desktop-file appdir/usr/share/applications/quillscribe.desktop \
-            --icon-file appdir/usr/share/icons/hicolor/256x256/apps/quillscribe.png \
-            --output appimage
-
-          appimage_path=""
-          for candidate in ./*.AppImage; do
-            [[ -e "$candidate" ]] || continue
-            [[ "$candidate" == "./linuxdeploy-x86_64.AppImage" ]] && continue
-            appimage_path="$candidate"
-            break
-          done
-          if [[ -z "$appimage_path" ]]; then
-            echo "linuxdeploy did not generate an AppImage" >&2
-            exit 1
-          fi
           appimage_target="quillscribe-${VERSION}-x86_64.AppImage"
-          if [[ "$(basename "$appimage_path")" != "$appimage_target" ]]; then
-            mv "$appimage_path" "$appimage_target"
-          fi
+          appimagetool_version="1.9.0"
+          appimagekit_version="13"
+          appimagetool_url="https://github.com/AppImage/appimagetool/releases/download/${appimagetool_version}/appimagetool-x86_64.AppImage"
+          runtime_url="https://github.com/AppImage/AppImageKit/releases/download/${appimagekit_version}/obsolete-runtime-x86_64"
+          wget -q "$appimagetool_url" -O appimagetool-x86_64.AppImage
+          wget -q "$runtime_url" -O runtime-x86_64
+          chmod +x appimagetool-x86_64.AppImage runtime-x86_64
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage \
+            --runtime-file runtime-x86_64 \
+            appdir \
+            "$appimage_target"
+
+          smoke_appimage() {
+            local label="$1"
+            shift
+            local output status
+            set +e
+            output=$("$@" 2>&1)
+            status=$?
+            set -e
+            printf '%s\n' "$output"
+            if grep -q 'elf_machine_rela_relative' <<< "$output"; then
+              echo "AppImage smoke test failed with loader relocation assertion in ${label}" >&2
+              return 1
+            fi
+            if [[ "$status" -ne 0 ]]; then
+              echo "AppImage smoke test failed in ${label} with status ${status}" >&2
+              return "$status"
+            fi
+          }
+
+          smoke_appimage "Ubuntu runner" env APPIMAGE_EXTRACT_AND_RUN=1 "./${appimage_target}" --appimage-version
+          smoke_appimage "Arch Linux container" docker run --rm \
+            -e APPIMAGE_EXTRACT_AND_RUN=1 \
+            -v "$PWD:/work" \
+            -w /work \
+            archlinux:latest \
+            bash -lc "./${appimage_target} --appimage-version"
 
           cat > release-body.md <<EOF
           ## QuillScribe ${GITHUB_REF_NAME}
