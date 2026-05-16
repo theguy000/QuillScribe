@@ -30,6 +30,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Refresh package metadata
+        shell: bash
         run: cargo metadata --no-deps --format-version 1 > /dev/null
 
       - name: Rust cache
@@ -221,6 +222,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Refresh package metadata
+        shell: bash
         run: cargo metadata --no-deps --format-version 1 > /dev/null
 
       - name: Rust cache
