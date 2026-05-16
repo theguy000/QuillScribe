@@ -358,8 +358,8 @@ mod tests {
         let json = serde_json::to_string_pretty(&settings).expect("serialize Settings");
         let parsed: Settings = serde_json::from_str(&json).expect("deserialize Settings");
 
-        assert_eq!(parsed.ui.custom_titlebar, false);
-        assert_eq!(parsed.ui.always_on_top, true);
+        assert!(!parsed.ui.custom_titlebar);
+        assert!(parsed.ui.always_on_top);
     }
 
     #[test]

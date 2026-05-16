@@ -1,15 +1,17 @@
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, USER_AGENT};
 use self_update::{backends::github::ReleaseList, update::ReleaseAsset};
+#[cfg(target_os = "linux")]
 use serde::Deserialize;
+#[cfg(target_os = "linux")]
 use std::{
-    env::{self, consts::EXE_SUFFIX},
-    fs,
-    path::{Path, PathBuf},
+    env, fs,
+    path::Path,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
+use std::{env::consts::EXE_SUFFIX, path::PathBuf};
 use tokio::io::AsyncWriteExt;
 
 const REPO_OWNER: &str = "theguy000";
@@ -106,7 +108,7 @@ fn find_latest_update() -> Result<Option<SelectedRelease>, String> {
             continue;
         }
 
-        let Some(asset) = select_release_asset(&release, &target) else {
+        let Some(asset) = select_release_asset(&release, target) else {
             continue;
         };
 

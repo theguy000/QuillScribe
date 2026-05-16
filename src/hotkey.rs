@@ -700,9 +700,11 @@ mod tests {
 
     #[test]
     fn parse_mouse_shortcut_accepts_modifier_mouse_button() {
-        let mut modifiers = ShortcutModifiers::default();
-        modifiers.control = true;
-        modifiers.shift = true;
+        let modifiers = ShortcutModifiers {
+            control: true,
+            shift: true,
+            ..Default::default()
+        };
 
         assert_eq!(
             parse_mouse_shortcut("Control+Shift+Mouse5").unwrap(),
@@ -723,10 +725,9 @@ mod tests {
     fn mouse_shortcut_matches_exact_modifiers() {
         let shortcut = MouseShortcut {
             button: 4,
-            modifiers: {
-                let mut modifiers = ShortcutModifiers::default();
-                modifiers.control = true;
-                modifiers
+            modifiers: ShortcutModifiers {
+                control: true,
+                ..Default::default()
             },
         };
 
