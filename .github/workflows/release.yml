@@ -50,6 +50,7 @@ jobs:
             libfuse2 \
             pkg-config \
             libfontconfig1-dev \
+            libssl-dev \
             librsvg2-dev \
             patchelf \
             libasound2-dev \
