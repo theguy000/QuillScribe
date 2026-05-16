@@ -61,7 +61,6 @@ jobs:
             libgl1-mesa-dev \
             cmake \
             clang \
-            mold \
             wget
 
       # -- Build ------------------------------------------------------------
