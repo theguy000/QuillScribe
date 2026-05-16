@@ -23,6 +23,14 @@ err()   { printf "\033[1;31m[error]\033[0m %s\n" "$1" >&2; exit 1; }
 
 command_exists() { command -v "$1" &>/dev/null; }
 
+download_failed() {
+  rm -f "${TMP_DEST:-}"
+  warn "Could not download ${FILENAME}."
+  warn "If QuillScribe is running, quit it from the app/tray menu and run the installer again."
+  warn "To force quit it, run: pkill -f QuillScribe.AppImage"
+  err "Download failed."
+}
+
 # ── Preflight checks ────────────────────────────────────────────────────────
 
 if [[ "$(uname -s)" != "Linux" ]]; then
@@ -64,14 +72,18 @@ DEST="${INSTALL_DIR}/${APP_NAME}.AppImage"
 info "Downloading ${FILENAME}…"
 
 mkdir -p "$INSTALL_DIR"
+TMP_DEST=$(mktemp "${INSTALL_DIR}/.${APP_NAME}.AppImage.XXXXXX") || err "Could not create temporary download file."
+trap 'rm -f "${TMP_DEST:-}"' EXIT
 
 if command_exists curl; then
-  curl -fSL --progress-bar -o "$DEST" "$APPIMAGE_URL" || err "Download failed."
+  curl -fSL --progress-bar -o "$TMP_DEST" "$APPIMAGE_URL" || download_failed
 else
-  wget -q --show-progress -O "$DEST" "$APPIMAGE_URL"   || err "Download failed."
+  wget -q --show-progress -O "$TMP_DEST" "$APPIMAGE_URL"   || download_failed
 fi
 
-chmod +x "$DEST"
+chmod +x "$TMP_DEST"
+mv -f "$TMP_DEST" "$DEST" || err "Could not install ${DEST}. Close QuillScribe and try again."
+trap - EXIT
 
 # ── Optional: create symlink without .AppImage extension ──────────────────
 
