@@ -122,7 +122,7 @@ jobs:
             --desktop-file appdir/usr/share/applications/quillscribe.desktop \
             --icon-file appdir/usr/share/icons/hicolor/128x128/apps/quillscribe.png \
             --output appimage
-          mv ./*-x86_64.AppImage "quillscribe-${VERSION}-x86_64.AppImage"
+          mv "QuillScribe-${VERSION}-x86_64.AppImage" "quillscribe-${VERSION}-x86_64.AppImage"
 
       - name: Package binary (Windows)
         if: matrix.platform == 'windows-latest'
