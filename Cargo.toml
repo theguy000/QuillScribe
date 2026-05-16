@@ -1,6 +1,6 @@
 [package]
 name = "quillscribe"
-version = "0.3.4"
+version = "0.3.5"
 description = "Beautiful Voice-to-Text Transcription App"
 authors = ["QuillScribe Team"]
 license = "MIT"

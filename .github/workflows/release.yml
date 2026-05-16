@@ -48,6 +48,7 @@ jobs:
             patchelf \
             libasound2-dev \
             libxi-dev \
+            libxtst-dev \
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
