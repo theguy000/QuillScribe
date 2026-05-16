@@ -1,6 +1,6 @@
 # Maintainer: Istiak <istiakm30@gmail.com>
 pkgname=quillscribe
-pkgver=0.1.3
+pkgver=0.3.17
 pkgrel=1
 pkgdesc="Beautiful Voice-to-Text Transcription App with local and cloud speech-to-text support"
 arch=('x86_64')
@@ -22,7 +22,15 @@ makedepends=(
   'librsvg'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/theguy000/QuillScribe/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('b8882dabee782de6d1ee4c24d03db71f1e6228430495214f7f3d77357bb8ac10')
+sha256sums=('e5955879a12103b0200d6e2067bb6178e1722fe6ca693c8666b23cabac247a61')
+
+prepare() {
+  cd "QuillScribe-$pkgver"
+
+  # Keep the binary's runtime version aligned with the AUR package version.
+  sed -i -E "s/^version = \".*\"/version = \"$pkgver\"/" Cargo.toml
+  cargo metadata --no-deps --format-version 1 >/dev/null
+}
 
 build() {
   cd "QuillScribe-$pkgver"

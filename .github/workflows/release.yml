@@ -29,6 +29,9 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Refresh package metadata
+        run: cargo metadata --no-deps --format-version 1 > /dev/null
+
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
@@ -216,6 +219,9 @@ jobs:
       # -- Rust -------------------------------------------------------------
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Refresh package metadata
+        run: cargo metadata --no-deps --format-version 1 > /dev/null
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2

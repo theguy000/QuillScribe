@@ -28,26 +28,18 @@ jobs:
       - name: Set version from tag
         shell: bash
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#lite-v}"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Setting version to $VERSION"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
-      - name: Commit version bump back to repo
-        if: matrix.platform == 'ubuntu-22.04'
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout quillscribe-lite
-          git add Cargo.toml
-          git diff --cached --quiet && echo "No version changes to commit" && exit 0
-          git commit -m "chore: bump lite version to ${{ env.VERSION }}"
-          git push origin quillscribe-lite
-
       # ── Rust ────────────────────────────────────────────────────────────
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Refresh package metadata
+        run: cargo metadata --no-deps --format-version 1 > /dev/null
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
