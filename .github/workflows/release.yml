@@ -64,6 +64,9 @@ jobs:
             wget
 
       # -- Build ------------------------------------------------------------
+      - name: Use default linker in Ubuntu 20.04 container
+        run: sed -i '/link-arg=-fuse-ld=mold/d' .cargo/config.toml
+
       - name: Build release binary
         run: cargo build --release
 
