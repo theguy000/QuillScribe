@@ -81,6 +81,8 @@ cargo clippy -- -D warnings
 
 Slint UI rendered via FemtoVG, Rust backend for audio, transcription, and system integration. Direct Rust callbacks (no IPC layer).
 
+TODO: If QuillScribe becomes popular enough to justify the maintenance cost, reduce idle memory usage by splitting the always-running background service from the on-demand GUI and lazy-loading heavier audio, transcription, and networking components.
+
 | Module | Role |
 |---|---|
 | `audio.rs` | Microphone capture, device enumeration |
