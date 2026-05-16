@@ -58,6 +58,15 @@ pub fn hide_to_tray(app: &crate::App) {
     app.window().hide().ok();
 }
 
+/// Restore the main window from tray/minimized state and ask the window manager to activate it.
+pub fn show_main_window(app: &crate::App) {
+    app.window().set_minimized(false);
+    app.window().show().ok();
+    app.window().with_winit_window(|winit_win| {
+        winit_win.focus_window();
+    });
+}
+
 /// Quit the application — hide window and stop the Slint event loop.
 pub fn quit_app(app: &crate::App) {
     info!("Quit requested");

@@ -6,8 +6,6 @@ use tray_icon::{
     Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent,
 };
 
-use slint::ComponentHandle;
-
 thread_local! {
     #[cfg(target_os = "linux")]
     static TRAY_ICON: std::cell::RefCell<Option<ksni::Handle<LinuxTray>>> = const { std::cell::RefCell::new(None) };
@@ -177,8 +175,7 @@ where
 
 fn show_app(app_weak: &slint::Weak<crate::App>) {
     with_app(app_weak, |app| {
-        app.window().set_minimized(false);
-        app.window().show().ok();
+        crate::window::show_main_window(&app);
     });
 }
 
@@ -195,7 +192,7 @@ fn handle_menu_event(id: &str, app_weak: &slint::Weak<crate::App>) {
         }),
         MENU_ID_SETTINGS => with_app(app_weak, |app| {
             app.set_active_panel("settings".into());
-            app.window().show().ok();
+            crate::window::show_main_window(&app);
         }),
         MENU_ID_EXIT => with_app(app_weak, |app| {
             crate::window::quit_app(&app);
