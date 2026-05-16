@@ -610,6 +610,8 @@ pub fn run() {
     app.set_settings_max_history_entries(max_history_entries as i32);
     app.set_settings_app_version(env!("CARGO_PKG_VERSION").into());
     app.set_settings_is_linux(cfg!(target_os = "linux"));
+    app.set_settings_update_can_install(false);
+    app.set_settings_update_install_message("".into());
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
     window::apply_always_on_top(&app, s.ui.always_on_top);
     refresh_history_ui(&app, &shared.state, HISTORY_DAYS);
@@ -859,6 +861,8 @@ pub fn run() {
             app.set_settings_update_downloading(false);
             app.set_settings_update_progress(0.0);
             app.set_settings_update_notes("".into());
+            app.set_settings_update_can_install(false);
+            app.set_settings_update_install_message("".into());
             app.set_status_message("Checking for updates...".into());
         });
 
@@ -890,6 +894,8 @@ pub fn run() {
                             app.set_settings_update_version(update.version.into());
                             app.set_settings_update_notes(notes.into());
                             app.set_settings_update_progress(0.0);
+                            app.set_settings_update_can_install(update.can_install);
+                            app.set_settings_update_install_message(update.install_hint.into());
                             app.set_status_message("Update available".into());
                         }
                         Ok(None) => {
@@ -897,6 +903,8 @@ pub fn run() {
                             app.set_settings_update_version("".into());
                             app.set_settings_update_notes("".into());
                             app.set_settings_update_progress(0.0);
+                            app.set_settings_update_can_install(false);
+                            app.set_settings_update_install_message("".into());
                             app.set_status_message("QuillScribe is up to date".into());
                         }
                         Err(error) => {
@@ -905,6 +913,8 @@ pub fn run() {
                             app.set_settings_update_notes(
                                 format!("Update check failed: {error}").into(),
                             );
+                            app.set_settings_update_can_install(false);
+                            app.set_settings_update_install_message("".into());
                             app.set_status_message("Update check failed".into());
                         }
                     }

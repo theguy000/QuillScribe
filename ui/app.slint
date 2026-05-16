@@ -98,6 +98,8 @@ export component App inherits Window {
     in-out property <bool> settings-update-downloading: false;
     in-out property <float> settings-update-progress: 0;
     in-out property <bool> settings-is-linux: false;
+    in-out property <bool> settings-update-can-install: false;
+    in-out property <string> settings-update-install-message;
 
     // ── Core callbacks — wired from Rust ─────────────────────────────────
     callback request-navigate(string);
@@ -302,6 +304,8 @@ export component App inherits Window {
                         update-downloading <=> settings-update-downloading;
                         update-progress <=> settings-update-progress;
                         is-linux <=> settings-is-linux;
+                        update-can-install <=> settings-update-can-install;
+                        update-install-message <=> settings-update-install-message;
                         check-for-update => { check-for-update(); }
                         install-update => { install-update(); }
                     }

@@ -11,6 +11,8 @@ export component AboutTab inherits VerticalLayout {
     in-out property <bool> update-downloading;
     in-out property <float> update-progress;
     in-out property <bool> is-linux;
+    in-out property <bool> update-can-install;
+    in-out property <string> update-install-message;
 
     callback check-for-update();
     callback install-update();
@@ -129,16 +131,14 @@ export component AboutTab inherits VerticalLayout {
                         wrap: word-wrap;
                     }
 
-                    // Linux note
-                    if is-linux: Text {
-                        text: "Automatic installation isn't supported on Linux. Download the latest release from GitHub Releases.";
+                    if update-install-message != "": Text {
+                        text: update-install-message;
                         color: theme-colors.text_secondary;
                         font-size: 12px;
                         wrap: word-wrap;
                     }
 
-                    // Progress bar (non-Linux)
-                    if !is-linux && update-downloading: HorizontalLayout {
+                    if update-can-install && update-downloading: HorizontalLayout {
                         spacing: 8px;
                         alignment: start;
 
@@ -166,8 +166,7 @@ export component AboutTab inherits VerticalLayout {
                         }
                     }
 
-                    // Install button (non-Linux)
-                    if !is-linux && !update-downloading: SettingsButton {
+                    if update-can-install && !update-downloading: SettingsButton {
                         theme-colors: theme-colors;
                         label: "Download & Install";
                         primary: true;

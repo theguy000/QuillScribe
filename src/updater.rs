@@ -1,7 +1,15 @@
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, USER_AGENT};
 use self_update::{backends::github::ReleaseList, update::ReleaseAsset};
-use std::{env::consts::EXE_SUFFIX, path::PathBuf};
+use serde::Deserialize;
+use std::{
+    env::{self, consts::EXE_SUFFIX},
+    fs,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
 use tokio::io::AsyncWriteExt;
 
 const REPO_OWNER: &str = "theguy000";
@@ -9,6 +17,7 @@ const REPO_NAME: &str = "QuillScribe";
 const BIN_NAME: &str = "quillscribe";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const USER_AGENT_VALUE: &str = concat!("QuillScribe/", env!("CARGO_PKG_VERSION"));
+const LINUX_TARBALL_ASSET: &str = "quillscribe-x86_64-unknown-linux-gnu.tar.gz";
 
 #[derive(Clone, Debug)]
 pub struct AvailableUpdate {
@@ -16,6 +25,8 @@ pub struct AvailableUpdate {
     pub notes: String,
     pub asset_name: String,
     pub download_url: String,
+    pub can_install: bool,
+    pub install_hint: String,
 }
 
 struct SelectedRelease {
@@ -34,6 +45,11 @@ where
     progress_cb(5.0);
     let selected =
         find_latest_update()?.ok_or_else(|| "You're already on the latest version.".to_string())?;
+
+    #[cfg(target_os = "linux")]
+    if !selected.update.can_install {
+        return Err(selected.update.install_hint);
+    }
 
     let temp_dir = self_update::TempDir::new()
         .map_err(|e| format!("Failed to create update temp dir: {e}"))?;
@@ -58,6 +74,10 @@ where
     ensure_executable(&new_exe)?;
     progress_cb(98.0);
 
+    #[cfg(target_os = "linux")]
+    install_linux_update(&new_exe)?;
+
+    #[cfg(not(target_os = "linux"))]
     self_update::self_replace::self_replace(&new_exe)
         .map_err(|e| format!("Failed to replace current executable: {e}"))?;
 
@@ -86,7 +106,7 @@ fn find_latest_update() -> Result<Option<SelectedRelease>, String> {
             continue;
         }
 
-        let Some(asset) = release.asset_for(target, None) else {
+        let Some(asset) = select_release_asset(&release, &target) else {
             continue;
         };
 
@@ -97,6 +117,7 @@ fn find_latest_update() -> Result<Option<SelectedRelease>, String> {
 
         if should_replace {
             let notes = release.body.unwrap_or_default();
+            let install_support = install_support();
             latest = Some((
                 version.clone(),
                 SelectedRelease {
@@ -105,6 +126,8 @@ fn find_latest_update() -> Result<Option<SelectedRelease>, String> {
                         notes,
                         asset_name: asset.name.clone(),
                         download_url: asset.download_url.clone(),
+                        can_install: install_support.can_install,
+                        install_hint: install_support.hint,
                     },
                     asset,
                 },
@@ -113,6 +136,56 @@ fn find_latest_update() -> Result<Option<SelectedRelease>, String> {
     }
 
     Ok(latest.map(|(_, selected)| selected))
+}
+
+fn select_release_asset(
+    release: &self_update::update::Release,
+    _target: &str,
+) -> Option<ReleaseAsset> {
+    #[cfg(target_os = "linux")]
+    {
+        release
+            .assets
+            .iter()
+            .find(|asset| asset.name == LINUX_TARBALL_ASSET)
+            .cloned()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        release.asset_for(_target, None)
+    }
+}
+
+struct InstallSupport {
+    can_install: bool,
+    hint: String,
+}
+
+fn install_support() -> InstallSupport {
+    #[cfg(target_os = "linux")]
+    {
+        match read_managed_linux_install_metadata() {
+            Ok(_) => InstallSupport {
+                can_install: true,
+                hint: String::new(),
+            },
+            Err(reason) => InstallSupport {
+                can_install: false,
+                hint: format!(
+                    "Automatic Linux updates require a managed tarball install. {reason}"
+                ),
+            },
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        InstallSupport {
+            can_install: true,
+            hint: String::new(),
+        }
+    }
 }
 
 fn normalize_version(version: &str) -> Option<String> {
@@ -193,6 +266,134 @@ fn asset_file_name(asset_name: &str) -> Result<PathBuf, String> {
 
 fn bin_path_in_archive() -> PathBuf {
     PathBuf::from(format!("{BIN_NAME}{EXE_SUFFIX}"))
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Deserialize)]
+struct InstallMetadata {
+    managed_by: String,
+    selected_format: String,
+    binary_path: PathBuf,
+}
+
+#[cfg(target_os = "linux")]
+fn install_metadata_path() -> Result<PathBuf, String> {
+    dirs::data_dir()
+        .map(|path| path.join("quillscribe").join("install.json"))
+        .ok_or_else(|| "Could not locate the user data directory.".to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn read_managed_linux_install_metadata() -> Result<InstallMetadata, String> {
+    let metadata_path = install_metadata_path()?;
+    let contents = fs::read_to_string(&metadata_path).map_err(|_| {
+        format!(
+            "Rerun the one-line installer so it can create {}.",
+            metadata_path.display()
+        )
+    })?;
+    let metadata: InstallMetadata =
+        serde_json::from_str(&contents).map_err(|e| format!("Install metadata is invalid: {e}"))?;
+
+    if metadata.managed_by != "quillscribe-installer" {
+        return Err("The current install is not managed by the QuillScribe installer.".to_string());
+    }
+
+    if metadata.selected_format != "tarball" {
+        return Err(
+            "AppImage and package-manager installs should be updated outside the app.".to_string(),
+        );
+    }
+
+    let current_exe = env::current_exe()
+        .map_err(|e| format!("Could not determine the running executable: {e}"))?;
+    let current_exe = current_exe
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve the running executable path: {e}"))?;
+    let managed_binary = metadata
+        .binary_path
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve managed binary path: {e}"))?;
+
+    if current_exe != managed_binary {
+        return Err(format!(
+            "The running executable is {}, but the managed install is {}.",
+            current_exe.display(),
+            managed_binary.display()
+        ));
+    }
+
+    Ok(metadata)
+}
+
+#[cfg(target_os = "linux")]
+fn install_linux_update(new_exe: &Path) -> Result<(), String> {
+    let metadata = read_managed_linux_install_metadata()?;
+    let install_path = metadata.binary_path;
+    let install_dir = install_path
+        .parent()
+        .ok_or_else(|| format!("Managed binary path is invalid: {}", install_path.display()))?;
+    let staged_path = install_dir.join(format!(".{BIN_NAME}.new"));
+    let backup_path = install_dir.join(format!(".{BIN_NAME}.previous"));
+
+    fs::copy(new_exe, &staged_path).map_err(|e| {
+        format!(
+            "Failed to stage updated binary at {}: {e}",
+            staged_path.display()
+        )
+    })?;
+    ensure_executable(&staged_path)?;
+    validate_binary_health_check(&staged_path)?;
+
+    fs::copy(&install_path, &backup_path).map_err(|e| {
+        format!(
+            "Failed to back up current binary to {}: {e}",
+            backup_path.display()
+        )
+    })?;
+    ensure_executable(&backup_path)?;
+
+    fs::rename(&staged_path, &install_path).map_err(|e| {
+        format!(
+            "Failed to replace {} with the staged update: {e}",
+            install_path.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn validate_binary_health_check(path: &Path) -> Result<(), String> {
+    let mut child = Command::new(path)
+        .arg("--health-check")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to run update health check: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| format!("Failed while waiting for update health check: {e}"))?
+        {
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(format!("Update health check failed with status {status}"))
+            };
+        }
+
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Update health check timed out.".to_string());
+        }
+
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 #[cfg(unix)]

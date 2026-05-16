@@ -22,7 +22,7 @@
 curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.sh | bash
 ```
 
-The installer uses the AppImage by default, validates the AppImage runtime before installing it, and falls back to the native Linux tarball if the AppImage runtime is incompatible with your distro.
+The installer uses the native Linux tarball by default and writes install metadata so QuillScribe can safely perform in-app updates. If the tarball is unavailable, it falls back to the AppImage.
 
 To force a specific Linux package format:
 
@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.
 - **System tray** — Background mode with quick-access menu
 - **History** — Browse and search past transcriptions
 - **12 themes** — 6 light + 6 dark
-- **Auto-updates** — Seamless OTA via GitHub Releases
+- **Auto-updates** — Seamless OTA for installer-managed Linux tarball installs and supported desktop platforms
 
 ## Tech Stack
 

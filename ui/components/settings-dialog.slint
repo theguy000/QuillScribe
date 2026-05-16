@@ -114,6 +114,8 @@ export component SettingsDialog inherits Rectangle {
     in-out property <bool> update-downloading: false;
     in-out property <float> update-progress: 0;
     in-out property <bool> is-linux: false;
+    in-out property <bool> update-can-install: false;
+    in-out property <string> update-install-message;
 
     // Callbacks
     callback refresh-audio-devices();
@@ -344,6 +346,8 @@ export component SettingsDialog inherits Rectangle {
                                 update-downloading: update-downloading;
                                 update-progress: update-progress;
                                 is-linux: is-linux;
+                                update-can-install: update-can-install;
+                                update-install-message: update-install-message;
                                 check-for-update => { check-for-update(); }
                                 install-update => { install-update(); }
                             }

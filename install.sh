@@ -9,7 +9,7 @@
 #   ./install.sh
 #
 # Optional:
-#   QUILLSCRIBE_INSTALL_FORMAT=auto|appimage|tarball ./install.sh
+#   QUILLSCRIBE_INSTALL_FORMAT=auto|tarball|appimage ./install.sh
 #
 set -euo pipefail
 
@@ -17,6 +17,7 @@ REPO="theguy000/QuillScribe"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 APP_NAME="QuillScribe"
 INSTALL_FORMAT="${QUILLSCRIBE_INSTALL_FORMAT:-auto}"
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -88,9 +89,10 @@ else
   RELEASE_JSON=$(wget -qO- "$API_URL")  || err "Failed to reach GitHub API. Check your connection."
 fi
 
-APPIMAGE_URL=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"browser_download_url":\s*"\K[^"]*\.AppImage"' | tr -d '"' || true)
+APPIMAGE_URL=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"browser_download_url":\s*"\K[^"]*quillscribe-[^"]*-x86_64\.AppImage"' | tr -d '"' || true)
 TARBALL_URL=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"browser_download_url":\s*"\K[^"]*quillscribe-x86_64-unknown-linux-gnu\.tar\.gz"' | tr -d '"' || true)
 TAG_NAME=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"tag_name":\s*"\K[^"]+' || true)
+VERSION="${TAG_NAME#v}"
 
 case "$INSTALL_FORMAT" in
   appimage) require_asset "$APPIMAGE_URL" "AppImage" ;;
@@ -110,8 +112,13 @@ mkdir -p "$INSTALL_DIR"
 
 APPIMAGE_DEST="${INSTALL_DIR}/${APP_NAME}.AppImage"
 LAUNCHER_PATH="${INSTALL_DIR}/quillscribe"
+METADATA_DIR="${XDG_DATA_HOME}/quillscribe"
+METADATA_PATH="${METADATA_DIR}/install.json"
 SELECTED_EXEC=""
 SELECTED_FORMAT=""
+SELECTED_DISPLAY_FORMAT=""
+SELECTED_ASSET_URL=""
+SELECTED_ASSET_NAME=""
 
 ensure_launcher_replaceable() {
   if [[ -d "$LAUNCHER_PATH" && ! -L "$LAUNCHER_PATH" ]]; then
@@ -119,8 +126,78 @@ ensure_launcher_replaceable() {
   fi
 }
 
+validate_appimage_runtime() {
+  local appimage_path="$1"
+  local label="$2"
+  local output exit_code
+
+  set +e
+  output=$("$appimage_path" --appimage-version 2>&1)
+  exit_code=$?
+  set -e
+
+  if [[ "$exit_code" -ne 0 ]] || grep -q 'elf_machine_rela_relative' <<< "$output"; then
+    warn "${label} AppImage runtime validation failed."
+    if [[ -n "$output" ]]; then
+      printf '%s\n' "$output" >&2
+    fi
+    return 1
+  fi
+}
+
+check_existing_appimage_install() {
+  if [[ ! -f "$APPIMAGE_DEST" ]]; then
+    return 0
+  fi
+
+  if ! validate_appimage_runtime "$APPIMAGE_DEST" "Existing"; then
+    warn "Existing AppImage install at ${APPIMAGE_DEST} is broken or incompatible."
+    warn "The installer will replace the launcher with the selected install format."
+  fi
+}
+
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  printf '%s' "$value"
+}
+
+write_install_metadata() {
+  local tmp_metadata installed_at requested_format
+  requested_format="${QUILLSCRIBE_INSTALL_FORMAT:-auto}"
+  installed_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+  mkdir -p "$METADATA_DIR"
+  tmp_metadata=$(mktemp "${METADATA_DIR}/install.json.XXXXXX") || err "Could not create install metadata file."
+  TEMP_PATHS+=("$tmp_metadata")
+
+  cat > "$tmp_metadata" <<EOF
+{
+  "schema_version": 1,
+  "managed_by": "quillscribe-installer",
+  "version": "$(json_escape "$VERSION")",
+  "tag_name": "$(json_escape "$TAG_NAME")",
+  "installed_at": "$(json_escape "$installed_at")",
+  "requested_format": "$(json_escape "$requested_format")",
+  "selected_format": "$(json_escape "$SELECTED_FORMAT")",
+  "install_dir": "$(json_escape "$INSTALL_DIR")",
+  "binary_path": "$(json_escape "$LAUNCHER_PATH")",
+  "appimage_path": "$(json_escape "$APPIMAGE_DEST")",
+  "launcher_path": "$(json_escape "$LAUNCHER_PATH")",
+  "asset_name": "$(json_escape "$SELECTED_ASSET_NAME")",
+  "asset_url": "$(json_escape "$SELECTED_ASSET_URL")"
+}
+EOF
+
+  chmod 644 "$tmp_metadata"
+  mv -f "$tmp_metadata" "$METADATA_PATH" || err "Could not write install metadata."
+  ok "Install metadata written: ${METADATA_PATH}"
+}
+
 install_appimage() {
-  local filename tmp_dest output status
+  local filename tmp_dest
 
   require_asset "$APPIMAGE_URL" "AppImage"
   filename=$(basename "$APPIMAGE_URL")
@@ -139,14 +216,7 @@ install_appimage() {
   chmod +x "$tmp_dest"
 
   info "Validating AppImage runtime…"
-  set +e
-  output=$("$tmp_dest" --appimage-version 2>&1)
-  status=$?
-  set -e
-
-  if [[ "$status" -ne 0 ]] || grep -q 'elf_machine_rela_relative' <<< "$output"; then
-    warn "AppImage runtime validation failed."
-    printf '%s\n' "$output" >&2
+  if ! validate_appimage_runtime "$tmp_dest" "Downloaded"; then
     return 1
   fi
 
@@ -155,7 +225,10 @@ install_appimage() {
   ln -sfn "$APPIMAGE_DEST" "$LAUNCHER_PATH"
 
   SELECTED_EXEC="$LAUNCHER_PATH"
-  SELECTED_FORMAT="AppImage"
+  SELECTED_FORMAT="appimage"
+  SELECTED_DISPLAY_FORMAT="AppImage"
+  SELECTED_ASSET_URL="$APPIMAGE_URL"
+  SELECTED_ASSET_NAME="$filename"
   ok "AppImage installed: ${APPIMAGE_DEST}"
   ok "Symlink created: ${LAUNCHER_PATH} → ${APPIMAGE_DEST}"
 }
@@ -165,7 +238,8 @@ install_tarball() {
 
   require_asset "$TARBALL_URL" "Linux tarball"
   if ! command_exists tar; then
-    err "tar is required to install the Linux tarball fallback. Install tar and re-run."
+    warn "tar is required to install the Linux tarball fallback. Install tar and re-run."
+    return 1
   fi
 
   filename=$(basename "$TARBALL_URL")
@@ -179,13 +253,17 @@ install_tarball() {
   if ! download_file "$TARBALL_URL" "$tmp_archive"; then
     warn "Could not download ${filename}."
     warn "If QuillScribe is running, quit it from the app/tray menu and run the installer again."
-    err "Download failed."
+    return 1
   fi
 
-  tar -xzf "$tmp_archive" -C "$tmp_dir" || err "Could not extract ${filename}."
+  if ! tar -xzf "$tmp_archive" -C "$tmp_dir"; then
+    warn "Could not extract ${filename}."
+    return 1
+  fi
   extracted_binary="${tmp_dir}/quillscribe"
   if [[ ! -f "$extracted_binary" ]]; then
-    err "Linux tarball did not contain the expected quillscribe executable."
+    warn "Linux tarball did not contain the expected quillscribe executable."
+    return 1
   fi
 
   ensure_launcher_replaceable
@@ -194,31 +272,40 @@ install_tarball() {
   mv -fT "$tmp_binary" "$LAUNCHER_PATH" || err "Could not install ${LAUNCHER_PATH}. Close QuillScribe and try again."
 
   SELECTED_EXEC="$LAUNCHER_PATH"
-  SELECTED_FORMAT="native Linux tarball"
+  SELECTED_FORMAT="tarball"
+  SELECTED_DISPLAY_FORMAT="native Linux tarball"
+  SELECTED_ASSET_URL="$TARBALL_URL"
+  SELECTED_ASSET_NAME="$filename"
   ok "Native executable installed: ${LAUNCHER_PATH}"
 }
 
 # ── Download and install ───────────────────────────────────────────────────
+
+if [[ "$INSTALL_FORMAT" != "tarball" ]]; then
+  check_existing_appimage_install
+fi
 
 case "$INSTALL_FORMAT" in
   appimage)
     install_appimage || err "AppImage install failed. Use QUILLSCRIBE_INSTALL_FORMAT=tarball to install the native Linux tarball instead."
     ;;
   tarball)
-    install_tarball
+    install_tarball || err "Linux tarball install failed. Use QUILLSCRIBE_INSTALL_FORMAT=appimage to install the AppImage instead."
     ;;
   auto)
-    if [[ -n "${APPIMAGE_URL:-}" ]] && install_appimage; then
+    if [[ -n "${TARBALL_URL:-}" ]] && install_tarball; then
       :
     else
-      if [[ -z "${TARBALL_URL:-}" ]]; then
-        err "AppImage install failed and no Linux tarball fallback is available."
+      if [[ -z "${APPIMAGE_URL:-}" ]]; then
+        err "Linux tarball install failed and no AppImage fallback is available."
       fi
-      warn "Falling back to the native Linux tarball."
-      install_tarball
+      warn "Falling back to the AppImage."
+      install_appimage || err "AppImage fallback install failed."
     fi
     ;;
 esac
+
+write_install_metadata
 
 # ── Ensure install dir is on PATH ──────────────────────────────────────────
 
@@ -282,7 +369,7 @@ ok "Desktop entry created: ${DESKTOP_FILE}"
 # ── Done ────────────────────────────────────────────────────────────────────
 
 echo ""
-ok "QuillScribe ${TAG_NAME} installed via ${SELECTED_FORMAT}!"
+ok "QuillScribe ${TAG_NAME} installed via ${SELECTED_DISPLAY_FORMAT}!"
 echo ""
 echo "  Run it with:"
 echo "    quillscribe"
@@ -290,13 +377,14 @@ echo "  — or —"
 echo "    ${SELECTED_EXEC}"
 echo ""
 echo "To uninstall this install, delete:"
-if [[ "$SELECTED_FORMAT" == "AppImage" ]]; then
+if [[ "$SELECTED_FORMAT" == "appimage" ]]; then
   echo "    ${APPIMAGE_DEST}"
 fi
 echo "    ${LAUNCHER_PATH}"
 echo "    ${DESKTOP_FILE}"
 echo "    ${ICON_PATH}"
-if [[ "$SELECTED_FORMAT" != "AppImage" && -e "$APPIMAGE_DEST" ]]; then
+echo "    ${METADATA_PATH}"
+if [[ "$SELECTED_FORMAT" != "appimage" && -e "$APPIMAGE_DEST" ]]; then
   echo ""
   echo "If replacing a previous AppImage install, you may also remove:"
   echo "    ${APPIMAGE_DEST}"
