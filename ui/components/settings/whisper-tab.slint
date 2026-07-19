@@ -107,6 +107,7 @@ export component WhisperTab inherits VerticalLayout {
                     input-type: show-api-key ? InputType.text : InputType.password;
                     text <=> api-key;
                     placeholder-text: api-provider == "groq" ? "gsk_..." : "sk-...";
+                    edited(val) => { api-key-changed(val); }
                 }
 
                 // Toggle visibility

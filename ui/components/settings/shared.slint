@@ -393,6 +393,7 @@ export component SettingsInput inherits HorizontalLayout {
     in-out property <string> text;
     in property <string> placeholder-text;
     in property <InputType> input-type: InputType.text;
+    callback edited(string);
 
     alignment: start;
 
@@ -415,6 +416,7 @@ export component SettingsInput inherits HorizontalLayout {
             vertical-alignment: center;
             input-type: root.input-type;
             single-line: true;
+            edited => { root.edited(self.text); }
 
             cursor-position-changed(cursor-position) => {
                 // Scroll text so cursor stays visible within the clipped area
