@@ -22,13 +22,13 @@ export component TitleBar {
         property <bool> drag-toggle: false;
 
         // Two TouchAreas alternate via drag-toggle so the active one
-        // instantly drops the OS pointer grab on click.
+        // drops the OS pointer grab after winit receives the button-down event.
         ta1 := TouchArea {
             enabled: !drag-toggle;
             pointer-event(event) => {
                 if event.kind == PointerEventKind.down {
-                    drag-toggle = true;
                     drag-window();
+                    drag-toggle = true;
                 }
             }
         }
@@ -37,8 +37,8 @@ export component TitleBar {
             enabled: drag-toggle;
             pointer-event(event) => {
                 if event.kind == PointerEventKind.down {
-                    drag-toggle = false;
                     drag-window();
+                    drag-toggle = false;
                 }
             }
         }
