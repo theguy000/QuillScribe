@@ -19,6 +19,7 @@ const REPO_NAME: &str = "QuillScribe";
 const BIN_NAME: &str = "quillscribe";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const USER_AGENT_VALUE: &str = concat!("QuillScribe/", env!("CARGO_PKG_VERSION"));
+#[cfg(target_os = "linux")]
 const LINUX_TARBALL_ASSET: &str = "quillscribe-x86_64-unknown-linux-gnu.tar.gz";
 
 #[derive(Clone, Debug)]
