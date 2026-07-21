@@ -1139,6 +1139,14 @@ pub fn run() {
     });
 
     let shared_cb = Arc::clone(&shared);
+    app.on_settings_groq_api_key_changed(move |key: slint::SharedString| {
+        let key_str = key.to_string();
+        save_config_field(&shared_cb, |s| {
+            s.whisper.groq_api_key = key_str;
+        });
+    });
+
+    let shared_cb = Arc::clone(&shared);
     app.on_settings_api_model_changed(move |model: slint::SharedString| {
         let model_str = model.to_string();
         save_config_field(&shared_cb, |s| {

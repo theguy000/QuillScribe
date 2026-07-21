@@ -126,6 +126,7 @@ export component App inherits Window {
     callback settings-mode-changed(string);
     callback settings-provider-changed(string);
     callback settings-api-key-changed(string);
+    callback settings-groq-api-key-changed(string);
     callback settings-api-model-changed(string);
     callback settings-language-changed(string);
     callback settings-local-model-changed(string);
@@ -261,6 +262,7 @@ export component App inherits Window {
                         mode-changed(val) => { settings-mode-changed(val); }
                         provider-changed(val) => { settings-provider-changed(val); }
                         api-key-changed(val) => { settings-api-key-changed(val); }
+                        groq-api-key-changed(val) => { settings-groq-api-key-changed(val); }
                         api-model-changed(val) => { settings-api-model-changed(val); }
                         language-changed(val) => { settings-language-changed(val); }
                         local-model-changed(val) => { settings-local-model-changed(val); }

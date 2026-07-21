@@ -258,13 +258,15 @@ export component SettingsCheckbox inherits Rectangle {
             background: checked ? theme-colors.accent : transparent;
             y: (parent.height - self.height) / 2;
 
-            Text {
-                text: "✓";
-                color: theme-colors.on_accent;
-                font-size: 12px;
+            Path {
+                width: 10px;
+                height: 8px;
+                commands: "M 1 4 L 4 7 L 9 1";
+                stroke: theme-colors.on_accent;
+                stroke-width: 2px;
                 visible: checked;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
+                x: 4px;
+                y: 5px;
             }
         }
 
@@ -409,7 +411,7 @@ export component SettingsInput inherits HorizontalLayout {
         field := TextInput {
             text <=> root.text;
             color: theme-colors.text_primary;
-            font-size: root.input-type == InputType.password ? 10px : 12px;
+            font-size: 12px;
             x: 10px;
             width: max(parent.width - 20px, self.preferred-width);
             height: parent.height;

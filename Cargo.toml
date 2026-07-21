@@ -16,6 +16,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 slint-build = "1"
 cc = "1"
 
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }

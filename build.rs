@@ -1,4 +1,10 @@
 fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
+        let mut resources = winres::WindowsResource::new();
+        resources.set_icon("icons/icon.ico");
+        resources.compile().expect("failed to embed Windows icon");
+    }
+
     if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "linux" {
         cc::Build::new()
             .file("src/alsa_silence.c")

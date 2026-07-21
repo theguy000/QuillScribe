@@ -129,6 +129,7 @@ export component SettingsDialog inherits Rectangle {
     callback mode-changed(string);
     callback provider-changed(string);
     callback api-key-changed(string);
+    callback groq-api-key-changed(string);
     callback api-model-changed(string);
     callback language-changed(string);
     callback local-model-changed(string);
@@ -269,20 +270,20 @@ export component SettingsDialog inherits Rectangle {
 
                             if active-tab == "whisper": WhisperTab {
                                 theme-colors: theme-colors;
-                                whisper-mode: whisper-mode;
-                                api-provider: api-provider;
-                                api-key: api-key;
-                                groq-api-key: groq-api-key;
-                                api-model: api-model;
-                                api-language: api-language;
-                                show-api-key: show-api-key;
-                                local-model: local-model;
-                                local-model-category: local-model-category;
-                                model-downloaded: model-downloaded;
-                                downloading-model: downloading-model;
+                                whisper-mode <=> whisper-mode;
+                                api-provider <=> api-provider;
+                                api-key <=> api-key;
+                                groq-api-key <=> groq-api-key;
+                                api-model <=> api-model;
+                                api-language <=> api-language;
+                                show-api-key <=> show-api-key;
+                                local-model <=> local-model;
+                                local-model-category <=> local-model-category;
+                                model-downloaded <=> model-downloaded;
+                                downloading-model <=> downloading-model;
                                 download-progress: download-progress;
-                                deleting-model: deleting-model;
-                                download-error: download-error;
+                                deleting-model <=> deleting-model;
+                                download-error <=> download-error;
                                 model-size: model-size;
                                 model-memory: model-memory;
                                 model-speed: model-speed;
@@ -295,6 +296,7 @@ export component SettingsDialog inherits Rectangle {
                                 mode-changed(val) => { mode-changed(val); }
                                 provider-changed(val) => { provider-changed(val); }
                                 api-key-changed(val) => { api-key-changed(val); }
+                                groq-api-key-changed(val) => { groq-api-key-changed(val); }
                                 api-model-changed(val) => { api-model-changed(val); }
                                 language-changed(val) => { language-changed(val); }
                                 local-model-changed(val) => { local-model-changed(val); }
