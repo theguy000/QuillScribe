@@ -89,7 +89,7 @@ else
   RELEASE_JSON=$(wget -qO- "$API_URL")  || err "Failed to reach GitHub API. Check your connection."
 fi
 
-APPIMAGE_URL=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"browser_download_url":\s*"\K[^"]*quillscribe-[^"]*-x86_64\.AppImage"' | tr -d '"' || true)
+APPIMAGE_URL=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"browser_download_url":\s*"\K[^"]*[Qq]uill[Ss]cribe-[^"]*(?:linux-)?x86_64\.AppImage"' | tr -d '"' || true)
 TARBALL_URL=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"browser_download_url":\s*"\K[^"]*quillscribe-x86_64-unknown-linux-gnu\.tar\.gz"' | tr -d '"' || true)
 TAG_NAME=$(printf '%s\n' "$RELEASE_JSON" | grep -oPm1 '"tag_name":\s*"\K[^"]+' || true)
 VERSION="${TAG_NAME#v}"

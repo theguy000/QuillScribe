@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.
 curl -fsSL https://raw.githubusercontent.com/theguy000/QuillScribe/main/install.sh | QUILLSCRIBE_INSTALL_FORMAT=tarball bash
 ```
 
-**Windows / Manual download:** [Latest Release](https://github.com/theguy000/QuillScribe/releases/latest)
+**Windows:** Download the recommended `windows-x86_64-setup.exe` installer from the [latest release](https://github.com/theguy000/QuillScribe/releases/latest). A portable ZIP is also available.
 
 ---
 
