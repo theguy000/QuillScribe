@@ -194,10 +194,18 @@ fn apply_modifier(modifiers: &mut ShortcutModifiers, name: &str) {
 }
 
 fn mouse_button_number(button: &Button) -> u8 {
+    mouse_button_number_for_platform(button, cfg!(target_os = "windows"))
+}
+
+fn mouse_button_number_for_platform(button: &Button, windows: bool) -> u8 {
     match button {
         Button::Left => 1,
         Button::Right => 2,
         Button::Middle => 3,
+        // rdev exposes Windows XBUTTON1/XBUTTON2 as raw IDs 1/2 rather than
+        // conventional mouse button numbers 4/5.
+        Button::Unknown(1) if windows => 4,
+        Button::Unknown(2) if windows => 5,
         Button::Unknown(number) => *number,
     }
 }
@@ -677,7 +685,31 @@ mod tests {
         assert_eq!(mouse_button_number(&Button::Left), 1);
         assert_eq!(mouse_button_number(&Button::Right), 2);
         assert_eq!(mouse_button_number(&Button::Middle), 3);
-        assert_eq!(mouse_button_number(&Button::Unknown(5)), 5);
+    }
+
+    #[test]
+    fn mouse_button_number_normalizes_windows_xbuttons() {
+        assert_eq!(mouse_button_number_for_platform(&Button::Right, true), 2);
+        assert_eq!(
+            mouse_button_number_for_platform(&Button::Unknown(1), true),
+            4
+        );
+        assert_eq!(
+            mouse_button_number_for_platform(&Button::Unknown(2), true),
+            5
+        );
+    }
+
+    #[test]
+    fn mouse_button_number_preserves_unknown_ids_on_other_platforms() {
+        assert_eq!(
+            mouse_button_number_for_platform(&Button::Unknown(4), false),
+            4
+        );
+        assert_eq!(
+            mouse_button_number_for_platform(&Button::Unknown(5), false),
+            5
+        );
     }
 
     #[test]
@@ -730,17 +762,39 @@ mod tests {
                 ..Default::default()
             },
         };
+        let mouse4 = if cfg!(target_os = "windows") {
+            Button::Unknown(1)
+        } else {
+            Button::Unknown(4)
+        };
 
         assert!(mouse_shortcut_matches(
             shortcut,
-            &Button::Unknown(4),
+            &mouse4,
             &["Control".into()]
         ));
         assert!(!mouse_shortcut_matches(
             shortcut,
-            &Button::Unknown(4),
+            &mouse4,
             &["Shift".into()]
         ));
+    }
+
+    #[test]
+    fn windows_mouse4_does_not_collide_with_right_click() {
+        let shortcut = MouseShortcut {
+            button: 4,
+            modifiers: ShortcutModifiers::default(),
+        };
+
+        assert_eq!(
+            mouse_button_number_for_platform(&Button::Unknown(1), true),
+            shortcut.button
+        );
+        assert_ne!(
+            mouse_button_number_for_platform(&Button::Right, true),
+            shortcut.button
+        );
     }
 
     // ── convert_shortcut_format ───────────────────────────────────────────
