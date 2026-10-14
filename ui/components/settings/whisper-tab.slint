@@ -89,8 +89,14 @@ export component WhisperTab inherits VerticalLayout {
             SettingsSelect {
                 theme-colors: theme-colors;
                 options: api-providers;
-                current-value <=> api-provider;
-                value-changed(val) => { provider-changed(val); }
+                // `api-providers` holds display labels ("OpenAI", "Groq") while
+                // `api-provider` holds the stable id ("openai", "groq") that the
+                // rest of the app compares against. Map between them here.
+                current-value: api-provider == "groq" ? "Groq" : "OpenAI";
+                value-changed(label) => {
+                    api-provider = label == "Groq" ? "groq" : "openai";
+                    provider-changed(api-provider);
+                }
             }
         }
 

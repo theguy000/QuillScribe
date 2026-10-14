@@ -145,6 +145,30 @@ fn is_modifier(key: &Key) -> bool {
     modifier_name(key).is_some()
 }
 
+/// Keys that can be a shortcut on their own (no modifier). Typing keys
+/// (letters, digits, Space, Return, ...) still require a modifier so a
+/// recorded shortcut cannot hijack normal typing.
+fn is_standalone_shortcut_key(key: &Key) -> bool {
+    matches!(
+        key,
+        Key::F1
+            | Key::F2
+            | Key::F3
+            | Key::F4
+            | Key::F5
+            | Key::F6
+            | Key::F7
+            | Key::F8
+            | Key::F9
+            | Key::F10
+            | Key::F11
+            | Key::F12
+            | Key::Pause
+            | Key::ScrollLock
+            | Key::PrintScreen
+    )
+}
+
 fn modifier_name(key: &Key) -> Option<&'static str> {
     match key {
         Key::ControlLeft | Key::ControlRight => Some("Control"),
@@ -322,6 +346,9 @@ fn ensure_listener_started() {
                             let shortcut = format!("{}+{}", mods.join("+"), key_name);
                             drop(mods);
                             finish_recording(shortcut);
+                        } else if is_standalone_shortcut_key(&key) {
+                            drop(mods);
+                            finish_recording(key_name);
                         }
                     }
                 }
@@ -658,6 +685,16 @@ mod tests {
     }
 
     // ── modifier_name ─────────────────────────────────────────────────────
+
+    #[test]
+    fn standalone_shortcut_keys_allow_function_keys_only() {
+        assert!(is_standalone_shortcut_key(&Key::F9));
+        assert!(is_standalone_shortcut_key(&Key::Pause));
+        assert!(!is_standalone_shortcut_key(&Key::KeyA));
+        assert!(!is_standalone_shortcut_key(&Key::Space));
+        assert!(!is_standalone_shortcut_key(&Key::Num1));
+        assert!(!is_standalone_shortcut_key(&Key::ControlLeft));
+    }
 
     #[test]
     fn modifier_name_returns_correct_names() {
