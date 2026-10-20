@@ -1,3 +1,9 @@
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[env]
+# Vendored libopus (opusic-sys) declares cmake_minimum_required(2.8), which
+# CMake 4 rejects outright. Flooring the policy lets the stock vendored source
+# configure unmodified; CMake older than 3.31 simply ignores this variable.
+CMAKE_POLICY_VERSION_MINIMUM = { value = "3.5", force = true }

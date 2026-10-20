@@ -238,7 +238,8 @@ impl ConfigManager {
     /// Returns `true` if `key` looks like a valid API key (OpenAI, Groq, or Gemini/Google).
     #[allow(dead_code)]
     pub fn validate_api_key(key: &str) -> bool {
-        (key.starts_with("sk-") || key.starts_with("gsk_") || key.starts_with("AIza")) && key.len() > 20
+        (key.starts_with("sk-") || key.starts_with("gsk_") || key.starts_with("AIza"))
+            && key.len() > 20
     }
 
     // ── Audio getters ────────────────────────────────────────────────────

@@ -575,7 +575,8 @@ impl WhisperManager {
         let hs = decorate(
             client.post(format!(
                 "{}?VER=8&RID=10000&CVER=22&X-HTTP-Session-Id=gsessionid&zx={}&t=1",
-                Self::GEMINI_S3_BASE, zx
+                Self::GEMINI_S3_BASE,
+                zx
             )),
             &hdrs,
         )
@@ -605,7 +606,10 @@ impl WhisperManager {
         let (done_tx, done_rx) = tokio::sync::oneshot::channel::<Vec<u8>>();
         let stream_url = format!(
             "{}?gsessionid={}&VER=8&RID=rpc&SID={}&AID=0&CI=0&TYPE=xmlhttp&zx={}&t=1",
-            Self::GEMINI_S3_BASE, gsid, sid, zx
+            Self::GEMINI_S3_BASE,
+            gsid,
+            sid,
+            zx
         );
         let (client_c, hdrs_c) = (client.clone(), hdrs.clone());
         let stream_task = tokio::spawn(async move {
@@ -685,7 +689,10 @@ impl WhisperManager {
         .send()
         .await?;
         if !r.status().is_success() {
-            return Err(anyhow!("Gemini recognizer init failed: HTTP {}", r.status()));
+            return Err(anyhow!(
+                "Gemini recognizer init failed: HTTP {}",
+                r.status()
+            ));
         }
 
         // 4. Stream the WebM-Opus payload
@@ -735,7 +742,7 @@ impl WhisperManager {
         let transcript = text
             .lines()
             .filter_map(Self::parse_webchannel_transcript)
-            .last()
+            .next_back()
             .unwrap_or_default();
 
         Ok(transcript.trim().to_string())
@@ -764,9 +771,7 @@ impl WhisperManager {
         use base64::Engine;
         base64::engine::general_purpose::STANDARD
             .decode(data.trim())
-            .or_else(|_| {
-                base64::engine::general_purpose::URL_SAFE.decode(data.trim())
-            })
+            .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(data.trim()))
             .map_err(|e| anyhow!("Base64 decode error: {}", e))
     }
 
@@ -794,7 +799,10 @@ impl WhisperManager {
                 }
             }
         }
-        Err(anyhow!("Failed to find WebChannel SID in response body: {}", body))
+        Err(anyhow!(
+            "Failed to find WebChannel SID in response body: {}",
+            body
+        ))
     }
 
     #[allow(dead_code)]
@@ -846,7 +854,9 @@ impl WhisperManager {
                                         for payload_val in payload_arr {
                                             if let Some(b64) = payload_val.as_str() {
                                                 if let Ok(bytes) = Self::base64_decode(b64) {
-                                                    if let Some(text) = Self::extract_text_from_proto(&bytes) {
+                                                    if let Some(text) =
+                                                        Self::extract_text_from_proto(&bytes)
+                                                    {
                                                         if !text.trim().is_empty() {
                                                             latest_text = Some(text);
                                                         }
@@ -891,10 +901,14 @@ impl WhisperManager {
                 if len > 0 && i + len <= bytes.len() {
                     let slice = &bytes[i..i + len];
                     if let Ok(s) = std::str::from_utf8(slice) {
-                        if s.chars().all(|c| !c.is_control() || c == ' ' || c == '\n') && s.chars().any(|c| c.is_alphabetic()) {
-                            if !s.contains("recognizer") && !s.contains("frontend") && s != "Web" && s != "en-US" {
-                                candidate = Some(s.to_string());
-                            }
+                        if s.chars().all(|c| !c.is_control() || c == ' ' || c == '\n')
+                            && s.chars().any(|c| c.is_alphabetic())
+                            && !s.contains("recognizer")
+                            && !s.contains("frontend")
+                            && s != "Web"
+                            && s != "en-US"
+                        {
+                            candidate = Some(s.to_string());
                         }
                     }
                     if let Some(sub) = Self::extract_text_from_proto(slice) {
@@ -1664,7 +1678,9 @@ mod tests {
 
     #[test]
     fn test_parse_webchannel_transcript_chunk() {
-        let mut sample_proto = vec![40, 1, 202, 143, 228, 4, 24, 10, 22, 8, 1, 26, 13, 8, 0, 16, 0, 26, 13, 10, 11];
+        let mut sample_proto = vec![
+            40, 1, 202, 143, 228, 4, 24, 10, 22, 8, 1, 26, 13, 8, 0, 16, 0, 26, 13, 10, 11,
+        ];
         sample_proto.extend_from_slice(b"hello world");
         let b64 = WhisperManager::base64_encode(&sample_proto);
         let chunk = format!("50\n[[3,[\"{}\"]]]\n", b64);
@@ -1850,8 +1866,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn timing_breakdown() {
-        let path = std::env::var("QUILL_TEST_WAV")
-            .unwrap_or_else(|_| "spike_speech.wav".to_string());
+        let path =
+            std::env::var("QUILL_TEST_WAV").unwrap_or_else(|_| "spike_speech.wav".to_string());
         let wav = std::fs::read(path).unwrap();
         let audio: Vec<f32> = wav[44..]
             .chunks_exact(2)
@@ -1912,7 +1928,8 @@ mod tests {
     /// ```
     #[tokio::test]
     #[ignore]
-    async fn live_gemini_transcribes_synthesized_speech() {        let Ok(wav) = std::fs::read("spike_speech.wav") else {
+    async fn live_gemini_transcribes_synthesized_speech() {
+        let Ok(wav) = std::fs::read("spike_speech.wav") else {
             eprintln!("skipping: spike_speech.wav not present");
             return;
         };
