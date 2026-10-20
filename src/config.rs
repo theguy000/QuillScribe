@@ -47,6 +47,8 @@ pub struct WhisperConfig {
     pub api_key: String,
     #[serde(default)]
     pub groq_api_key: String,
+    #[serde(default)]
+    pub gemini_api_key: String,
     pub api_model: String,
     pub local_model: String,
     pub local_model_path: String,
@@ -64,6 +66,7 @@ impl Default for WhisperConfig {
             api_provider: "openai".to_string(),
             api_key: String::new(),
             groq_api_key: String::new(),
+            gemini_api_key: String::new(),
             api_model: "gpt-4o-transcribe".to_string(),
             local_model: "base".to_string(),
             local_model_path: String::new(),
@@ -232,10 +235,10 @@ impl ConfigManager {
 
     // ── Validation ───────────────────────────────────────────────────────
 
-    /// Returns `true` if `key` looks like a valid API key (OpenAI or Groq).
+    /// Returns `true` if `key` looks like a valid API key (OpenAI, Groq, or Gemini/Google).
     #[allow(dead_code)]
     pub fn validate_api_key(key: &str) -> bool {
-        (key.starts_with("sk-") || key.starts_with("gsk_")) && key.len() > 20
+        (key.starts_with("sk-") || key.starts_with("gsk_") || key.starts_with("AIza")) && key.len() > 20
     }
 
     // ── Audio getters ────────────────────────────────────────────────────
@@ -360,6 +363,19 @@ mod tests {
 
         assert!(!parsed.ui.custom_titlebar);
         assert!(parsed.ui.always_on_top);
+    }
+
+    #[test]
+    fn whisper_config_gemini_fields_serde_roundtrip() {
+        let mut cfg = WhisperConfig::default();
+        cfg.api_provider = "gemini".to_string();
+        cfg.gemini_api_key = "AIzaSyCustomKey".to_string();
+
+        let json = serde_json::to_string(&cfg).expect("serialize WhisperConfig");
+        let parsed: WhisperConfig = serde_json::from_str(&json).expect("deserialize WhisperConfig");
+
+        assert_eq!(parsed.api_provider, "gemini");
+        assert_eq!(parsed.gemini_api_key, "AIzaSyCustomKey");
     }
 
     #[test]

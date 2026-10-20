@@ -78,6 +78,9 @@ futures-util = "0.3"
 anyhow = "1"
 thiserror = "2"
 
+# Base64 encoding/decoding
+base64 = "0.22"
+
 # UUID for unique IDs
 uuid = { version = "1", features = ["v4"] }
 
@@ -86,6 +89,7 @@ rand = "0.8"
 
 # PNG decoding for tray icons
 png = "0.17"
+magnum-opus = "0.3.2"
 
 # Optimize all dependencies in dev builds for faster startup.
 # Code stays at opt-level 0 for fast recompilation.

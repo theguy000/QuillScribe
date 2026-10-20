@@ -11,6 +11,7 @@ export component WhisperTab inherits VerticalLayout {
     in-out property <string> api-provider;
     in-out property <string> api-key;
     in-out property <string> groq-api-key;
+    in-out property <string> gemini-api-key;
     in-out property <string> api-model;
     in-out property <string> api-language;
     in-out property <bool> show-api-key;
@@ -41,6 +42,7 @@ export component WhisperTab inherits VerticalLayout {
     callback provider-changed(string);
     callback api-key-changed(string);
     callback groq-api-key-changed(string);
+    callback gemini-api-key-changed(string);
     callback api-model-changed(string);
     callback language-changed(string);
     callback local-model-changed(string);
@@ -89,12 +91,12 @@ export component WhisperTab inherits VerticalLayout {
             SettingsSelect {
                 theme-colors: theme-colors;
                 options: api-providers;
-                // `api-providers` holds display labels ("OpenAI", "Groq") while
-                // `api-provider` holds the stable id ("openai", "groq") that the
+                // `api-providers` holds display labels ("OpenAI", "Groq", "Gemini") while
+                // `api-provider` holds the stable id ("openai", "groq", "gemini") that the
                 // rest of the app compares against. Map between them here.
-                current-value: api-provider == "groq" ? "Groq" : "OpenAI";
+                current-value: api-provider == "gemini" ? "Gemini" : (api-provider == "groq" ? "Groq" : "OpenAI");
                 value-changed(label) => {
-                    api-provider = label == "Groq" ? "groq" : "openai";
+                    api-provider = label == "Gemini" ? "gemini" : (label == "Groq" ? "groq" : "openai");
                     provider-changed(api-provider);
                 }
             }
@@ -112,10 +114,13 @@ export component WhisperTab inherits VerticalLayout {
                 SettingsInput {
                     theme-colors: theme-colors;
                     input-type: show-api-key ? InputType.text : InputType.password;
-                    text: api-provider == "groq" ? groq-api-key : api-key;
-                    placeholder-text: api-provider == "groq" ? "gsk_..." : "sk-...";
+                    text: api-provider == "gemini" ? gemini-api-key : (api-provider == "groq" ? groq-api-key : api-key);
+                    placeholder-text: api-provider == "gemini" ? "AIzaSy..." : (api-provider == "groq" ? "gsk_..." : "sk-...");
                     edited(val) => {
-                        if api-provider == "groq" {
+                        if api-provider == "gemini" {
+                            gemini-api-key = val;
+                            gemini-api-key-changed(val);
+                        } else if api-provider == "groq" {
                             groq-api-key = val;
                             groq-api-key-changed(val);
                         } else {
@@ -137,9 +142,11 @@ export component WhisperTab inherits VerticalLayout {
 
         SettingsHint {
             theme-colors: theme-colors;
-            text: api-provider == "groq"
-                ? "Get your API key at console.groq.com/keys"
-                : "Get your API key at platform.openai.com/api-keys";
+            text: api-provider == "gemini"
+                ? "Get your free Gemini API key at aistudio.google.com/apikey"
+                : (api-provider == "groq"
+                    ? "Get your API key at console.groq.com/keys"
+                    : "Get your API key at platform.openai.com/api-keys");
         }
 
         // API Model

@@ -67,6 +67,7 @@ export component SettingsDialog inherits Rectangle {
     in-out property <string> api-provider: "openai";
     in-out property <string> api-key;
     in-out property <string> groq-api-key;
+    in-out property <string> gemini-api-key;
     in-out property <string> api-model: "gpt-4o-transcribe";
     in-out property <string> api-language: "en";
     in-out property <bool> show-api-key: false;
@@ -81,7 +82,7 @@ export component SettingsDialog inherits Rectangle {
     in property <string> model-memory;
     in property <string> model-speed;
     in property <string> model-quality;
-    in property <[string]> api-providers: ["OpenAI", "Groq"];
+    in property <[string]> api-providers: ["OpenAI", "Groq", "Gemini"];
     in property <[string]> api-models: ["gpt-4o-transcribe", "whisper-1"];
     in property <[string]> local-model-categories: ["General", "Tiny", "Base", "Small", "Medium", "Large"];
     in property <[string]> local-models: ["tiny", "base", "small", "medium", "large"];
@@ -130,6 +131,7 @@ export component SettingsDialog inherits Rectangle {
     callback provider-changed(string);
     callback api-key-changed(string);
     callback groq-api-key-changed(string);
+    callback gemini-api-key-changed(string);
     callback api-model-changed(string);
     callback language-changed(string);
     callback local-model-changed(string);
@@ -274,6 +276,7 @@ export component SettingsDialog inherits Rectangle {
                                 api-provider <=> api-provider;
                                 api-key <=> api-key;
                                 groq-api-key <=> groq-api-key;
+                                gemini-api-key <=> gemini-api-key;
                                 api-model <=> api-model;
                                 api-language <=> api-language;
                                 show-api-key <=> show-api-key;
@@ -297,6 +300,7 @@ export component SettingsDialog inherits Rectangle {
                                 provider-changed(val) => { provider-changed(val); }
                                 api-key-changed(val) => { api-key-changed(val); }
                                 groq-api-key-changed(val) => { groq-api-key-changed(val); }
+                                gemini-api-key-changed(val) => { gemini-api-key-changed(val); }
                                 api-model-changed(val) => { api-model-changed(val); }
                                 language-changed(val) => { language-changed(val); }
                                 local-model-changed(val) => { local-model-changed(val); }

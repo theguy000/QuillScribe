@@ -52,6 +52,7 @@ export component App inherits Window {
     in-out property <string> settings-api-provider: "openai";
     in-out property <string> settings-api-key;
     in-out property <string> settings-groq-api-key;
+    in-out property <string> settings-gemini-api-key;
     in-out property <string> settings-api-model: "gpt-4o-transcribe";
     in-out property <string> settings-api-language: "en";
     in-out property <bool> settings-show-api-key: false;
@@ -66,7 +67,7 @@ export component App inherits Window {
     in property <string> settings-model-memory;
     in property <string> settings-model-speed;
     in property <string> settings-model-quality;
-    in property <[string]> settings-api-providers: ["OpenAI", "Groq"];
+    in property <[string]> settings-api-providers: ["OpenAI", "Groq", "Gemini"];
     in property <[string]> settings-api-models: ["gpt-4o-transcribe", "gpt-4o-mini-transcribe"];
     in property <[string]> settings-local-model-categories: ["General", "Tiny", "Base", "Small", "Medium", "Large"];
     in property <[string]> settings-local-models: ["tiny", "base", "small", "medium", "large"];
@@ -127,6 +128,7 @@ export component App inherits Window {
     callback settings-provider-changed(string);
     callback settings-api-key-changed(string);
     callback settings-groq-api-key-changed(string);
+    callback settings-gemini-api-key-changed(string);
     callback settings-api-model-changed(string);
     callback settings-language-changed(string);
     callback settings-local-model-changed(string);
@@ -240,6 +242,7 @@ export component App inherits Window {
                         api-provider <=> settings-api-provider;
                         api-key <=> settings-api-key;
                         groq-api-key <=> settings-groq-api-key;
+                        gemini-api-key <=> settings-gemini-api-key;
                         api-model <=> settings-api-model;
                         api-language <=> settings-api-language;
                         show-api-key <=> settings-show-api-key;
@@ -263,6 +266,7 @@ export component App inherits Window {
                         provider-changed(val) => { settings-provider-changed(val); }
                         api-key-changed(val) => { settings-api-key-changed(val); }
                         groq-api-key-changed(val) => { settings-groq-api-key-changed(val); }
+                        gemini-api-key-changed(val) => { settings-gemini-api-key-changed(val); }
                         api-model-changed(val) => { settings-api-model-changed(val); }
                         language-changed(val) => { settings-language-changed(val); }
                         local-model-changed(val) => { settings-local-model-changed(val); }

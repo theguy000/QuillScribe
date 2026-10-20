@@ -136,6 +136,7 @@ pub async fn stop_recording(state: &AppState) -> Result<Option<String>, String> 
             .map_err(|e| e.to_string())?;
         whisper.set_api_key(&whisper_cfg.api_key);
         whisper.set_groq_api_key(&whisper_cfg.groq_api_key);
+        whisper.set_gemini_api_key(&whisper_cfg.gemini_api_key);
         whisper
             .set_api_model(&whisper_cfg.api_model)
             .map_err(|e| e.to_string())?;

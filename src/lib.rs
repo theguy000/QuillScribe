@@ -574,6 +574,7 @@ pub fn run() {
     app.set_settings_api_provider(s.whisper.api_provider.clone().into());
     app.set_settings_api_key(s.whisper.api_key.clone().into());
     app.set_settings_groq_api_key(s.whisper.groq_api_key.clone().into());
+    app.set_settings_gemini_api_key(s.whisper.gemini_api_key.clone().into());
     app.set_settings_api_model(s.whisper.api_model.clone().into());
     app.set_settings_api_language(s.whisper.api_language.clone().into());
     app.set_settings_local_model(s.whisper.local_model.clone().into());
@@ -721,6 +722,7 @@ pub fn run() {
                 let _ = whisper.set_api_provider(&whisper_cfg.api_provider);
                 whisper.set_api_key(&whisper_cfg.api_key);
                 whisper.set_groq_api_key(&whisper_cfg.groq_api_key);
+                whisper.set_gemini_api_key(&whisper_cfg.gemini_api_key);
                 let _ = whisper.set_api_model(&whisper_cfg.api_model);
                 let _ = whisper.set_api_language(&whisper_cfg.api_language);
                 let _ = whisper.set_local_model(&whisper_cfg.local_model);
@@ -1143,6 +1145,14 @@ pub fn run() {
         let key_str = key.to_string();
         save_config_field(&shared_cb, |s| {
             s.whisper.groq_api_key = key_str;
+        });
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_gemini_api_key_changed(move |key: slint::SharedString| {
+        let key_str = key.to_string();
+        save_config_field(&shared_cb, |s| {
+            s.whisper.gemini_api_key = key_str;
         });
     });
 
