@@ -23,3 +23,6 @@ logs
 /src/quillscribe-*.tar.gz
 /quillscribe-*.tar.gz
 /quillscribe-*.pkg.tar.zst
+
+# Local fixture for the ignored live Gemini test
+/spike_speech.wav
