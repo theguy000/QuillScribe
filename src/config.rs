@@ -88,8 +88,8 @@ pub struct DeepgramConfig {
     pub api_key: String,
     /// How Deepgram is used: `"recorded"` (default) uploads the finished
     /// utterance to the prerecorded endpoint; `"live"` streams while the user
-    /// speaks. Recorded is the default because the app only delivers text when
-    /// recording stops, so streaming buys nothing until live typing exists.
+    /// speaks, which is what live typing needs to write text as it arrives.
+    /// Recorded stays the default until the live typing setting is exposed.
     #[serde(default = "default_deepgram_mode")]
     pub mode: String,
     #[serde(default = "default_deepgram_model")]

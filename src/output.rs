@@ -294,6 +294,9 @@ fn with_clipboard<T>(operation: impl FnOnce(&mut Clipboard) -> Result<T>) -> Res
 
 // ── OutputManager ────────────────────────────────────────────────────────────
 
+/// How long a pasted text is given to land before the clipboard goes back.
+const PASTE_SETTLE_DELAY: Duration = Duration::from_millis(150);
+
 pub struct OutputManager;
 
 impl OutputManager {
@@ -316,25 +319,7 @@ impl OutputManager {
             }
             OutputMode::TypeToApp => {
                 // Type text into the active window without polluting the clipboard.
-                // Save current clipboard for paste-based fallback tools.
-                let original_clipboard = self.get_clipboard_content().ok();
-                self.copy_to_clipboard(text)?;
-                self.type_text_to_active_window(text)?;
-                // Wait for the paste to complete before restoring the clipboard.
-                sleep(Duration::from_millis(150));
-                // Restore the original clipboard contents.
-                match original_clipboard {
-                    Some(ref original) => {
-                        if let Err(e) = self.copy_to_clipboard(original) {
-                            warn!("Failed to restore original clipboard contents: {}", e);
-                        }
-                    }
-                    None => {
-                        if let Err(e) = self.clear_clipboard() {
-                            warn!("Failed to clear clipboard after paste: {}", e);
-                        }
-                    }
-                }
+                self.type_preserving_clipboard(text)?;
                 "Text typed to active window".to_string()
             }
             OutputMode::CopyAndType => {
@@ -355,6 +340,36 @@ impl OutputManager {
 
     pub fn copy_to_clipboard(&self, text: &str) -> Result<()> {
         Self::copy_text_to_clipboard(text)
+    }
+
+    /// Type `text` into the window that holds focus, then put the user's
+    /// clipboard back.
+    ///
+    /// The clipboard is saved and restored around each paste rather than held
+    /// for the whole utterance, so anything the user copies while dictating
+    /// survives. Live typing calls this once per committed segment and the
+    /// stop-time output calls it once; both go through the same path so a
+    /// dictation never leaves the clipboard in a different state depending on
+    /// which of them delivered the text.
+    pub fn type_preserving_clipboard(&self, text: &str) -> Result<()> {
+        let original_clipboard = self.get_clipboard_content().ok();
+        self.copy_to_clipboard(text)?;
+        self.type_text_to_active_window(text)?;
+        // Wait for the paste to complete before restoring the clipboard.
+        sleep(PASTE_SETTLE_DELAY);
+        match original_clipboard {
+            Some(ref original) => {
+                if let Err(e) = self.copy_to_clipboard(original) {
+                    warn!("Failed to restore original clipboard contents: {}", e);
+                }
+            }
+            None => {
+                if let Err(e) = self.clear_clipboard() {
+                    warn!("Failed to clear clipboard after paste: {}", e);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn copy_text_to_clipboard(text: &str) -> Result<()> {

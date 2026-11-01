@@ -2,6 +2,7 @@ mod audio;
 mod commands;
 mod config;
 mod deepgram;
+mod delivery;
 mod hotkey;
 mod output;
 mod sound;
@@ -422,11 +423,18 @@ const SAMPLE_RATE_FALLBACK: u32 = 16_000;
 ///
 /// Batch providers skip this entirely: they still receive the whole recording
 /// from `stop_recording`, exactly as before.
+///
+/// `bound_window` is the window that held focus at hotkey time, and it owns the
+/// whole utterance.
 fn start_live_session_if_needed(
     shared: &Arc<SharedAppState>,
     rt: &tokio::runtime::Handle,
     overlay: &slint::Weak<RecordingOverlay>,
+    bound_window: Option<delivery::WindowId>,
 ) {
+    // Nothing left over from an earlier utterance may be mistaken for this one.
+    *shared.state.delivery.lock().unwrap() = None;
+
     let whisper_cfg = {
         let config = shared.state.config.lock().unwrap();
         config.get_whisper()
@@ -471,10 +479,15 @@ fn start_live_session_if_needed(
         audio.set_tap(Some(tap_tx));
     }
 
+    // Live typing: every committed segment is written into the bound window as
+    // it arrives. Interim segments never leave our own panel.
+    let delivery = start_live_typing(shared, bound_window);
+
     // Committed text, so the live view can show what has been said so far plus
     // the segment still in progress.
     let committed_cb = Arc::new(std::sync::Mutex::new(String::new()));
     let weak_shared = Arc::downgrade(shared);
+    let delivery_for_sink = delivery;
 
     let on_progress: deepgram::ProgressSink = Arc::new(move |event: deepgram::Progress| {
         let Some(shared) = weak_shared.upgrade() else {
@@ -499,6 +512,12 @@ fn start_live_session_if_needed(
                 });
             }
             deepgram::Progress::Final(text) => {
+                if let Some(session) = &delivery_for_sink {
+                    if let Ok(mut session) = session.lock() {
+                        session.deliver(&text);
+                    }
+                }
+
                 let live = match committed_cb.lock() {
                     Ok(mut committed) => {
                         if !committed.is_empty() {
@@ -530,13 +549,156 @@ fn start_live_session_if_needed(
     *shared.state.live.lock().unwrap() = Some(session);
 }
 
+/// Whether live typing can apply to an utterance at all, before any window is
+/// known.
+///
+/// A batch provider, Deepgram in recorded mode, and the output modes that never
+/// type all keep the stop-time behaviour, so none of them may read the focused
+/// window or start a session.
+fn live_typing_applies(shared: &SharedAppState) -> bool {
+    let config = shared.state.config.lock().unwrap();
+    let whisper_cfg = config.get_whisper();
+    let deepgram_live = config.get_deepgram().is_live();
+    let output_mode = output::OutputMode::from(config.get_output().mode);
+    drop(config);
+
+    whisper_cfg.mode == "api"
+        && whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider)
+        && deepgram_live
+        && matches!(
+            output_mode,
+            output::OutputMode::TypeToApp | output::OutputMode::CopyAndType
+        )
+}
+
+/// Set up live typing for one utterance, when it can run at all.
+///
+/// Returns `None` when live typing does not apply or when no focused window
+/// could be read. The utterance then behaves exactly as it does today: text
+/// arrives when the user stops. On success the session is also installed on the
+/// app state, where the stop path picks it up.
+fn start_live_typing(
+    shared: &Arc<SharedAppState>,
+    bound_window: Option<delivery::WindowId>,
+) -> Option<Arc<Mutex<delivery::DeliverySession>>> {
+    if !live_typing_applies(shared) {
+        return None;
+    }
+
+    let Some(window) = bound_window else {
+        log::warn!("Live typing is unavailable: no focused window could be read");
+        return None;
+    };
+
+    let session = Arc::new(Mutex::new(delivery::DeliverySession::new(
+        window,
+        delivery::PlatformSurface::default(),
+        Arc::clone(&shared.state.delivery_ledger),
+    )));
+    *shared.state.delivery.lock().unwrap() = Some(Arc::clone(&session));
+    Some(session)
+}
+
+/// Deliver whatever the utterance still owes once the provider has finished.
+///
+/// The leftovers go through the same delivery session as the segments that
+/// arrived during the utterance, so the joining rule, the bound window and the
+/// retry all still apply. What it cannot write stays in the report, and the stop
+/// output sends that to the clipboard.
+fn finish_live_delivery(
+    delivery: Option<Arc<Mutex<delivery::DeliverySession>>>,
+    result: &Result<String, anyhow::Error>,
+) -> Option<delivery::DeliveryReport> {
+    let delivery = delivery?;
+    let mut report = match delivery.lock() {
+        Ok(session) => session.report(),
+        Err(_) => return Some(delivery::DeliveryReport::default()),
+    };
+
+    let Ok(text) = result else {
+        return Some(report);
+    };
+
+    let unwritten = delivery::unwritten_words(text, &report);
+    if !unwritten.is_empty() {
+        if let Ok(mut session) = delivery.lock() {
+            log::debug!("Writing what live typing still owed: {}", unwritten);
+            session.deliver(&unwritten);
+            report = session.report();
+        }
+    }
+
+    if report.undelivered_count() > 0 {
+        log::warn!(
+            "Live typing did not deliver {} fragment(s): {:?}",
+            report.undelivered_count(),
+            report.undelivered
+        );
+    }
+
+    Some(report)
+}
+
+/// Deliver the transcript's leftovers when the user stops.
+///
+/// Returns a status line when some text had to take the clipboard route.
+fn write_stop_output(
+    shared: &Arc<SharedAppState>,
+    text: &str,
+    live_delivery: Option<&delivery::DeliveryReport>,
+) -> Option<String> {
+    let config = shared.state.config.lock().unwrap();
+    let mode = output::OutputMode::from(config.get_output().mode);
+    let output = shared.state.output.lock().unwrap();
+
+    let Some(report) = live_delivery else {
+        // No live typing ran, so this is the one delivery the utterance gets.
+        let _ = output.process_transcription(text, mode);
+        return None;
+    };
+
+    let unwritten = delivery::unwritten_words(text, report);
+    let note = if unwritten.is_empty() {
+        log::debug!("Stop path: every word already reached the document");
+        None
+    } else {
+        let words = unwritten.split_whitespace().count();
+        log::warn!(
+            "Live typing left {} word(s) undelivered, so they went to the clipboard",
+            words
+        );
+        // Copy & type leaves the whole transcript below, which already holds
+        // these words.
+        if mode != output::OutputMode::CopyAndType {
+            let _ = output.copy_to_clipboard(&unwritten);
+        }
+        Some(format!(
+            "Transcription complete, {} word(s) not typed, copied to the clipboard",
+            words
+        ))
+    };
+
+    // Copy & type promises the whole transcript on the clipboard, and writing
+    // into the document during the utterance does not put it there.
+    if mode == output::OutputMode::CopyAndType {
+        let _ = output.copy_to_clipboard(text);
+    }
+
+    note
+}
+
 /// Record one utterance's outcome — statistics, output, history, UI — the same
 /// way for batch and live providers.
+///
+/// `live_delivery` is present when live typing ran during the utterance. Its
+/// report decides what the stop path still has to write, so nothing that already
+/// reached the document is typed twice.
 fn emit_transcription_result(
     shared: &Arc<SharedAppState>,
     result: Result<String, anyhow::Error>,
     audio_duration: f64,
     transcription_time: f64,
+    live_delivery: Option<delivery::DeliveryReport>,
 ) {
     let whisper_mode = {
         let config = shared.state.config.lock().unwrap();
@@ -556,23 +718,20 @@ fn emit_transcription_result(
 
             shared.state.sound.play_stop_sound();
 
-            // Process output
-            {
-                let config = shared.state.config.lock().unwrap();
-                let output_cfg = config.get_output();
-                let output = shared.state.output.lock().unwrap();
-                let _ =
-                    output.process_transcription(&text, output::OutputMode::from(output_cfg.mode));
-            }
+            // Process output. Words live typing already wrote are not written
+            // again, and whatever it could not write goes to the clipboard
+            // rather than into whichever window happens to hold focus now.
+            let stop_note = write_stop_output(shared, &text, live_delivery.as_ref());
 
             // Update UI from the Slint event loop thread
+            let status = stop_note.unwrap_or_else(|| "Transcription complete".to_string());
             let text_for_ui = text.clone();
             let s_invoke = Arc::clone(shared);
             let _ = slint::invoke_from_event_loop(move || {
                 s_invoke.with_ui(|app| {
                     app.set_is_transcribing(false);
                     app.set_transcription_text(text_for_ui.into());
-                    app.set_status_message("Transcription complete".into());
+                    app.set_status_message(status.into());
                     refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
 
                     // Trigger completion burst animation
@@ -890,6 +1049,15 @@ pub fn run() {
         let is_recording = s.with_ui_ret(|app| app.get_is_recording()).unwrap_or(false);
 
         if !is_recording {
+            // The window that owns this utterance is the one focused now, at
+            // hotkey time, not whichever window is focused when the socket
+            // finally opens a second later.
+            let bound_window = if live_typing_applies(&s) {
+                delivery::focused_window()
+            } else {
+                None
+            };
+
             // Start recording synchronously on the UI thread before presenting it as active.
             let start_result = s
                 .state
@@ -916,7 +1084,7 @@ pub fn run() {
                 show_recording_overlay(&overlay, &s, 0);
             }
 
-            start_live_session_if_needed(&s, &rt_handle, &overlay_toggle);
+            start_live_session_if_needed(&s, &rt_handle, &overlay_toggle, bound_window);
         } else {
             // Stop recording — synchronous UI update on UI thread
             s.with_ui(|app| {
@@ -931,6 +1099,7 @@ pub fn run() {
             // Detach the live session before the recorder stops, so no further
             // audio is teed to a session that is about to be flushed.
             let live_session = { s.state.live.lock().unwrap().take() };
+            let delivery = { s.state.delivery.lock().unwrap().take() };
             {
                 let mut audio = s.state.audio.lock().unwrap();
                 audio.set_tap(None);
@@ -1002,7 +1171,14 @@ pub fn run() {
                 rt_handle.spawn(async move {
                     let result = session.finish().await;
                     let transcription_time = start_time.elapsed().as_secs_f64();
-                    emit_transcription_result(&s_async, result, audio_duration, transcription_time);
+                    let report = finish_live_delivery(delivery, &result);
+                    emit_transcription_result(
+                        &s_async,
+                        result,
+                        audio_duration,
+                        transcription_time,
+                        report,
+                    );
                 });
                 return;
             }
@@ -1019,7 +1195,13 @@ pub fn run() {
                     .transcribe_audio(audio_data, sample_rate)
                     .await;
                 let transcription_time = start_time.elapsed().as_secs_f64();
-                emit_transcription_result(&s_async, result, audio_duration, transcription_time);
+                emit_transcription_result(
+                    &s_async,
+                    result,
+                    audio_duration,
+                    transcription_time,
+                    None,
+                );
             });
         }
     });

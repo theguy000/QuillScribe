@@ -383,6 +383,10 @@ struct SessionState {
     /// Committed text for the *current* connection. Cleared on reconnect, since
     /// the replay re-transcribes from the start.
     finals: Vec<String>,
+    /// Finals the sink has already been given, for the whole utterance. It is
+    /// not cleared on reconnect, because the replay re-reports the sentences an
+    /// earlier connection already reported.
+    emitted: Vec<String>,
 }
 
 impl SessionState {
@@ -390,6 +394,7 @@ impl SessionState {
         Self {
             pcm: Vec::new(),
             finals: Vec::new(),
+            emitted: Vec::new(),
         }
     }
 
@@ -405,6 +410,20 @@ impl SessionState {
         if !trimmed.is_empty() {
             self.finals.push(trimmed.to_string());
         }
+    }
+
+    /// Whether an earlier connection already reported this final.
+    ///
+    /// `finals` holds the current connection's transcript and resets on a
+    /// reconnect, so a final's position in it is the position it had in the
+    /// utterance: after a replay, position 0 is the first sentence again.
+    fn is_replay(&self, text: &str) -> bool {
+        let position = self.finals.len().saturating_sub(1);
+        self.emitted.get(position).map(String::as_str) == Some(text.trim())
+    }
+
+    fn remember_emitted(&mut self, text: &str) {
+        self.emitted.push(text.trim().to_string());
     }
 
     fn transcript(&self) -> String {
@@ -653,11 +672,19 @@ fn apply_message(raw: &str, state: &mut SessionState, on_progress: &ProgressSink
             (on_progress)(Progress::Interim(text));
         }
         ServerMessage::Final { text, .. } => {
+            // Trimmed once, so the transcript and the replay guard always see
+            // the same string and cannot drift apart by one position.
+            let text = text.trim();
             if text.is_empty() {
                 return;
             }
-            state.commit(&text);
-            (on_progress)(Progress::Final(text));
+            state.commit(text);
+            if state.is_replay(text) {
+                log::debug!("Suppressing a replayed final: {}", text);
+                return;
+            }
+            state.remember_emitted(text);
+            (on_progress)(Progress::Final(text.to_string()));
         }
         // Turn boundaries are not commits; nothing to do but ignore them.
         _ => {}
@@ -878,6 +905,81 @@ mod tests {
     fn test_parse_utterance_end_is_a_turn_boundary() {
         let raw = r#"{"type":"UtteranceEnd","channel":[0,1],"last_word_end":2.395}"#;
         assert_eq!(parse_server_message(raw), ServerMessage::TurnBoundary);
+    }
+
+    fn final_frame(text: &str) -> String {
+        format!(
+            r#"{{"type":"Results","is_final":true,
+                "channel":{{"alternatives":[{{"transcript":"{}"}}]}}}}"#,
+            text
+        )
+    }
+
+    /// Collect the finals a sink is given, in order.
+    fn collecting_sink() -> (ProgressSink, Arc<std::sync::Mutex<Vec<String>>>) {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink: ProgressSink = {
+            let seen = Arc::clone(&seen);
+            Arc::new(move |event: Progress| {
+                if let Progress::Final(text) = event {
+                    seen.lock().unwrap().push(text);
+                }
+            })
+        };
+        (sink, seen)
+    }
+
+    #[test]
+    fn test_a_replayed_final_is_not_reported_twice() {
+        let (sink, seen) = collecting_sink();
+        let mut state = SessionState::new();
+
+        apply_message(&final_frame("one"), &mut state, &sink);
+        apply_message(&final_frame("two"), &mut state, &sink);
+
+        // The socket dropped: the next connection re-transcribes the whole
+        // utterance from the beginning and reports the same sentences again.
+        state.finals.clear();
+        apply_message(&final_frame("one"), &mut state, &sink);
+        apply_message(&final_frame("two"), &mut state, &sink);
+
+        assert_eq!(*seen.lock().unwrap(), ["one", "two"]);
+        assert_eq!(state.transcript(), "one two");
+    }
+
+    #[test]
+    fn test_a_final_from_new_audio_after_a_replay_is_still_reported() {
+        let (sink, seen) = collecting_sink();
+        let mut state = SessionState::new();
+
+        apply_message(&final_frame("one"), &mut state, &sink);
+        apply_message(&final_frame("two"), &mut state, &sink);
+
+        state.finals.clear();
+        apply_message(&final_frame("one"), &mut state, &sink);
+        // The audio spoken after the reconnect commits its own sentence.
+        apply_message(&final_frame("three"), &mut state, &sink);
+
+        assert_eq!(*seen.lock().unwrap(), ["one", "two", "three"]);
+    }
+
+    #[test]
+    fn test_a_blank_final_does_not_desync_the_replay_guard() {
+        let (sink, seen) = collecting_sink();
+        let mut state = SessionState::new();
+
+        // Deepgram emits whitespace-only finals on silence.
+        apply_message(&final_frame("one"), &mut state, &sink);
+        apply_message(&final_frame("   "), &mut state, &sink);
+        apply_message(&final_frame("two"), &mut state, &sink);
+
+        state.finals.clear();
+        apply_message(&final_frame("one"), &mut state, &sink);
+        apply_message(&final_frame("   "), &mut state, &sink);
+        apply_message(&final_frame("two"), &mut state, &sink);
+
+        assert_eq!(*seen.lock().unwrap(), ["one", "two"]);
+        assert_eq!(state.transcript(), "one two");
     }
 
     #[test]
