@@ -262,8 +262,12 @@ pub fn focused_window() -> Option<WindowId> {
     platform_focused_window()
 }
 
-/// The real surface: a clipboard paste through the same code the stop-time
-/// output path uses.
+/// The real surface: paste the fragment and put the user's clipboard back.
+///
+/// It pastes rather than types on every platform, so the target application's
+/// autocorrect and completion cannot rewrite the characters and nothing depends
+/// on the keyboard layout. The session retries a refused fragment once, so this
+/// can be asked for the same text twice.
 pub struct PlatformSurface {
     output: OutputManager,
 }
@@ -278,7 +282,7 @@ impl Default for PlatformSurface {
 
 impl DeliverySurface for PlatformSurface {
     fn paste(&mut self, text: &str) -> Result<()> {
-        self.output.type_preserving_clipboard(text)
+        self.output.paste_preserving_clipboard(text)
     }
 
     fn focused_window(&self) -> Option<WindowId> {
