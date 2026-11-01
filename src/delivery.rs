@@ -352,15 +352,29 @@ impl DeliverySession {
         }
 
         self.held.push(text.to_string());
-        let transcript = self.transcript_with(&self.held);
-        if !self.paste_with_one_retry(&transcript, 1) {
-            self.refused.append(&mut self.held);
-            self.refused_has_been_retried = true;
-            return Err(DeliverError::Held);
+        if self.commit_transcript(1) {
+            Ok(())
+        } else {
+            Err(DeliverError::Held)
         }
-        self.delivered = transcript;
-        self.held.clear();
-        Ok(())
+    }
+
+    /// Make the clipboard read as the transcript so far plus `more`.
+    ///
+    /// Resolves the whole text, pastes it, and records it on success. On failure
+    /// `more` joins whatever is already owed, so the stop path retries it in
+    /// order. `retries_left` is the utterance's budget, the same as for a
+    /// window. Returns whether the clipboard now holds the transcript.
+    fn commit_transcript(&mut self, retries_left: u8) -> bool {
+        let more = std::mem::take(&mut self.held);
+        let transcript = self.transcript_with(&more);
+        if self.paste_with_one_retry(&transcript, retries_left) {
+            self.delivered = transcript;
+            return true;
+        }
+        self.refused.extend(more);
+        self.refused_has_been_retried = true;
+        false
     }
 
     /// The delivered words and `more`, as the text a target receives.
@@ -549,14 +563,13 @@ impl DeliverySession {
         let retries_left = if self.refused_has_been_retried { 0 } else { 1 };
 
         if self.target == Target::Clipboard {
-            let transcript = self.transcript_with(&queue);
-            if self.paste_with_one_retry(&transcript, retries_left) {
-                self.delivered = transcript;
+            // The queue is what the clipboard still owes, so it joins the held
+            // words the helper reads, and is retried only if it never was.
+            self.held = queue;
+            if self.commit_transcript(retries_left) {
                 debug!("Stop left the whole transcript on the clipboard");
             } else {
                 warn!("Stop could not put the transcript on the clipboard");
-                self.refused = queue;
-                self.refused_has_been_retried = true;
             }
             return self.report();
         }
@@ -1819,6 +1832,32 @@ mod tests {
                 ..DeliveryReport::default()
             }
         );
+    }
+
+    #[test]
+    fn a_refused_copy_keeps_the_spoken_order_when_stop_writes_it() {
+        // The first fragment fails its retry, so it is owed. The next one
+        // queues behind it, and the tail comes last. Stop must write them in
+        // the order they were said, never the owed one on the end.
+        let clipboard = FakeClipboard {
+            failures: Arc::new(Mutex::new(2)),
+            ..FakeClipboard::default()
+        };
+        let mut session = copy_session(&clipboard);
+
+        let _ = session.deliver("one");
+        assert_eq!(clipboard.text(), None, "both attempts failed");
+
+        let _ = session.deliver("two");
+        assert_eq!(clipboard.text(), None, "it queues behind the owed words");
+
+        let report = session.finish("three");
+        assert_eq!(
+            clipboard.text().as_deref(),
+            Some("one two three"),
+            "stop restores the spoken order on the clipboard"
+        );
+        assert_eq!(report.undelivered_count(), 0);
     }
 
     #[test]

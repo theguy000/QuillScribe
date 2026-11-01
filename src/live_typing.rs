@@ -64,11 +64,16 @@ pub struct LiveTypingScreen {
 
 impl LiveTypingCapability {
     /// The screen's reading, the only thing the screen displays.
-    pub fn screen(&self, switch_checked: bool) -> LiveTypingScreen {
+    ///
+    /// The switch is drawn checked only when it is operable, so an in-memory
+    /// pair that the settings file would have corrected cannot make it claim
+    /// to be on while the recording path reads it as off.
+    pub fn screen(&self) -> LiveTypingScreen {
+        let checked = self.active;
         LiveTypingScreen {
             visible: self.control_available,
             enabled: self.control_enabled,
-            switch_checked: switch_checked && self.control_available,
+            switch_checked: checked,
             reason: self.reason,
             description: match self.delivery {
                 LiveDelivery::Type => {
@@ -85,23 +90,30 @@ impl LiveTypingCapability {
 /// Whether live typing would run for the next utterance.
 ///
 /// This is what the hotkey asks before it binds a window, and it is the same
-/// question the screen asks, so the two cannot disagree.
+/// question the screen asks, so the two cannot disagree. A recorded mode with
+/// the toggle on is read as off, the same way a settings file that pairs them
+/// loads, so no caller has to remember to reconcile first.
 pub fn live_typing_capability(settings: &Settings) -> LiveTypingCapability {
     let control_available = settings.whisper.mode == "api"
         && crate::whisper::WhisperManager::is_live_provider(&settings.whisper.api_provider);
     let delivery = delivery_for(OutputMode::from(settings.output.mode));
+    let live = settings.deepgram.is_live() && settings.deepgram.live_typing;
 
     let reason = if !control_available {
         Some("Live typing is only available with Deepgram")
     } else if delivery.is_none() {
         Some("Display only mode keeps text inside QuillScribe")
+    } else if settings.deepgram.api_key.trim().is_empty() {
+        // The recording path stops an utterance with no key before it starts,
+        // so a switch that looked operable would promise text that never comes.
+        Some("Add a Deepgram API key to type as you speak")
     } else if !settings.deepgram.is_live() {
         Some("Live typing needs the live Deepgram mode")
     } else {
         None
     };
 
-    let active = reason.is_none() && settings.deepgram.live_typing;
+    let active = reason.is_none() && live;
     LiveTypingCapability {
         active,
         control_available,
@@ -146,9 +158,22 @@ mod tests {
         let mut settings = Settings::default();
         settings.whisper.api_provider = "openai".to_string();
 
-        let screen = live_typing_capability(&settings).screen(true);
+        let screen = live_typing_capability(&settings).screen();
 
         assert!(!screen.visible);
         assert!(!shows_checked_switch(screen));
+    }
+
+    #[test]
+    fn a_type_delivery_says_so_under_the_switch() {
+        // The hint under an active switch has to describe what actually
+        // happens: with live typing on, text arrives during the utterance, not
+        // at stop.
+        let mut settings = Settings::default();
+        settings.whisper.api_provider = "deepgram".to_string();
+        settings.deepgram.api_key = "not-a-real-deepgram-key".to_string();
+
+        let screen = live_typing_capability(&settings).screen();
+        assert!(screen.description.contains("typed into the app you are in"));
     }
 }

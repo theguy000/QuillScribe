@@ -650,6 +650,8 @@ mod tests {
         settings.whisper.mode = "api".to_string();
         settings.whisper.api_provider = provider.to_string();
         settings.deepgram.mode = mode.to_string();
+        // Configured, so the cases below are about the setting under test.
+        settings.deepgram.api_key = "not-a-real-deepgram-key".to_string();
         settings.output.mode = output;
         settings
     }
@@ -660,6 +662,7 @@ mod tests {
         // "fresh install" means: the other providers have no Live session.
         let mut settings = Settings::default();
         settings.whisper.api_provider = "deepgram".to_string();
+        settings.deepgram.api_key = "not-a-real-deepgram-key".to_string();
 
         assert_eq!(settings.deepgram.mode, "live");
         assert!(settings.deepgram.live_typing);
@@ -667,6 +670,50 @@ mod tests {
         assert!(capability.active);
         assert!(capability.control_enabled);
         assert_eq!(capability.reason, None);
+    }
+
+    #[test]
+    fn no_key_disables_the_control_before_the_user_speaks() {
+        // What a fresh install with Deepgram picked but not configured looks
+        // like. The recording path refuses to start, so the switch must say so
+        // rather than promise text that will never arrive.
+        let mut settings = Settings::default();
+        settings.whisper.api_provider = "deepgram".to_string();
+
+        let capability = live_typing_capability(&settings);
+        assert!(capability.control_available);
+        assert!(!capability.control_enabled);
+        assert!(!capability.active);
+        assert!(capability
+            .reason
+            .expect("a missing key explains itself")
+            .contains("API key"));
+
+        let screen = capability.screen();
+        assert!(!shows_checked_switch(screen));
+        assert!(!live_typing_applies(&settings));
+    }
+
+    #[test]
+    fn a_blank_key_counts_as_no_key() {
+        let mut settings = deepgram("deepgram", "live", 2);
+        settings.deepgram.api_key = "   ".to_string();
+
+        assert!(!live_typing_capability(&settings).control_enabled);
+    }
+
+    #[test]
+    fn a_pair_the_file_would_correct_still_reads_as_off_in_memory() {
+        // No round trip: the toggle is set directly, leaving recorded mode
+        // paired with it. The capability reconciles, so the screen cannot show
+        // a checked switch while the recording path reads it as off.
+        let mut settings = deepgram("deepgram", "recorded", 2);
+        settings.deepgram.live_typing = true;
+
+        let capability = live_typing_capability(&settings);
+        assert!(!capability.active);
+        assert!(!live_typing_applies(&settings));
+        assert!(!shows_checked_switch(capability.screen()));
     }
 
     #[test]
@@ -775,7 +822,7 @@ mod tests {
                         settings = stored(settings);
 
                         let capability = live_typing_capability(&settings);
-                        let screen = capability.screen(settings.deepgram.live_typing);
+                        let screen = capability.screen();
                         let ran = live_typing_applies(&settings);
                         let case = format!("{provider}/{mode}/output {output}/toggle {toggle}");
 
@@ -784,14 +831,18 @@ mod tests {
                             !settings.deepgram.live_typing || settings.deepgram.is_live(),
                             "{case}: live typing cannot be on in recorded mode"
                         );
-                        // The switch shows the stored setting, and no switch is
-                        // drawn for a provider without a Live session.
+                        // No switch is drawn for a provider without a Live
+                        // session, and one that is drawn is checked exactly when
+                        // it acts, never for a stored toggle that cannot run.
                         assert_eq!(screen.visible, provider == "deepgram", "{case}: visible");
                         assert_eq!(
                             screen.switch_checked,
-                            provider == "deepgram" && settings.deepgram.live_typing,
+                            screen.visible && capability.active,
                             "{case}: checked"
                         );
+                        if !capability.control_available {
+                            assert!(!screen.switch_checked, "{case}: no switch to check");
+                        }
                         // A switch that looks on is a switch that acts, and the
                         // reason a disabled one gives is what the user sees.
                         assert_eq!(

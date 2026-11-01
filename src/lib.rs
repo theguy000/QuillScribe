@@ -883,7 +883,7 @@ fn apply_live_typing_screen(shared: &SharedAppState) {
         config.get_settings()
     };
     let capability = live_typing::live_typing_capability(&settings);
-    let screen = capability.screen(settings.deepgram.live_typing);
+    let screen = capability.screen();
     shared.with_ui(|app| {
         app.set_settings_live_typing_available(screen.visible);
         app.set_settings_live_typing_enabled(screen.enabled);
@@ -1714,6 +1714,7 @@ pub fn run() {
         save_config_field(&shared_cb, |s| {
             s.deepgram.api_key = key_str;
         });
+        apply_live_typing_screen(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);

@@ -292,7 +292,7 @@ export component WhisperTab inherits VerticalLayout {
 
         if api-provider == "deepgram" && deepgram-mode == "live": SettingsHint {
             theme-colors: theme-colors;
-            text: "Live streaming sends audio while you speak, but text still arrives when you stop.";
+            text: "Audio is sent while you speak. With type as I speak on, text arrives about a second after each pause.";
         }
 
         if api-provider == "deepgram" && deepgram-mode == "recorded": SettingsHint {
