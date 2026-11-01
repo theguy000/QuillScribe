@@ -239,6 +239,7 @@ export component SettingsCheckbox inherits Rectangle {
     in property <ThemeColors> theme-colors;
     in property <string> label;
     in-out property <bool> checked;
+    in property <bool> enabled: true;
     callback toggled();
 
     height: 28px;
@@ -256,6 +257,7 @@ export component SettingsCheckbox inherits Rectangle {
             border-width: 1px;
             border-color: checked ? theme-colors.accent : theme-colors.border;
             background: checked ? theme-colors.accent : transparent;
+            opacity: enabled ? 1 : 0.4;
             y: (parent.height - self.height) / 2;
 
             Path {
@@ -272,7 +274,7 @@ export component SettingsCheckbox inherits Rectangle {
 
         Text {
             text: label;
-            color: theme-colors.text_primary;
+            color: enabled ? theme-colors.text_primary : theme-colors.text_muted;
             font-size: 12px;
             vertical-alignment: center;
         }
@@ -280,10 +282,12 @@ export component SettingsCheckbox inherits Rectangle {
 
     TouchArea {
         clicked => {
-            checked = !checked;
-            toggled();
+            if (enabled) {
+                checked = !checked;
+                toggled();
+            }
         }
-        mouse-cursor: pointer;
+        mouse-cursor: enabled ? pointer : not-allowed;
     }
 }
 

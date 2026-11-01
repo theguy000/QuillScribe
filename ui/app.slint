@@ -56,10 +56,18 @@ export component App inherits Window {
     // ── Settings: Deepgram (live session) ────────────────────────────────
     in-out property <string> settings-deepgram-api-key;
     in-out property <string> settings-deepgram-mode: "recorded";
-    in-out property <bool> settings-deepgram-smart-format: true;
-    in-out property <bool> settings-deepgram-punctuate: true;
+    in-out property <bool> settings-deepgram-smart-format: true;    in-out property <bool> settings-deepgram-punctuate: true;
     in-out property <bool> settings-deepgram-dictation: false;
     in-out property <bool> settings-deepgram-interim-results: true;
+
+    // Live typing. The screen only displays what the derived capability
+    // decides, so `settings-live-typing` is the switch state, and its
+    // availability, enabled state and reason all come from one answer.
+    in-out property <bool> settings-live-typing: true;
+    in property <bool> settings-live-typing-available: true;
+    in property <bool> settings-live-typing-enabled: true;
+    in property <string> settings-live-typing-reason: "";
+    in property <string> settings-live-typing-description: "";
     in-out property <string> settings-api-model: "gpt-4o-transcribe";
     in-out property <string> settings-api-language: "en";
     in-out property <bool> settings-show-api-key: false;
@@ -142,6 +150,7 @@ export component App inherits Window {
     callback settings-deepgram-punctuate-changed(bool);
     callback settings-deepgram-dictation-changed(bool);
     callback settings-deepgram-interim-results-changed(bool);
+    callback settings-live-typing-changed(bool);
     callback settings-api-model-changed(string);
     callback settings-language-changed(string);
     callback settings-local-model-changed(string);
@@ -262,6 +271,11 @@ export component App inherits Window {
                         deepgram-punctuate <=> settings-deepgram-punctuate;
                         deepgram-dictation <=> settings-deepgram-dictation;
                         deepgram-interim-results <=> settings-deepgram-interim-results;
+                        live-typing <=> settings-live-typing;
+                        live-typing-available: settings-live-typing-available;
+                        live-typing-enabled: settings-live-typing-enabled;
+                        live-typing-reason: settings-live-typing-reason;
+                        live-typing-description: settings-live-typing-description;
                         api-model <=> settings-api-model;
                         api-language <=> settings-api-language;
                         show-api-key <=> settings-show-api-key;
@@ -292,6 +306,7 @@ export component App inherits Window {
                         deepgram-punctuate-changed(val) => { settings-deepgram-punctuate-changed(val); }
                         deepgram-dictation-changed(val) => { settings-deepgram-dictation-changed(val); }
                         deepgram-interim-results-changed(val) => { settings-deepgram-interim-results-changed(val); }
+                        live-typing-changed(val) => { settings-live-typing-changed(val); }
                         api-model-changed(val) => { settings-api-model-changed(val); }
                         language-changed(val) => { settings-language-changed(val); }
                         local-model-changed(val) => { settings-local-model-changed(val); }

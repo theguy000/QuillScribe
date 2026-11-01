@@ -89,6 +89,7 @@ TODO: If QuillScribe becomes popular enough to justify the maintenance cost, red
 | `whisper.rs` | Model management, transcription |
 | `deepgram.rs` | Deepgram recorded and live transcription |
 | `delivery.rs` | Live typing into the focused window |
+| `live_typing.rs` | Whether live typing is available, shared by the settings screen and recording |
 | `commands.rs` | Command handlers |
 | `config.rs` | Settings persistence |
 | `output.rs` | Clipboard & auto-type |

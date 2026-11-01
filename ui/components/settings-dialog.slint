@@ -74,6 +74,11 @@ export component SettingsDialog inherits Rectangle {
     in-out property <bool> deepgram-punctuate: true;
     in-out property <bool> deepgram-dictation: false;
     in-out property <bool> deepgram-interim-results: true;
+    in-out property <bool> live-typing: true;
+    in property <bool> live-typing-available: true;
+    in property <bool> live-typing-enabled: true;
+    in property <string> live-typing-reason: "";
+    in property <string> live-typing-description: "";
     in-out property <string> api-model: "gpt-4o-transcribe";
     in-out property <string> api-language: "en";
     in-out property <bool> show-api-key: false;
@@ -144,6 +149,7 @@ export component SettingsDialog inherits Rectangle {
     callback deepgram-punctuate-changed(bool);
     callback deepgram-dictation-changed(bool);
     callback deepgram-interim-results-changed(bool);
+    callback live-typing-changed(bool);
     callback api-model-changed(string);
     callback language-changed(string);
     callback local-model-changed(string);
@@ -295,6 +301,11 @@ export component SettingsDialog inherits Rectangle {
                                 deepgram-punctuate <=> deepgram-punctuate;
                                 deepgram-dictation <=> deepgram-dictation;
                                 deepgram-interim-results <=> deepgram-interim-results;
+                                live-typing <=> live-typing;
+                                live-typing-available: live-typing-available;
+                                live-typing-enabled: live-typing-enabled;
+                                live-typing-reason: live-typing-reason;
+                                live-typing-description: live-typing-description;
                                 api-model <=> api-model;
                                 api-language <=> api-language;
                                 show-api-key <=> show-api-key;
@@ -325,6 +336,7 @@ export component SettingsDialog inherits Rectangle {
                                 deepgram-punctuate-changed(val) => { deepgram-punctuate-changed(val); }
                                 deepgram-dictation-changed(val) => { deepgram-dictation-changed(val); }
                                 deepgram-interim-results-changed(val) => { deepgram-interim-results-changed(val); }
+                                live-typing-changed(val) => { live-typing-changed(val); }
                                 api-model-changed(val) => { api-model-changed(val); }
                                 language-changed(val) => { language-changed(val); }
                                 local-model-changed(val) => { local-model-changed(val); }

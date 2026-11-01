@@ -4,6 +4,7 @@ mod config;
 mod deepgram;
 mod delivery;
 mod hotkey;
+mod live_typing;
 mod output;
 mod sound;
 mod statistics;
@@ -560,23 +561,14 @@ fn start_live_session_if_needed(
 /// Whether live typing can apply to an utterance at all, before any window is
 /// known.
 ///
-/// A batch provider, Deepgram in recorded mode, and the output modes that never
-/// type all keep the stop-time behaviour, so none of them may read the focused
-/// window or start a session.
+/// The answer comes from the same derived capability the settings screen reads,
+/// so a switch that looks on is a switch that acts. A batch provider, Deepgram
+/// in recorded mode, the toggle turned off, and display only all keep the
+/// stop-time behaviour, so none of them may read the focused window or start a
+/// session.
 fn live_typing_applies(shared: &SharedAppState) -> bool {
-    let config = shared.state.config.lock().unwrap();
-    let whisper_cfg = config.get_whisper();
-    let deepgram_live = config.get_deepgram().is_live();
-    let output_mode = output::OutputMode::from(config.get_output().mode);
-    drop(config);
-
-    whisper_cfg.mode == "api"
-        && whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider)
-        && deepgram_live
-        && matches!(
-            output_mode,
-            output::OutputMode::TypeToApp | output::OutputMode::CopyAndType
-        )
+    let settings = shared.state.config.lock().unwrap().get_settings();
+    live_typing::live_typing_applies(&settings)
 }
 
 /// Set up live typing for one utterance, when it can run at all.
@@ -590,8 +582,20 @@ fn start_live_typing(
     bound_window: Option<delivery::WindowId>,
     target: verdict::TargetWindow,
 ) -> Option<Arc<Mutex<delivery::DeliverySession>>> {
-    if !live_typing_applies(shared) {
+    let settings = shared.state.config.lock().unwrap().get_settings();
+    let capability = live_typing::live_typing_capability(&settings);
+    if !capability.active {
         return None;
+    }
+
+    // Copy mode has no window to bind and no paste to make: the clipboard
+    // carries the transcript so far, and the surface only ever rewrites it.
+    if capability.delivery == live_typing::LiveDelivery::CopyToClipboard {
+        let session = Arc::new(Mutex::new(delivery::DeliverySession::copy_to_clipboard(
+            delivery::PlatformSurface::default(),
+        )));
+        *shared.state.delivery.lock().unwrap() = Some(Arc::clone(&session));
+        return Some(session);
     }
 
     let Some(window) = bound_window else {
@@ -671,13 +675,15 @@ impl StopRoute {
     /// Copy & type writes the whole transcript to the clipboard below, so it
     /// needs no separate copy of the leftover text; the count is still worth
     /// reporting, because the document is missing words the user has to paste.
+    /// Copy-only live typing does the same for the same reason: each Final
+    /// segment already rewrote the clipboard with the transcript so far.
     fn decide(text: &str, report: &delivery::DeliveryReport, mode: output::OutputMode) -> Self {
         let unwritten = delivery::unwritten_words(text, report);
         if unwritten.is_empty() {
             return Self::Nothing;
         }
         let words = unwritten.split_whitespace().count();
-        if mode == output::OutputMode::CopyAndType {
+        if mode == output::OutputMode::CopyAndType || report.copies_instead_of_typing {
             Self::Reported { words }
         } else {
             Self::Clipboard {
@@ -751,15 +757,18 @@ fn write_stop_output(
                 because
             );
             Some(format!(
-                "Transcription complete, {} word(s) not typed{}, whole transcript on the clipboard",
+                "Transcription complete, {} word(s) not delivered{}, whole transcript on the clipboard",
                 words, because
             ))
         }
     };
 
     // Copy & type promises the whole transcript on the clipboard, and writing
-    // into the document during the utterance does not put it there.
-    if mode == output::OutputMode::CopyAndType {
+    // into the document during the utterance does not put it there. Copy-only
+    // live typing already left it there segment by segment.
+    let whole_transcript_on_clipboard = mode == output::OutputMode::CopyAndType
+        || (mode == output::OutputMode::CopyToClipboard && report.copies_instead_of_typing);
+    if whole_transcript_on_clipboard {
         let _ = output.copy_to_clipboard(text);
     }
 
@@ -860,6 +869,28 @@ fn apply_language_options(app: &App, provider: &str, current: &str) {
     app.set_settings_api_language(
         whisper::WhisperManager::language_label_for(provider, current).into(),
     );
+}
+
+/// Push the derived live typing answer to the settings screen.
+///
+/// The screen only displays what [`live_typing::live_typing_capability`]
+/// decides, so its switch, its enabled state and the reason under it cannot
+/// drift from what a recording would actually do. Called on startup and after
+/// every setting that feeds the answer.
+fn apply_live_typing_screen(shared: &SharedAppState) {
+    let settings = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_settings()
+    };
+    let capability = live_typing::live_typing_capability(&settings);
+    let screen = capability.screen(settings.deepgram.live_typing);
+    shared.with_ui(|app| {
+        app.set_settings_live_typing_available(screen.visible);
+        app.set_settings_live_typing_enabled(screen.enabled);
+        app.set_settings_live_typing(screen.switch_checked);
+        app.set_settings_live_typing_reason(screen.reason.unwrap_or_default().into());
+        app.set_settings_live_typing_description(screen.description.into());
+    });
 }
 
 /// Helper: refresh the blocklist model and audio device list in the UI.
@@ -1094,6 +1125,7 @@ pub fn run() {
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
     window::apply_always_on_top(&app, s.ui.always_on_top);
     refresh_history_ui(&app, &shared.state, HISTORY_DAYS);
+    apply_live_typing_screen(&shared);
 
     // ── Wire core Slint callbacks ────────────────────────────────────────
 
@@ -1580,6 +1612,7 @@ pub fn run() {
         save_config_field(&shared_cb, |s| {
             s.whisper.mode = mode_str;
         });
+        apply_live_typing_screen(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -1615,6 +1648,7 @@ pub fn run() {
             s.whisper.api_provider = provider_str;
             s.whisper.api_model = chosen_model;
         });
+        apply_live_typing_screen(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -1685,7 +1719,32 @@ pub fn run() {
     let shared_cb = Arc::clone(&shared);
     app.on_settings_deepgram_mode_changed(move |mode: slint::SharedString| {
         let mode_str = mode.to_string();
-        save_config_field(&shared_cb, |s| s.deepgram.mode = mode_str);
+        save_config_field(&shared_cb, |s| {
+            // Recorded mode turns live typing off, because a recorded utterance
+            // has nothing to type from.
+            s.deepgram.set_mode(&mode_str);
+        });
+        let deepgram = shared_cb.state.config.lock().unwrap().get_deepgram();
+        shared_cb.with_ui(|app| {
+            app.set_settings_deepgram_mode(deepgram.mode.clone().into());
+            app.set_settings_live_typing(deepgram.live_typing);
+        });
+        apply_live_typing_screen(&shared_cb);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_live_typing_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| {
+            // One control instead of two: asking for live typing moves the mode
+            // to live, so the two settings can never be left disagreeing.
+            s.deepgram.set_live_typing(enabled);
+        });
+        let deepgram = shared_cb.state.config.lock().unwrap().get_deepgram();
+        shared_cb.with_ui(|app| {
+            app.set_settings_deepgram_mode(deepgram.mode.clone().into());
+            app.set_settings_live_typing(deepgram.live_typing);
+        });
+        apply_live_typing_screen(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -1933,6 +1992,7 @@ pub fn run() {
         save_config_field(&shared_cb, |s| {
             s.output.mode = mode as u8;
         });
+        apply_live_typing_screen(&shared_cb);
     });
 
     // Shortcut
@@ -2089,6 +2149,7 @@ pub fn run() {
 #[cfg(test)]
 mod stop_route_tests {
     use super::*;
+    use crate::config::Settings;
     use crate::delivery::DeliveryReport;
 
     fn report(delivered: &str, undelivered: &[&str]) -> DeliveryReport {
@@ -2096,6 +2157,7 @@ mod stop_route_tests {
             delivered: delivered.to_string(),
             undelivered: undelivered.iter().map(|s| s.to_string()).collect(),
             refused: None,
+            copies_instead_of_typing: false,
         }
     }
 
@@ -2161,11 +2223,86 @@ mod stop_route_tests {
     }
 
     #[test]
+    fn a_copy_only_utterance_reports_its_missing_words_without_a_second_copy() {
+        let report = DeliveryReport {
+            delivered: "one".to_string(),
+            undelivered: Vec::new(),
+            refused: None,
+            copies_instead_of_typing: true,
+        };
+
+        assert_eq!(
+            StopRoute::decide("one two three", &report, output::OutputMode::CopyToClipboard),
+            StopRoute::Reported { words: 2 },
+            "the clipboard already holds the transcript so far, and stop replaces it with all of it"
+        );
+    }
+
+    #[test]
+    fn a_session_that_started_keeps_acting_when_the_settings_change() {
+        use crate::delivery::{DeliveryLedger, DeliverySession, DeliverySurface, WindowId};
+        use crate::verdict::TargetWindow;
+        use std::sync::{Arc, Mutex};
+
+        // A surface that records what would land in the bound window.
+        #[derive(Clone)]
+        struct Window {
+            headed: Arc<Mutex<Vec<String>>>,
+        }
+        impl DeliverySurface for Window {
+            fn paste(&mut self, text: &str) -> anyhow::Result<()> {
+                self.headed.lock().unwrap().push(text.to_string());
+                Ok(())
+            }
+            fn focused_window(&self) -> Option<WindowId> {
+                Some(WindowId::new("win:1"))
+            }
+        }
+
+        // The session is installed when the hotkey is pressed, from the answer
+        // read then.
+        let mut settings = Settings::default();
+        settings.whisper.api_provider = "deepgram".to_string();
+        assert_eq!(
+            live_typing::live_typing_capability(&settings).delivery,
+            live_typing::LiveDelivery::Type
+        );
+
+        let surface = Window {
+            headed: Arc::new(Mutex::new(Vec::new())),
+        };
+        let mut session = DeliverySession::new(
+            WindowId::new("win:1"),
+            TargetWindow::text_field(),
+            surface.clone(),
+            DeliveryLedger::shared(),
+        );
+
+        // Mid-utterance the user turns live typing off and switches to display
+        // only. Nothing re-reads the settings, so the running session still
+        // delivers, and only the next utterance changes.
+        settings.deepgram.set_live_typing(false);
+        settings.output.mode = 3;
+        assert!(!live_typing::live_typing_applies(&settings));
+
+        let _ = session.deliver("first");
+        let _ = session.deliver("second");
+        let _ = session.finish("third");
+
+        assert_eq!(
+            surface.headed.lock().unwrap().as_slice(),
+            ["first", " second", " third"],
+            "the utterance that started finishes with the rules it started with"
+        );
+    }
+
+    #[test]
     fn a_refused_secret_utterance_goes_to_the_clipboard_in_full() {
         let report = DeliveryReport {
             delivered: String::new(),
             undelivered: vec!["my password".to_string()],
             refused: Some(crate::verdict::Refusal::SecretInput),
+            copies_instead_of_typing: false,
         };
 
         assert_eq!(

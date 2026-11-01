@@ -23,6 +23,14 @@ export component WhisperTab inherits VerticalLayout {
     in-out property <bool> deepgram-punctuate: true;
     in-out property <bool> deepgram-dictation: false;
     in-out property <bool> deepgram-interim-results: true;
+    // Live typing, as the derived capability describes it. The control shows
+    // `live-typing` (the stored setting) and is disabled with `live-typing-reason`
+    // when the capability says it cannot act.
+    in-out property <bool> live-typing: true;
+    in property <bool> live-typing-available: true;
+    in property <bool> live-typing-enabled: true;
+    in property <string> live-typing-reason;
+    in property <string> live-typing-description;
 
     // Local model settings
     in-out property <string> local-model;
@@ -57,6 +65,7 @@ export component WhisperTab inherits VerticalLayout {
     callback deepgram-punctuate-changed(bool);
     callback deepgram-dictation-changed(bool);
     callback deepgram-interim-results-changed(bool);
+    callback live-typing-changed(bool);
     callback api-model-changed(string);
     callback language-changed(string);
     callback local-model-changed(string);
@@ -182,7 +191,7 @@ export component WhisperTab inherits VerticalLayout {
                 SettingsRadioOption {
                     theme-colors: theme-colors;
                     label: "Recorded";
-                    description: "Upload the finished recording when you stop (default)";
+                    description: "Upload the finished recording when you stop";
                     selected: deepgram-mode == "recorded";
                     selected-changed => {
                         if deepgram-mode != "recorded" {
@@ -194,14 +203,43 @@ export component WhisperTab inherits VerticalLayout {
 
                 SettingsRadioOption {
                     theme-colors: theme-colors;
-                    label: "Live streaming";
-                    description: "Send audio while you speak; text still arrives when you stop";
+                    label: "Live";
+                    description: "Send audio while you speak, so text can arrive as you talk";
                     selected: deepgram-mode == "live";
                     selected-changed => {
                         if deepgram-mode != "live" {
                             deepgram-mode = "live";
                             deepgram-mode-changed("live");
                         }
+                    }
+                }
+
+                // Live typing. It lives here, beside the mode it depends on,
+                // because turning it on is what moves the mode to live.
+                if live-typing-available: VerticalLayout {
+                    spacing: 2px;
+                    padding-top: 8px;
+
+                    SettingsCheckbox {
+                        theme-colors: theme-colors;
+                        label: "Type as I speak";
+                        enabled: live-typing-enabled;
+                        checked: live-typing;
+                        toggled() => { live-typing-changed(live-typing); }
+                    }
+
+                    if !live-typing-enabled && live-typing-reason != "": Text {
+                        text: live-typing-reason;
+                        color: theme-colors.text_muted;
+                        font-size: 11px;
+                        wrap: word-wrap;
+                    }
+
+                    if live-typing-enabled: Text {
+                        text: live-typing-description;
+                        color: theme-colors.text_muted;
+                        font-size: 11px;
+                        wrap: word-wrap;
                     }
                 }
             }

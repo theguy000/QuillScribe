@@ -59,6 +59,28 @@ pub trait DeliverySurface: Send {
     fn focused_window_exists(&self) -> bool {
         self.focused_window().is_some()
     }
+
+    /// Put `text` on the clipboard as a done deal, replacing whatever the user
+    /// had copied. This is copy mode's only way to deliver, and it is never
+    /// asked for when the utterance reaches a window instead.
+    fn replace_clipboard(&mut self, text: &str) -> Result<()> {
+        let _ = text;
+        anyhow::bail!("this surface cannot write the clipboard")
+    }
+}
+
+/// Where an utterance's words go.
+///
+/// A typed utterance is bound to the window that held focus at hotkey time. A
+/// copy-only utterance has no window to bind and targets the clipboard, which
+/// is rewritten with the transcript so far after every fragment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Target {
+    Window {
+        id: WindowId,
+        described: TargetWindow,
+    },
+    Clipboard,
 }
 
 /// What the app has typed into one window.
@@ -124,6 +146,10 @@ pub struct DeliveryReport {
     /// A refusal that sent the utterance's words away from the target, when one
     /// happened. The words are in `undelivered`, so the stop path takes them.
     pub refused: Option<Refusal>,
+    /// Set when the utterance's target was the clipboard rather than a document.
+    /// The stop path must not copy the leftovers a second time, because they are
+    /// already there.
+    pub copies_instead_of_typing: bool,
 }
 
 impl DeliveryReport {
@@ -147,16 +173,17 @@ pub enum DeliverError {
     Refused(Refusal),
 }
 
-/// One utterance's delivery into its bound window.
+/// One utterance's delivery into its bound window, or onto the clipboard.
 pub struct DeliverySession {
-    window: WindowId,
+    target: Target,
     surface: Box<dyn DeliverySurface>,
     ledger: Arc<Mutex<DeliveryLedger>>,
-    /// Fragments that arrived while the bound window was unfocused, oldest
-    /// first, including the one a refused paste came from. They are written
-    /// when the window comes back, and they are what the stop path writes when
-    /// it does not. They stay out of `delivered` until then, so no fragment can
-    /// be counted as landed and still owed at the same time.
+    /// Fragments that have not reached the target yet, oldest first, including
+    /// the one a refused paste came from. In a typed utterance they arrived
+    /// while the bound window was unfocused and are written when it comes back,
+    /// or by the stop path when it does not. They stay out of `delivered` until
+    /// then, so no fragment can be counted as landed and still owed at the same
+    /// time.
     held: Vec<String>,
     /// Fragments whose paste was refused both times, oldest first. Nothing said
     /// while they wait can be written behind their words without landing out of
@@ -168,8 +195,8 @@ pub struct DeliverySession {
     refused_has_been_retried: bool,
     /// What the platform said about the target when the utterance started. It
     /// decides the shape of every fragment, and refuses the whole utterance when
-    /// it is a secret input.
-    target: TargetWindow,
+    /// it is a secret input. `None` when the target is the clipboard.
+    described: Option<TargetWindow>,
     /// Why the target refused the utterance, once it has. Set the first time a
     /// fragment meets a masked field, and kept so the stop path can say why the
     /// words went to the clipboard.
@@ -186,14 +213,44 @@ impl DeliverySession {
         surface: impl DeliverySurface + 'static,
         ledger: Arc<Mutex<DeliveryLedger>>,
     ) -> Self {
+        Self::bound(
+            Target::Window {
+                id: window,
+                described: target,
+            },
+            surface,
+            ledger,
+        )
+    }
+
+    /// A session for an output mode that copies rather than types.
+    ///
+    /// There is no window and no ledger: after each fragment the clipboard
+    /// holds the transcript so far, and stopping leaves the whole transcript
+    /// there. The save-and-restore rule does not apply, because nothing is
+    /// pasted. A copy the user makes mid-utterance is overwritten by the next
+    /// fragment, which is the price of the clipboard following the speech.
+    pub fn copy_to_clipboard(surface: impl DeliverySurface + 'static) -> Self {
+        Self::bound(Target::Clipboard, surface, DeliveryLedger::shared())
+    }
+
+    fn bound(
+        target: Target,
+        surface: impl DeliverySurface + 'static,
+        ledger: Arc<Mutex<DeliveryLedger>>,
+    ) -> Self {
+        let described = match &target {
+            Target::Window { described, .. } => Some(described.clone()),
+            Target::Clipboard => None,
+        };
         Self {
-            window,
+            target,
             surface: Box::new(surface),
             ledger,
             held: Vec::new(),
             refused: Vec::new(),
             refused_has_been_retried: false,
-            target,
+            described,
             refusal: None,
             delivered: String::new(),
         }
@@ -224,6 +281,10 @@ impl DeliverySession {
             return Ok(());
         }
 
+        if self.target == Target::Clipboard {
+            return self.copy_so_far(text);
+        }
+
         if !self.bound_window_focused() {
             debug!("Bound window is not focused; holding the fragment for stop");
             self.held.push(text.to_string());
@@ -251,9 +312,13 @@ impl DeliverySession {
     /// secret input then the words stay owed until the stop path hands them to
     /// the clipboard. A terminal receives line breaks as spaces.
     fn admit(&mut self, text: &str) -> std::result::Result<String, Refusal> {
-        match target_verdict(&self.target, text) {
-            Verdict::Write(text) => Ok(text),
-            Verdict::Refuse(refusal) => {
+        match self
+            .described
+            .as_ref()
+            .map(|target| target_verdict(target, text))
+        {
+            Some(Verdict::Write(text)) => Ok(text),
+            Some(Verdict::Refuse(refusal)) => {
                 // Refused words are owed, not dropped: the stop path reads the
                 // report and puts them on the clipboard.
                 if !text.trim().is_empty() {
@@ -265,7 +330,49 @@ impl DeliverySession {
                 }
                 Err(refusal)
             }
+            // The clipboard receives everything it is given.
+            None => Ok(text.to_string()),
         }
+    }
+
+    /// Copy mode: the clipboard becomes the transcript so far.
+    ///
+    /// The whole utterance is rewritten each time rather than appended to, so
+    /// the clipboard always reads as one continuous passage and a retry cannot
+    /// double a fragment. Words are joined inside the session and not through
+    /// the ledger, because there is no window to remember: the clipboard itself
+    /// is the memory.
+    fn copy_so_far(&mut self, text: &str) -> Result<(), DeliverError> {
+        if !self.refused.is_empty() {
+            // An earlier fragment never reached the clipboard, so writing the
+            // rest over it would silently drop those words from the copy.
+            debug!("Earlier fragments are still owed; holding this one behind them");
+            self.held.push(text.to_string());
+            return Err(DeliverError::Held);
+        }
+
+        self.held.push(text.to_string());
+        let transcript = self.transcript_with(&self.held);
+        if !self.paste_with_one_retry(&transcript, 1) {
+            self.refused.append(&mut self.held);
+            self.refused_has_been_retried = true;
+            return Err(DeliverError::Held);
+        }
+        self.delivered = transcript;
+        self.held.clear();
+        Ok(())
+    }
+
+    /// The delivered words and `more`, as the text a target receives.
+    fn transcript_with(&self, more: &[String]) -> String {
+        let mut full = self.delivered.clone();
+        for text in more {
+            if !full.is_empty() {
+                full.push(' ');
+            }
+            full.push_str(text);
+        }
+        full
     }
 
     /// Write every fragment held while the bound window was away, oldest first.
@@ -294,9 +401,7 @@ impl DeliverySession {
             return Err(DeliverError::Held);
         }
 
-        if let Ok(mut ledger) = self.ledger.lock() {
-            ledger.record(&self.window, &fragment);
-        }
+        self.record_written(&fragment);
         let held = std::mem::take(&mut self.held);
         debug!("Bound window is back; delivered {} fragment(s)", held.len());
         for text in held {
@@ -311,14 +416,39 @@ impl DeliverySession {
     /// Whether the bound window holds focus. An answer the platform cannot give
     /// counts as unfocused, so the app never types blind.
     fn bound_window_focused(&self) -> bool {
-        self.surface.focused_window().as_ref() == Some(&self.window)
+        match &self.target {
+            Target::Window { id, .. } => self.surface.focused_window().as_ref() == Some(id),
+            // The clipboard is always there.
+            Target::Clipboard => true,
+        }
     }
 
     fn ledger_whitespace(&self) -> Option<bool> {
+        let Target::Window { id, .. } = &self.target else {
+            return None;
+        };
         self.ledger
             .lock()
             .ok()
-            .and_then(|ledger| ledger.ends_with_whitespace(&self.window))
+            .and_then(|ledger| ledger.ends_with_whitespace(id))
+    }
+
+    /// Hand `text` to the target: a paste into the window, or the clipboard
+    /// rewritten in copy mode.
+    fn write(&mut self, text: &str) -> Result<()> {
+        match &self.target {
+            Target::Window { .. } => self.surface.paste(text),
+            Target::Clipboard => self.surface.replace_clipboard(text),
+        }
+    }
+
+    /// Remember what a window now holds, so the next fragment joins to it.
+    fn record_written(&mut self, text: &str) {
+        if let Target::Window { id, .. } = &self.target {
+            if let Ok(mut ledger) = self.ledger.lock() {
+                ledger.record(id, text);
+            }
+        }
     }
 
     /// Several owed fragments as the one text the target receives.
@@ -341,7 +471,7 @@ impl DeliverySession {
             }
             joined.push_str(text);
         }
-        if self.target.terminal {
+        if self.target.terminal() {
             // A newline that ends one fragment and a newline that starts the
             // next were the same dictated line break; a space between them
             // would put two spaces where one belongs.
@@ -369,6 +499,7 @@ impl DeliverySession {
             delivered: self.delivered.clone(),
             undelivered,
             refused: self.refusal,
+            copies_instead_of_typing: self.target == Target::Clipboard,
         }
     }
 
@@ -390,6 +521,9 @@ impl DeliverySession {
     /// speaking. One that already had its retry is not tried twice again: a
     /// document that refuses writes is not hammered, and the status line stays
     /// honest about what is missing.
+    ///
+    /// In copy mode the same words are not pasted but leave the clipboard as one
+    /// transcript, because the clipboard is where the user will look.
     pub fn finish(&mut self, unwritten: &str) -> DeliveryReport {
         // The flushed tail reaches the same verdict as the fragments did.
         let owed = match self.admit(unwritten) {
@@ -403,19 +537,6 @@ impl DeliverySession {
             return self.report();
         }
 
-        let document_gone = !self.surface.focused_window_exists();
-        if document_gone || !self.bound_window_focused() {
-            debug!(
-                "Stop found the bound window {}; the remaining text takes the clipboard route",
-                if document_gone { "gone" } else { "unfocused" }
-            );
-            if !owed.is_empty() {
-                // Still owed, so the report hands it to the clipboard.
-                self.held.push(owed);
-            }
-            return self.report();
-        }
-
         // The words the utterance still owes, in the order they were said.
         let mut queue: Vec<String> = std::mem::take(&mut self.refused);
         queue.append(&mut self.held);
@@ -423,17 +544,39 @@ impl DeliverySession {
             queue.push(owed);
         }
 
-        let fragment = self.join(&queue);
-
         // Fragments refused while the user spoke already used their retry;
         // everything else is being attempted for the first time here.
         let retries_left = if self.refused_has_been_retried { 0 } else { 1 };
+
+        if self.target == Target::Clipboard {
+            let transcript = self.transcript_with(&queue);
+            if self.paste_with_one_retry(&transcript, retries_left) {
+                self.delivered = transcript;
+                debug!("Stop left the whole transcript on the clipboard");
+            } else {
+                warn!("Stop could not put the transcript on the clipboard");
+                self.refused = queue;
+                self.refused_has_been_retried = true;
+            }
+            return self.report();
+        }
+
+        let document_gone = !self.surface.focused_window_exists();
+        if document_gone || !self.bound_window_focused() {
+            debug!(
+                "Stop found the bound window {}; the remaining text takes the clipboard route",
+                if document_gone { "gone" } else { "unfocused" }
+            );
+            // Still owed, so the report hands it to the clipboard.
+            self.refused.extend(queue);
+            return self.report();
+        }
+
+        let fragment = self.join(&queue);
         let landed = self.paste_with_one_retry(&fragment, retries_left);
 
         if landed {
-            if let Ok(mut ledger) = self.ledger.lock() {
-                ledger.record(&self.window, &fragment);
-            }
+            self.record_written(&fragment);
             for text in queue {
                 if !self.delivered.is_empty() {
                     self.delivered.push(' ');
@@ -450,27 +593,36 @@ impl DeliverySession {
         self.report()
     }
 
-    /// Paste the owed words once, or twice when they never had their retry.
+    /// Write the owed words once, or twice when they never had their retry.
     ///
     /// `retries_left` is the utterance's budget, not a per-call one: a fragment
     /// refused while the user spoke arrives here with none left, and one that
     /// only ever waited arrives with one.
     fn paste_with_one_retry(&mut self, fragment: &str, retries_left: u8) -> bool {
         for attempt in 0..=retries_left {
-            match self.surface.paste(fragment) {
+            match self.write(fragment) {
                 Ok(()) => return true,
                 Err(err) if attempt < retries_left => {
-                    warn!("Live typing paste failed, retrying once: {}", err);
+                    warn!("Live typing write failed, retrying once: {}", err);
                 }
                 Err(err) => {
                     warn!(
-                        "Live typing paste failed, leaving the fragment owed: {}",
+                        "Live typing write failed, leaving the fragment owed: {}",
                         err
                     );
                 }
             }
         }
         false
+    }
+}
+
+impl Target {
+    fn terminal(&self) -> bool {
+        match self {
+            Target::Window { described, .. } => described.terminal,
+            Target::Clipboard => false,
+        }
     }
 }
 
@@ -603,6 +755,12 @@ impl DeliverySurface for PlatformSurface {
 
     fn focused_window_exists(&self) -> bool {
         platform_focused_window_exists()
+    }
+
+    fn replace_clipboard(&mut self, text: &str) -> Result<()> {
+        // Copy mode owns the clipboard for the utterance: the transcript goes
+        // there and stays, so a paste after a pause has everything said.
+        self.output.copy_to_clipboard(text)
     }
 }
 
@@ -1108,6 +1266,7 @@ mod tests {
                 delivered: "Hello there.".to_string(),
                 undelivered: Vec::new(),
                 refused: None,
+                copies_instead_of_typing: false,
             }
         );
     }
@@ -1320,6 +1479,7 @@ mod tests {
             delivered: "Hello there.".to_string(),
             undelivered: Vec::new(),
             refused: None,
+            copies_instead_of_typing: false,
         };
 
         assert_eq!(
@@ -1343,6 +1503,7 @@ mod tests {
             delivered: "one three".to_string(),
             undelivered: vec!["two".to_string()],
             refused: None,
+            copies_instead_of_typing: false,
         };
 
         assert_eq!(
@@ -1570,6 +1731,123 @@ mod tests {
         let report = session.finish("one two");
 
         assert!(surface.pasted().is_empty());
+        assert_eq!(unwritten_words("one two", &report), "one two");
+    }
+
+    // ── Copy mode: the clipboard is the target ──────────────────────────
+
+    /// The copy-mode target: the clipboard itself. There is no window to bind,
+    /// so `focus` stays unknown and no paste is ever asked for.
+    #[derive(Clone, Default)]
+    struct FakeClipboard {
+        text: Arc<Mutex<Option<String>>>,
+        failures: Arc<Mutex<usize>>,
+    }
+
+    impl FakeClipboard {
+        fn text(&self) -> Option<String> {
+            self.text.lock().unwrap().clone()
+        }
+    }
+
+    impl DeliverySurface for FakeClipboard {
+        fn paste(&mut self, _text: &str) -> Result<()> {
+            anyhow::bail!("copy mode never pastes")
+        }
+
+        fn focused_window(&self) -> Option<WindowId> {
+            None
+        }
+
+        fn focused_window_exists(&self) -> bool {
+            false
+        }
+
+        fn replace_clipboard(&mut self, text: &str) -> Result<()> {
+            let mut failures = self.failures.lock().unwrap();
+            if *failures > 0 {
+                *failures -= 1;
+                anyhow::bail!("the clipboard refused the write");
+            }
+            drop(failures);
+            *self.text.lock().unwrap() = Some(text.to_string());
+            Ok(())
+        }
+    }
+
+    fn copy_session(surface: &FakeClipboard) -> DeliverySession {
+        DeliverySession::copy_to_clipboard(surface.clone())
+    }
+
+    #[test]
+    fn the_clipboard_holds_the_transcript_so_far_after_each_final() {
+        let clipboard = FakeClipboard::default();
+        let mut session = copy_session(&clipboard);
+
+        let _ = session.deliver("Hello there.");
+        assert_eq!(clipboard.text().as_deref(), Some("Hello there."));
+
+        let _ = session.deliver("How are you?");
+        assert_eq!(
+            clipboard.text().as_deref(),
+            Some("Hello there. How are you?"),
+            "each final replaces the clipboard with everything said so far"
+        );
+
+        let report = session.finish("Fine thanks.");
+        assert_eq!(
+            clipboard.text().as_deref(),
+            Some("Hello there. How are you? Fine thanks."),
+            "the flushed tail joins the transcript on the clipboard"
+        );
+        assert_eq!(report.delivered, "Hello there. How are you? Fine thanks.");
+        assert_eq!(report.undelivered_count(), 0);
+    }
+
+    #[test]
+    fn copy_mode_leaves_the_clipboard_alone_when_nothing_was_said() {
+        let clipboard = FakeClipboard::default();
+        let mut session = copy_session(&clipboard);
+
+        let report = session.finish("   ");
+
+        assert_eq!(clipboard.text(), None);
+        assert_eq!(
+            report,
+            DeliveryReport {
+                copies_instead_of_typing: true,
+                ..DeliveryReport::default()
+            }
+        );
+    }
+
+    #[test]
+    fn a_clipboard_write_that_fails_is_retried_and_then_owed() {
+        let clipboard = FakeClipboard::default();
+        *clipboard.failures.lock().unwrap() = 2;
+        let mut session = copy_session(&clipboard);
+
+        let _ = session.deliver("Hello there.");
+
+        assert_eq!(clipboard.text(), None);
+        let report = session.report();
+        assert_eq!(report.undelivered, ["Hello there."]);
+    }
+
+    #[test]
+    fn a_clipboard_that_refuses_every_write_never_loses_the_words() {
+        let clipboard = FakeClipboard::default();
+        let mut session = copy_session(&clipboard);
+        *clipboard.failures.lock().unwrap() = 2;
+        let _ = session.deliver("one");
+        *clipboard.failures.lock().unwrap() = 1;
+        let report = session.finish("two");
+
+        assert_eq!(
+            clipboard.text(),
+            None,
+            "the app does not claim text it could not put there"
+        );
         assert_eq!(unwritten_words("one two", &report), "one two");
     }
 

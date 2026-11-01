@@ -2,7 +2,9 @@
 
 ADR 0002 made `recorded` the default because QuillScribe delivered text only when the user stopped, so a live socket moved work earlier without producing text earlier. That premise is gone. Live typing writes each Final segment into the focused application during the utterance, and it cannot exist without a Live session. Keeping recorded as the default would ship the feature dormant and leave the main experience unchanged.
 
-The default is therefore `live`, live typing is on for a fresh install, and the two settings are linked. Enabling live typing moves the mode to live, and switching the mode to recorded turns live typing off. Recorded stays available and unchanged for anyone who would rather not hold a socket open, and batch providers are untouched.
+The default is therefore `live`, live typing is on for a fresh install, and the two settings are linked. Enabling live typing moves the mode to live, and switching the mode to recorded turns live typing off. A settings file that pairs recorded with live typing on loads with it off, so the two cannot contradict each other through the file either. Recorded stays available and unchanged for anyone who would rather not hold a socket open, and batch providers are untouched.
+
+The switch is called "Type as I speak" and sits in Engine, Deepgram, under the mode selector. Whether it is shown, operable, and checked comes from one function, `live_typing_capability` in `src/live_typing.rs`, and the recording path asks the same function before it binds a window. In copy-only output the switch stays on and the clipboard holds the transcript so far after each Final segment instead; display only disables the switch with a reason.
 
 ## Consequences
 
