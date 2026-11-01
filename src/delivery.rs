@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::output::OutputManager;
+use crate::verdict::{target_verdict, Refusal, TargetWindow, Verdict};
 
 /// The window an utterance is bound to.
 ///
@@ -120,6 +121,9 @@ pub struct DeliveryReport {
     pub delivered: String,
     /// Fragments that never arrived, in order.
     pub undelivered: Vec<String>,
+    /// A refusal that sent the utterance's words away from the target, when one
+    /// happened. The words are in `undelivered`, so the stop path takes them.
+    pub refused: Option<Refusal>,
 }
 
 impl DeliveryReport {
@@ -138,6 +142,9 @@ pub enum DeliverError {
     /// or words before it are still owed and writing it now would land the
     /// document out of order.
     Held,
+    /// The target must not receive this text at all. It is owed like any other
+    /// fragment and the stop path puts it on the clipboard.
+    Refused(Refusal),
 }
 
 /// One utterance's delivery into its bound window.
@@ -159,12 +166,23 @@ pub struct DeliverySession {
     /// Whether the refused queue has already been tried twice while the user was
     /// speaking. The stop path then makes one last attempt, not another pair.
     refused_has_been_retried: bool,
+    /// What the platform said about the target when the utterance started. It
+    /// decides the shape of every fragment, and refuses the whole utterance when
+    /// it is a secret input.
+    target: TargetWindow,
+    /// Why the target refused the utterance, once it has. Set the first time a
+    /// fragment meets a masked field, and kept so the stop path can say why the
+    /// words went to the clipboard.
+    refusal: Option<Refusal>,
     delivered: String,
 }
 
 impl DeliverySession {
+    /// A session for a target the platform has described, such as a masked
+    /// field or a terminal.
     pub fn new(
         window: WindowId,
+        target: TargetWindow,
         surface: impl DeliverySurface + 'static,
         ledger: Arc<Mutex<DeliveryLedger>>,
     ) -> Self {
@@ -175,6 +193,8 @@ impl DeliverySession {
             held: Vec::new(),
             refused: Vec::new(),
             refused_has_been_retried: false,
+            target,
+            refusal: None,
             delivered: String::new(),
         }
     }
@@ -192,6 +212,12 @@ impl DeliverySession {
     /// `Ok(())` means the text, and everything queued before it, reached the
     /// document.
     pub fn deliver(&mut self, text: &str) -> Result<(), DeliverError> {
+        // The verdict runs before the trim, because a dictated new line is not
+        // whitespace at either end and the terminal rule has to see it.
+        let text = match self.admit(text) {
+            Ok(text) => text,
+            Err(refusal) => return Err(DeliverError::Refused(refusal)),
+        };
         let text = text.trim();
         if text.is_empty() {
             // An empty or whitespace-only Final segment writes nothing at all.
@@ -218,6 +244,30 @@ impl DeliverySession {
         self.resume_held()
     }
 
+    /// Ask the verdict what this fragment looks like at the target.
+    ///
+    /// A masked field refuses every fragment, not only the one that first met
+    /// it: the utterance is meant for one window, and if the caret is in a
+    /// secret input then the words stay owed until the stop path hands them to
+    /// the clipboard. A terminal receives line breaks as spaces.
+    fn admit(&mut self, text: &str) -> std::result::Result<String, Refusal> {
+        match target_verdict(&self.target, text) {
+            Verdict::Write(text) => Ok(text),
+            Verdict::Refuse(refusal) => {
+                // Refused words are owed, not dropped: the stop path reads the
+                // report and puts them on the clipboard.
+                if !text.trim().is_empty() {
+                    self.held.push(text.trim().to_string());
+                }
+                if self.refusal != Some(refusal) {
+                    debug!("Target refused the fragment: {:?}", refusal);
+                    self.refusal = Some(refusal);
+                }
+                Err(refusal)
+            }
+        }
+    }
+
     /// Write every fragment held while the bound window was away, oldest first.
     ///
     /// The caller has already checked that the window holds focus. The waiting
@@ -230,11 +280,7 @@ impl DeliverySession {
             return Ok(());
         }
 
-        let mut fragment = fragment(self.ledger_whitespace(), &self.held[0]);
-        for text in &self.held[1..] {
-            fragment.push(' ');
-            fragment.push_str(text);
-        }
+        let fragment = self.join(&self.held);
 
         if !self.paste_with_one_retry(&fragment, 1) {
             warn!(
@@ -275,6 +321,35 @@ impl DeliverySession {
             .and_then(|ledger| ledger.ends_with_whitespace(&self.window))
     }
 
+    /// Several owed fragments as the one text the target receives.
+    ///
+    /// Fragments are joined with a space while they are inside the utterance.
+    /// A dictated new line that survived the verdict, because the target is not
+    /// a terminal, is the one thing that joins without a space: the words said
+    /// around it were spoken on either side of the same mark, and the space
+    /// would put a visible gap before the line break.
+    fn join(&self, fragments: &[String]) -> String {
+        let Some(first) = fragments.first() else {
+            return String::new();
+        };
+        let mut joined = fragment(self.ledger_whitespace(), first);
+        for text in &fragments[1..] {
+            // Nothing is inserted after a mark: the words arrived in a separate
+            // fragment, but the sentence did not.
+            if !joined.ends_with(['\n', '\r']) {
+                joined.push(' ');
+            }
+            joined.push_str(text);
+        }
+        if self.target.terminal {
+            // A newline that ends one fragment and a newline that starts the
+            // next were the same dictated line break; a space between them
+            // would put two spaces where one belongs.
+            joined = joined.replace("\n\n", "\n");
+        }
+        joined
+    }
+
     /// Text this utterance put into the document. The leading space of a later
     /// utterance is not part of it, because the transcript does not have one.
     ///
@@ -293,6 +368,7 @@ impl DeliverySession {
         DeliveryReport {
             delivered: self.delivered.clone(),
             undelivered,
+            refused: self.refusal,
         }
     }
 
@@ -315,7 +391,14 @@ impl DeliverySession {
     /// document that refuses writes is not hammered, and the status line stays
     /// honest about what is missing.
     pub fn finish(&mut self, unwritten: &str) -> DeliveryReport {
-        let owed = unwritten.trim().to_string();
+        // The flushed tail reaches the same verdict as the fragments did.
+        let owed = match self.admit(unwritten) {
+            Ok(text) => text.trim().to_string(),
+            Err(refusal) => {
+                debug!("Target refused the stop tail: {:?}", refusal);
+                return self.report();
+            }
+        };
         if owed.is_empty() && self.refused.is_empty() && self.held.is_empty() {
             return self.report();
         }
@@ -340,14 +423,7 @@ impl DeliverySession {
             queue.push(owed);
         }
 
-        let Some(first) = queue.first() else {
-            return self.report();
-        };
-        let mut fragment = fragment(self.ledger_whitespace(), first);
-        for text in &queue[1..] {
-            fragment.push(' ');
-            fragment.push_str(text);
-        }
+        let fragment = self.join(&queue);
 
         // Fragments refused while the user spoke already used their retry;
         // everything else is being attempted for the first time here.
@@ -471,6 +547,33 @@ pub fn focused_window() -> Option<WindowId> {
     platform_focused_window()
 }
 
+/// What the platform can say about where focused text would go.
+///
+/// `keys` are the API key fields QuillScribe's own window shows in plain text,
+/// because the user can reveal them. The caret sitting in one of those fields
+/// makes it a secret input even when the order of quotes in the role check
+/// happens not to.
+///
+/// Best effort by construction: where the platform answers nothing, the target
+/// reads as an ordinary text field and the app types rather than refusing. That
+/// limit is recorded in `docs/live-typing-targets.md`.
+pub fn target_window(keys: &[String]) -> TargetWindow {
+    platform_target_window(keys)
+}
+
+/// Read the target by identifying the focused controls by name.
+///
+/// The API key inputs are the only text inputs QuillScribe draws, and their
+/// placeholders name them. Matching on the description costs no accessibility
+/// interface at all, which is why it is the route that always answers for the
+/// app's own window.
+pub fn named_key_fields() -> Vec<String> {
+    KEY_FIELD_NAMES
+        .iter()
+        .map(|placeholder| placeholder.to_string())
+        .collect()
+}
+
 /// The real surface: paste the fragment and put the user's clipboard back.
 ///
 /// It pastes rather than types on every platform, so the target application's
@@ -528,6 +631,174 @@ fn platform_focused_window_exists() -> bool {
     output.status.success()
 }
 
+/// What the caret's host says about itself, once the platform has read it.
+///
+/// Kept apart from the operating-system calls so the masked rule can be checked
+/// on any build: a caller supplies whether UI Automation called the focus a
+/// secret, the window class, and the element's name. A platform that cannot
+/// answer leaves the fields `None` or empty.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Default)]
+struct FocusedElement {
+    /// UI Automation's `IsPassword`, when it answered at all.
+    is_password: Option<bool>,
+    /// The focused window's class.
+    class_name: String,
+    /// The focused element's name. Slint names an empty text input after its
+    /// placeholder, which is how the app's own key fields are recognised.
+    name: String,
+}
+
+impl FocusedElement {
+    /// Whether the caret sits in a secret, judged by the platform.
+    ///
+    /// A read-only value pattern is deliberately not a signal: content and
+    /// document hosts report it on ordinary fields, so treating it as a secret
+    /// would refuse the editor the user is dictating into.
+    fn is_secret_input(&self, keys: &[String]) -> bool {
+        self.is_password == Some(true)
+            || keys
+                .iter()
+                .any(|key| !key.is_empty() && self.name.contains(key.as_str()))
+    }
+}
+
+/// The mask rule and the terminal rule, with the platform readings already done.
+#[cfg_attr(not(test), allow(dead_code))]
+fn describe_target(element: &FocusedElement, own: bool, keys: &[String]) -> TargetWindow {
+    TargetWindow {
+        masked: element.is_secret_input(keys),
+        terminal: crate::verdict::is_terminal_class(&element.class_name, &element.name),
+        own,
+    }
+}
+
+/// The window handle behind a [`WindowId`] read from this platform.
+#[cfg_attr(not(test), allow(dead_code))]
+fn window_handle(window: &WindowId) -> Option<usize> {
+    window
+        .0
+        .strip_prefix("win:")?
+        .parse::<isize>()
+        .ok()
+        .and_then(|handle| usize::try_from(handle).ok())
+}
+
+/// The key-field names the app always recognises, on any platform and any build.
+#[allow(dead_code)]
+pub const KEY_FIELD_NAMES: &[&str] = &["40-character key", "sk-...", "gsk_...", "AIzaSy..."];
+
+#[cfg(windows)]
+fn platform_target_window(keys: &[String]) -> TargetWindow {
+    let Some(window) = platform_focused_window() else {
+        return TargetWindow::default();
+    };
+    // The app knows its own window without asking anyone.
+    let own = platform_focused_window_is_ours(&window);
+    let class_name = windows_class_name(&window).unwrap_or_default();
+    let automation = windows_accessibility().unwrap_or_default();
+
+    describe_target(
+        &FocusedElement {
+            class_name,
+            ..automation
+        },
+        own,
+        keys,
+    )
+}
+
+#[cfg(windows)]
+fn platform_focused_window_is_ours(window: &WindowId) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    let Some(handle) = window_handle(window) else {
+        return false;
+    };
+    let mut process = 0;
+    unsafe { GetWindowThreadProcessId(HWND(handle as *mut _), Some(&mut process)) };
+    process != 0 && process == std::process::id()
+}
+
+#[cfg(windows)]
+fn windows_class_name(window: &WindowId) -> Option<String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::GetClassNameW;
+
+    let handle = window_handle(window)?;
+    let mut buffer = [0u16; 256];
+    let len = unsafe { GetClassNameW(HWND(handle as *mut _), &mut buffer) };
+    if len <= 0 {
+        return None;
+    }
+    Some(String::from_utf16_lossy(&buffer[..len as usize]))
+}
+
+/// What UI Automation says about the focused element, or `None` when it will not
+/// answer at all.
+///
+/// The focused element itself is what carries the password role: a password box
+/// sits inside a window that is an ordinary `Chrome_WidgetWin_1` or `Edit`, so
+/// asking the window would answer for the whole application rather than for the
+/// field the user is dictating into.
+///
+/// The cost is that the focus query walks the target's accessibility tree, which
+/// a foreign target can make slow. It runs once, at hotkey time, before the
+/// socket opens, so it delays the utterance rather than a segment.
+#[cfg(windows)]
+fn windows_accessibility() -> Option<FocusedElement> {
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_MULTITHREADED,
+    };
+    use windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, UIA_IsPasswordPropertyId,
+    };
+
+    /// Runs `CoUninitialize` only when this call actually opened an apartment.
+    struct Apartment(bool);
+
+    impl Drop for Apartment {
+        fn drop(&mut self) {
+            if self.0 {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+
+    // `RPC_E_CHANGED_MODE` means someone already owns this thread's apartment
+    // in a different mode; the interfaces work either way, and uninitialising
+    // would close theirs. Every interface below is dropped before this guard.
+    let _apartment = Apartment(unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok());
+
+    let automation: IUIAutomation =
+        unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) }.ok()?;
+    let element = unsafe { automation.GetFocusedElement() }.ok()?;
+
+    let mut element_info = FocusedElement {
+        is_password: ui_automation_bool(unsafe {
+            element.GetCurrentPropertyValue(UIA_IsPasswordPropertyId)
+        }),
+        ..FocusedElement::default()
+    };
+    if let Ok(name) = unsafe { element.CurrentName() } {
+        element_info.name = name.to_string();
+    }
+
+    Some(element_info)
+}
+
+/// A UI Automation property read as a boolean, or `None` when the element does
+/// not support it. Unsupported is a `VT_ERROR` holding `UIA_E_NOTSUPPORTED`, a
+/// fatal failure is `DISP_E_TYPEMISMATCH`, and either way the caller learns
+/// nothing rather than `false`.
+#[cfg(windows)]
+fn ui_automation_bool(value: windows::core::Result<windows::core::VARIANT>) -> Option<bool> {
+    // `GetCurrentPropertyValue` returns a `VT_BOOL` for a boolean property.
+    bool::try_from(&value.ok()?).ok()
+}
+
 #[cfg(windows)]
 fn platform_focused_window() -> Option<WindowId> {
     use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
@@ -556,6 +827,60 @@ fn platform_focused_window() -> Option<WindowId> {
         return None;
     }
     Some(WindowId::new(format!("x11:{}", window)))
+}
+
+/// What the X11 window manager and the shell say about the focused window.
+///
+/// There is no role query on Linux without a desktop-specific accessibility
+/// bridge, so the window's class and name are all the rule can read. That is
+/// enough for the terminal rule and for recognising QuillScribe's own key
+/// fields, and it is why a password box on Linux is best effort only: see
+/// `docs/live-typing-targets.md`. Wayland cannot say which window is focused at
+/// all, so live typing does not run there (ticket 16).
+#[cfg(target_os = "linux")]
+fn platform_target_window(keys: &[String]) -> TargetWindow {
+    if platform_focused_window().is_none() {
+        return TargetWindow::default();
+    }
+
+    // `getwindowclassname` is the window class (`gnome-terminal-server`) and
+    // `getwindowname` is the title. Both open no accessibility connection, which
+    // is also why no role is read here: a password box on Linux is best effort.
+    let class_name = xdotool(&["getwindowclassname", "@"]).unwrap_or_default();
+    let name = xdotool(&["getwindowname", "@"]).unwrap_or_default();
+
+    // The app's own window carries its own process id.
+    let own = xdotool(&["getwindowpid", "@"])
+        .and_then(|pid| pid.parse::<u32>().ok())
+        .map(|pid| pid == std::process::id())
+        .unwrap_or(false);
+
+    describe_target(
+        &FocusedElement {
+            class_name,
+            name,
+            ..FocusedElement::default()
+        },
+        own,
+        keys,
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn xdotool(args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("xdotool")
+        .args(args)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn platform_target_window(_keys: &[String]) -> TargetWindow {
+    TargetWindow::default()
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
@@ -652,7 +977,22 @@ mod tests {
         surface: &FakeSurface,
         window: &str,
     ) -> DeliverySession {
-        DeliverySession::new(WindowId::new(window), surface.clone(), Arc::clone(ledger))
+        session_on(ledger, surface, window, TargetWindow::text_field())
+    }
+
+    /// The same, with what the platform said about the target.
+    fn session_on(
+        ledger: &Arc<Mutex<DeliveryLedger>>,
+        surface: &FakeSurface,
+        window: &str,
+        target: TargetWindow,
+    ) -> DeliverySession {
+        DeliverySession::new(
+            WindowId::new(window),
+            target,
+            surface.clone(),
+            Arc::clone(ledger),
+        )
     }
 
     #[test]
@@ -767,6 +1107,7 @@ mod tests {
             DeliveryReport {
                 delivered: "Hello there.".to_string(),
                 undelivered: Vec::new(),
+                refused: None,
             }
         );
     }
@@ -978,6 +1319,7 @@ mod tests {
         let report = DeliveryReport {
             delivered: "Hello there.".to_string(),
             undelivered: Vec::new(),
+            refused: None,
         };
 
         assert_eq!(
@@ -1000,6 +1342,7 @@ mod tests {
         let report = DeliveryReport {
             delivered: "one three".to_string(),
             undelivered: vec!["two".to_string()],
+            refused: None,
         };
 
         assert_eq!(
@@ -1228,5 +1571,241 @@ mod tests {
 
         assert!(surface.pasted().is_empty());
         assert_eq!(unwritten_words("one two", &report), "one two");
+    }
+
+    // ── The target verdict ──────────────────────────────────────────────
+
+    #[test]
+    fn a_masked_field_receives_nothing_and_owes_the_words_to_the_clipboard() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let mut session = session_on(&ledger, &surface, BOUND, TargetWindow::masked());
+
+        assert_eq!(
+            session.deliver("my password is hunter two"),
+            Err(DeliverError::Refused(Refusal::SecretInput))
+        );
+        // The user stops without another segment to give the stop path a chance.
+        let report = session.finish("");
+
+        assert!(
+            surface.pasted().is_empty(),
+            "a secret input is never written to, even by the stop path"
+        );
+        assert_eq!(
+            unwritten_words("my password is hunter two", &report),
+            "my password is hunter two",
+            "the words go to the clipboard instead of being dropped"
+        );
+        assert_eq!(report.refused, Some(Refusal::SecretInput));
+    }
+
+    #[test]
+    fn quills_own_key_field_is_refused_the_way_any_masked_field_is() {
+        let ledger = DeliveryLedger::shared();
+
+        let elsewhere = FakeSurface::focused_on(BOUND);
+        let mut masked_elsewhere = session_on(&ledger, &elsewhere, BOUND, TargetWindow::masked());
+        let masked_elsewhere_result = masked_elsewhere.deliver("a key");
+
+        // The app's own window is only special by being known directly.
+        let app = FakeSurface::focused_on(BOUND);
+        let mut own_key = session_on(&ledger, &app, BOUND, TargetWindow::own_key_field());
+        let own_key_result = own_key.deliver("a key");
+
+        assert_eq!(own_key_result, masked_elsewhere_result);
+        assert_eq!(
+            own_key_result,
+            Err(DeliverError::Refused(Refusal::SecretInput))
+        );
+        assert!(app.pasted().is_empty());
+    }
+
+    #[test]
+    fn a_line_break_spread_across_two_segments_is_one_space_in_a_terminal() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(OTHER);
+        let mut session = session_on(&ledger, &surface, BOUND, TargetWindow::terminal());
+
+        // Both arrive while the window is away and land in one paste.
+        assert!(session.deliver("one\n").is_err());
+        assert!(session.deliver("\ntwo").is_err());
+        surface.focus_on(BOUND);
+        let _ = session.deliver("three");
+
+        assert_eq!(
+            surface.pasted(),
+            ["one two three"],
+            "the one dictated line break is one space, not two"
+        );
+    }
+
+    #[test]
+    fn every_fragment_of_a_refused_utterance_stays_owed_in_order() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let mut session = session_on(&ledger, &surface, BOUND, TargetWindow::masked());
+
+        assert!(session.deliver("one").is_err());
+        assert!(session.deliver("two").is_err());
+        let report = session.finish("three");
+
+        assert!(surface.pasted().is_empty());
+        assert_eq!(
+            unwritten_words("one two three", &report),
+            "one two three",
+            "one continuous fragment reaches the clipboard"
+        );
+    }
+
+    #[test]
+    fn a_dictated_new_line_arrives_as_a_space_in_a_terminal() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let surface_reattached = surface.clone();
+        let mut session = session_on(&ledger, &surface, BOUND, TargetWindow::terminal());
+
+        // `ls -la\n` trims to the same words, so this is the tail the provider
+        // still had buffered when the user stopped mid-command.
+        let report = session.finish("ls -la\n");
+
+        assert_eq!(
+            surface_reattached.pasted(),
+            ["ls -la"],
+            "a pasted newline in a shell can run the command"
+        );
+        assert_eq!(report.delivered, "ls -la");
+    }
+
+    #[test]
+    fn a_dictated_new_line_arrives_as_a_new_line_everywhere_else() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        let _ = session.deliver("first line\nsecond line");
+
+        assert_eq!(surface.pasted(), ["first line\nsecond line"]);
+    }
+
+    #[test]
+    fn a_terminal_new_line_arrives_as_a_space_at_stop_too() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let mut session = session_on(&ledger, &surface, BOUND, TargetWindow::terminal());
+
+        let report = session.finish("make\nall");
+
+        assert_eq!(surface.pasted(), ["make all"]);
+        assert_eq!(report.delivered, "make all");
+    }
+
+    #[test]
+    fn a_terminal_that_is_not_masked_still_receives_text() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let mut session = session_on(&ledger, &surface, BOUND, TargetWindow::terminal());
+
+        session
+            .deliver("git status")
+            .expect("a terminal is written to");
+
+        assert_eq!(surface.pasted(), ["git status"]);
+    }
+
+    #[test]
+    fn an_unknown_target_is_typed_rather_than_refused() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        // What the platform reports when it cannot read a role at all.
+        let mut session = session_on(&ledger, &surface, BOUND, TargetWindow::default());
+
+        let _ = session.deliver("line\nbreak");
+
+        assert_eq!(
+            surface.pasted(),
+            ["line\nbreak"],
+            "without a role the app types, and the limit is documented"
+        );
+    }
+
+    #[test]
+    fn the_key_field_names_recognise_quills_own_api_key_inputs() {
+        let keys = named_key_fields();
+        for name in ["40-character key", "sk-...", "gsk_...", "AIzaSy..."] {
+            assert!(
+                keys.iter().any(|key| key == name),
+                "{name} names a key field"
+            );
+        }
+    }
+
+    // ── What the platform reports about the target ──────────────────────
+
+    #[test]
+    fn a_password_role_is_a_masked_target() {
+        let element = FocusedElement {
+            is_password: Some(true),
+            class_name: "Chrome_WidgetWin_1".to_string(),
+            ..FocusedElement::default()
+        };
+
+        assert!(describe_target(&element, false, &named_key_fields()).masked);
+    }
+
+    #[test]
+    fn an_unsupported_role_is_not_a_password() {
+        let element = FocusedElement {
+            is_password: None,
+            class_name: "Notepad".to_string(),
+            ..FocusedElement::default()
+        };
+
+        assert!(!describe_target(&element, false, &named_key_fields()).masked);
+    }
+
+    #[test]
+    fn quills_own_key_field_is_recognised_by_its_name() {
+        let element = FocusedElement {
+            // Slint names an empty text input after its placeholder.
+            name: "40-character key".to_string(),
+            class_name: "SLINT".to_string(),
+            ..FocusedElement::default()
+        };
+
+        let target = describe_target(&element, true, &named_key_fields());
+
+        assert!(target.masked);
+        assert!(target.own, "the window is the app's own");
+    }
+
+    #[test]
+    fn a_terminal_class_names_a_terminal_target() {
+        let element = FocusedElement {
+            class_name: "CASCADIA_HOSTING_WINDOW_CLASS".to_string(),
+            ..FocusedElement::default()
+        };
+
+        assert!(
+            describe_target(&element, false, &[]).terminal,
+            "a terminal is typed into, with its newlines converted"
+        );
+    }
+
+    #[test]
+    fn a_failed_role_read_still_reports_a_terminal() {
+        let element = FocusedElement {
+            is_password: None,
+            class_name: "xterm".to_string(),
+            ..FocusedElement::default()
+        };
+
+        let target = describe_target(&element, false, &[]);
+
+        assert!(!target.masked);
+        assert!(
+            target.terminal,
+            "the terminal rule does not need accessibility"
+        );
     }
 }

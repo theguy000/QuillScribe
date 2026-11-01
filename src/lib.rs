@@ -9,6 +9,7 @@ mod sound;
 mod statistics;
 mod tray;
 mod updater;
+mod verdict;
 mod whisper;
 mod window;
 
@@ -425,12 +426,14 @@ const SAMPLE_RATE_FALLBACK: u32 = 16_000;
 /// from `stop_recording`, exactly as before.
 ///
 /// `bound_window` is the window that held focus at hotkey time, and it owns the
-/// whole utterance.
+/// whole utterance. `target` is what the platform said about it, which decides
+/// whether it may receive text at all.
 fn start_live_session_if_needed(
     shared: &Arc<SharedAppState>,
     rt: &tokio::runtime::Handle,
     overlay: &slint::Weak<RecordingOverlay>,
     bound_window: Option<delivery::WindowId>,
+    target: verdict::TargetWindow,
 ) {
     // Nothing left over from an earlier utterance may be mistaken for this one.
     *shared.state.delivery.lock().unwrap() = None;
@@ -481,7 +484,7 @@ fn start_live_session_if_needed(
 
     // Live typing: every committed segment is written into the bound window as
     // it arrives. Interim segments never leave our own panel.
-    let delivery = start_live_typing(shared, bound_window);
+    let delivery = start_live_typing(shared, bound_window, target);
 
     // Committed text, so the live view can show what has been said so far plus
     // the segment still in progress.
@@ -585,6 +588,7 @@ fn live_typing_applies(shared: &SharedAppState) -> bool {
 fn start_live_typing(
     shared: &Arc<SharedAppState>,
     bound_window: Option<delivery::WindowId>,
+    target: verdict::TargetWindow,
 ) -> Option<Arc<Mutex<delivery::DeliverySession>>> {
     if !live_typing_applies(shared) {
         return None;
@@ -595,8 +599,12 @@ fn start_live_typing(
         return None;
     };
 
+    // The target is described now, while the recording starts, and never again
+    // during the utterance: the caret's role belongs to the window the user
+    // bound, and re-reading it later would let a fragment follow focus.
     let session = Arc::new(Mutex::new(delivery::DeliverySession::new(
         window,
+        target,
         delivery::PlatformSurface::default(),
         Arc::clone(&shared.state.delivery_ledger),
     )));
@@ -699,6 +707,13 @@ fn write_stop_output(
         return None;
     };
 
+    // A refusal is worth saying out loud: the words did not fail to arrive, the
+    // app chose not to send them into the field the user had focused.
+    let because = match report.refused {
+        Some(refusal) => format!(", and {}", refusal.user_message()),
+        None => String::new(),
+    };
+
     let note = match StopRoute::decide(text, report, mode) {
         StopRoute::Nothing => {
             log::debug!("Stop path: every word already reached the document");
@@ -709,33 +724,35 @@ fn write_stop_output(
             words,
         } => {
             log::warn!(
-                "Live typing left {} word(s) undelivered, so they went to the clipboard",
-                words
+                "Live typing left {} word(s) undelivered{}, so they went to the clipboard",
+                words,
+                because
             );
             // The status line must not promise a clipboard the app could not
             // write: those words are the only copy the user has left.
             Some(match output.copy_to_clipboard(&unwritten) {
                 Ok(()) => format!(
-                    "Transcription complete, {} word(s) not typed, copied to the clipboard",
-                    words
+                    "Transcription complete, {} word(s) not typed{}, copied to the clipboard",
+                    words, because
                 ),
                 Err(err) => {
                     log::error!("Could not copy the undelivered text: {}", err);
                     format!(
-                        "Transcription complete, {} word(s) not typed and could not be copied",
-                        words
+                        "Transcription complete, {} word(s) not typed{} and could not be copied",
+                        words, because
                     )
                 }
             })
         }
         StopRoute::Reported { words } => {
             log::warn!(
-                "Live typing left {} word(s) undelivered; the clipboard holds the transcript",
-                words
+                "Live typing left {} word(s) undelivered{}; the clipboard holds the transcript",
+                words,
+                because
             );
             Some(format!(
-                "Transcription complete, {} word(s) not typed, whole transcript on the clipboard",
-                words
+                "Transcription complete, {} word(s) not typed{}, whole transcript on the clipboard",
+                words, because
             ))
         }
     };
@@ -1113,11 +1130,18 @@ pub fn run() {
         if !is_recording {
             // The window that owns this utterance is the one focused now, at
             // hotkey time, not whichever window is focused when the socket
-            // finally opens a second later.
-            let bound_window = if live_typing_applies(&s) {
-                delivery::focused_window()
+            // finally opens a second later. What the platform says about that
+            // window is read at the same moment.
+            let (bound_window, target) = if live_typing_applies(&s) {
+                let window = delivery::focused_window();
+                let target = if window.is_some() {
+                    delivery::target_window(&delivery::named_key_fields())
+                } else {
+                    verdict::TargetWindow::default()
+                };
+                (window, target)
             } else {
-                None
+                (None, verdict::TargetWindow::default())
             };
 
             // Start recording synchronously on the UI thread before presenting it as active.
@@ -1146,7 +1170,7 @@ pub fn run() {
                 show_recording_overlay(&overlay, &s, 0);
             }
 
-            start_live_session_if_needed(&s, &rt_handle, &overlay_toggle, bound_window);
+            start_live_session_if_needed(&s, &rt_handle, &overlay_toggle, bound_window, target);
         } else {
             // Stop recording — synchronous UI update on UI thread
             s.with_ui(|app| {
@@ -2071,6 +2095,7 @@ mod stop_route_tests {
         DeliveryReport {
             delivered: delivered.to_string(),
             undelivered: undelivered.iter().map(|s| s.to_string()).collect(),
+            refused: None,
         }
     }
 
@@ -2132,6 +2157,24 @@ mod stop_route_tests {
             route,
             StopRoute::Reported { words: 2 },
             "the whole transcript is already on the clipboard for this mode"
+        );
+    }
+
+    #[test]
+    fn a_refused_secret_utterance_goes_to_the_clipboard_in_full() {
+        let report = DeliveryReport {
+            delivered: String::new(),
+            undelivered: vec!["my password".to_string()],
+            refused: Some(crate::verdict::Refusal::SecretInput),
+        };
+
+        assert_eq!(
+            StopRoute::decide("my password", &report, output::OutputMode::TypeToApp),
+            StopRoute::Clipboard {
+                text: "my password".to_string(),
+                words: 2,
+            },
+            "refused text follows the undelivered route, never the bin"
         );
     }
 }
