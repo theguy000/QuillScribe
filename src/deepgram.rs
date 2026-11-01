@@ -125,40 +125,39 @@ pub fn parse_server_message(raw: &str) -> ServerMessage {
         return ServerMessage::Ignored;
     };
 
+    // "Results", or a message with no `type` at all (interims).
     match value.get("type").and_then(Value::as_str) {
         Some("Metadata") => ServerMessage::Metadata,
         Some("UtteranceEnd") => ServerMessage::TurnBoundary,
         Some("SpeechStarted") => ServerMessage::SpeechStarted,
         Some("ConfigureSuccess") | Some("ConfigureFailure") => ServerMessage::Configured,
-        Some("Error") => ServerMessage::Error(
-            text_at(&value, &["description"])
-                .or_else(|| text_at(&value, &["message"]))
-                .or_else(|| text_at(&value, &["err_msg"]))
-                .unwrap_or_else(|| raw.trim().to_string()),
-        ),
-        // "Results", or a message with no `type` at all (interims).
-        _ => {
-            let text = text_at(&value, &["channel", "alternatives", "0", "transcript"])
-                .map(|t| t.trim().to_string())
-                .unwrap_or_default();
-            let is_final = value
-                .get("is_final")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            let from_finalize = value
-                .get("from_finalize")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
+        Some("Error") => ServerMessage::Error(error_text(&value, raw)),
+        _ => parse_results(&value),
+    }
+}
 
-            if is_final {
-                ServerMessage::Final {
-                    text,
-                    from_finalize,
-                }
-            } else {
-                ServerMessage::Interim(text)
-            }
+/// The reason an `Error` frame gives, or the frame itself when it gives none.
+fn error_text(value: &Value, raw: &str) -> String {
+    text_at(value, &["description"])
+        .or_else(|| text_at(value, &["message"]))
+        .or_else(|| text_at(value, &["err_msg"]))
+        .unwrap_or_else(|| raw.trim().to_string())
+}
+
+/// A transcript frame, which carries no `type` field, as a Final or an Interim.
+fn parse_results(value: &Value) -> ServerMessage {
+    let text = text_at(value, &["channel", "alternatives", "0", "transcript"])
+        .map(|t| t.trim().to_string())
+        .unwrap_or_default();
+    let flag = |key: &str| value.get(key).and_then(Value::as_bool).unwrap_or(false);
+
+    if flag("is_final") {
+        ServerMessage::Final {
+            text,
+            from_finalize: flag("from_finalize"),
         }
+    } else {
+        ServerMessage::Interim(text)
     }
 }
 
@@ -319,6 +318,8 @@ type WsSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 type WsSink = futures_util::stream::SplitSink<WsSocket, Message>;
 type WsStream = futures_util::stream::SplitStream<WsSocket>;
+/// One frame as the socket reads it, error included.
+type WsMessage = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>;
 
 /// Callback used to push progress onto the UI thread.
 pub type ProgressSink = Arc<dyn Fn(Progress) + Send + Sync>;
@@ -488,19 +489,131 @@ async fn run_session(
     }
 }
 
-/// Run one socket from connect to close.
-///
-/// `Ok` means the user stopped recording and the transcript is final. `Err`
-/// means the connection failed and the caller should reconnect and replay.
-#[allow(clippy::too_many_arguments)]
-async fn run_connection(
-    cfg: &DeepgramConfig,
-    url: &str,
-    state: &mut SessionState,
-    audio_rx: &mut mpsc::UnboundedReceiver<AudioChunk>,
-    command_rx: &mut mpsc::UnboundedReceiver<SessionCommand>,
-    on_progress: &ProgressSink,
-) -> Result<String> {
+/// Where one socket stands between the audio it hears and the frames it reads.
+struct Connection<'a> {
+    sink: WsSink,
+    stream: WsStream,
+    state: &'a mut SessionState,
+    on_progress: &'a ProgressSink,
+    /// Samples waiting for a whole send block, and the rate they arrived at.
+    pending: Vec<f32>,
+    pending_rate: u32,
+    /// How much of `state.pcm` has reached the socket.
+    sent: usize,
+    last_send: Instant,
+    /// Cleared when the recorder's tap goes away; the socket text keeps
+    /// draining after that.
+    audio_open: bool,
+}
+
+impl<'a> Connection<'a> {
+    /// Connect, and replay everything recorded so far.
+    ///
+    /// A reconnect begins a brand new session with timestamps reset to zero, so
+    /// the only way to keep the transcript whole is to send everything again.
+    async fn open(
+        cfg: &DeepgramConfig,
+        url: &str,
+        state: &'a mut SessionState,
+        on_progress: &'a ProgressSink,
+    ) -> Result<Self> {
+        let (mut sink, stream) = connect(cfg, url).await?;
+        state.finals.clear();
+        let mut sent = 0usize;
+        flush_audio(&mut sink, &state.pcm, &mut sent).await?;
+
+        Ok(Self {
+            sink,
+            stream,
+            state,
+            on_progress,
+            pending: Vec::new(),
+            pending_rate: TARGET_SAMPLE_RATE,
+            sent,
+            last_send: Instant::now(),
+            audio_open: true,
+        })
+    }
+    /// End the utterance when the command channel says so.
+    ///
+    /// `Ok(None)` means keep listening: the command was not a stop.
+    async fn on_command(&mut self, command: Option<SessionCommand>) -> Result<Option<String>> {
+        // `Stop`, or the sender being dropped, both mean "end now".
+        if command.is_some() && !matches!(command, Some(SessionCommand::Stop)) {
+            return Ok(None);
+        }
+        if !self.pending.is_empty() {
+            let rate = self.pending_rate;
+            let tail = WhisperManager::resample(&self.pending, rate, TARGET_SAMPLE_RATE);
+            self.state.push_samples(&tail);
+            flush_audio(&mut self.sink, &self.state.pcm, &mut self.sent).await?;
+        }
+        finish(
+            &mut self.sink,
+            &mut self.stream,
+            self.state,
+            self.on_progress,
+        )
+        .await
+        .map(Some)
+    }
+
+    /// Buffer one chunk, or notice that the recorder's tap went away.
+    ///
+    /// A missing tap keeps the socket text draining instead of spinning on a
+    /// closed channel, and a chunk with no rate carries no samples anyone could
+    /// send.
+    async fn on_audio(&mut self, chunk: Option<AudioChunk>) -> Result<()> {
+        let Some(chunk) = chunk else {
+            self.audio_open = false;
+            return Ok(());
+        };
+        if chunk.sample_rate == 0 {
+            return Ok(());
+        }
+        send_audio(
+            &mut self.sink,
+            self.state,
+            &mut self.sent,
+            &mut self.pending,
+            &mut self.pending_rate,
+            chunk,
+        )
+        .await?;
+        self.last_send = Instant::now();
+        Ok(())
+    }
+
+    /// Fold in one frame, or end the connection because the socket closed or
+    /// failed.
+    fn on_socket(&mut self, message: Option<WsMessage>) -> Result<()> {
+        match message {
+            Some(Ok(Message::Text(text))) => {
+                apply_frame(&text, self.state, self.on_progress)?;
+                Ok(())
+            }
+            Some(Ok(Message::Close(_))) | None => Err(anyhow!("Deepgram closed the connection")),
+            Some(Err(err)) => Err(anyhow!("Deepgram socket error: {}", err)),
+            _ => Ok(()),
+        }
+    }
+
+    /// Send a keep-alive when the socket has been quiet long enough.
+    async fn on_keepalive(&mut self) -> Result<()> {
+        if self.last_send.elapsed() < KEEPALIVE_MIN_IDLE {
+            return Ok(());
+        }
+        self.sink
+            .send(Message::text("{\"type\":\"KeepAlive\"}"))
+            .await
+            .context("Could not send a Deepgram keep-alive")?;
+        self.last_send = Instant::now();
+        Ok(())
+    }
+}
+
+/// Open the socket, with the key in the header rather than the URL.
+async fn connect(cfg: &DeepgramConfig, url: &str) -> Result<(WsSink, WsStream)> {
     let mut request = url
         .into_client_request()
         .context("Could not build the Deepgram request")?;
@@ -514,96 +627,79 @@ async fn run_connection(
     let (socket, _response) = tokio_tungstenite::connect_async(request)
         .await
         .context("Could not connect to Deepgram")?;
-    let (mut sink, mut stream) = socket.split();
+    Ok(socket.split())
+}
 
-    // A reconnect begins a brand new session with timestamps reset to zero, so
-    // the only way to keep the transcript whole is to send everything again.
-    state.finals.clear();
-    let mut sent = 0usize;
-    flush_audio(&mut sink, &state.pcm, &mut sent).await?;
-
-    let mut pending: Vec<f32> = Vec::new();
-    let mut pending_rate = TARGET_SAMPLE_RATE;
-    let mut last_send = Instant::now();
-    let mut audio_open = true;
+/// Run one socket from connect to close.
+///
+/// `Ok` means the user stopped recording and the transcript is final. `Err`
+/// means the connection failed and the caller should reconnect and replay.
+async fn run_connection(
+    cfg: &DeepgramConfig,
+    url: &str,
+    state: &mut SessionState,
+    audio_rx: &mut mpsc::UnboundedReceiver<AudioChunk>,
+    command_rx: &mut mpsc::UnboundedReceiver<SessionCommand>,
+    on_progress: &ProgressSink,
+) -> Result<String> {
+    let mut connection = Connection::open(cfg, url, state, on_progress).await?;
     let mut keepalive = interval(KEEPALIVE_PERIOD);
     keepalive.tick().await; // consume the immediate first tick
 
     loop {
         tokio::select! {
             command = command_rx.recv() => {
-                // `Stop`, or the sender being dropped, both mean "end now".
-                if command.is_none() || matches!(command, Some(SessionCommand::Stop)) {
-                    if !pending.is_empty() {
-                        let tail = WhisperManager::resample(
-                            &pending,
-                            pending_rate,
-                            TARGET_SAMPLE_RATE,
-                        );
-                        state.push_samples(&tail);
-                        flush_audio(&mut sink, &state.pcm, &mut sent).await?;
-                    }
-                    return finish(&mut sink, &mut stream, state, on_progress).await;
+                if let Some(transcript) = connection.on_command(command).await? {
+                    return Ok(transcript);
                 }
             }
 
-            chunk = audio_rx.recv(), if audio_open => {
-                match chunk {
-                    Some(chunk) => {
-                        if chunk.sample_rate == 0 {
-                            continue;
-                        }
-                        pending_rate = chunk.sample_rate;
-                        pending.extend_from_slice(&chunk.samples);
-                        let block_samples =
-                            ((pending_rate as usize) * BLOCK_MS as usize / 1000).max(1);
-                        while pending.len() >= block_samples {
-                            let rest = pending.split_off(block_samples);
-                            let block = std::mem::replace(&mut pending, rest);
-                            let resampled = WhisperManager::resample(
-                                &block,
-                                pending_rate,
-                                TARGET_SAMPLE_RATE,
-                            );
-                            state.push_samples(&resampled);
-                            flush_audio(&mut sink, &state.pcm, &mut sent).await?;
-                            last_send = Instant::now();
-                        }
-                    }
-                    // The tap went away; keep draining the socket text instead
-                    // of spinning on a closed channel.
-                    None => audio_open = false,
-                }
+            chunk = audio_rx.recv(), if connection.audio_open => {
+                connection.on_audio(chunk).await?;
             }
 
-            message = stream.next() => {
-                match message {
-                    Some(Ok(Message::Text(text))) => {
-                        if let ServerMessage::Error(err) = parse_server_message(&text) {
-                            bail!("Deepgram: {}", err);
-                        }
-                        apply_message(&text, state, on_progress);
-                    }
-                    Some(Ok(Message::Close(_))) | None => {
-                        return Err(anyhow!("Deepgram closed the connection"));
-                    }
-                    Some(Err(err)) => {
-                        return Err(anyhow!("Deepgram socket error: {}", err));
-                    }
-                    _ => {}
-                }
+            message = connection.stream.next() => {
+                let () = connection.on_socket(message)?;
             }
 
-            _ = keepalive.tick() => {
-                if last_send.elapsed() >= KEEPALIVE_MIN_IDLE {
-                    sink.send(Message::text("{\"type\":\"KeepAlive\"}"))
-                        .await
-                        .context("Could not send a Deepgram keep-alive")?;
-                    last_send = Instant::now();
-                }
-            }
+            _ = keepalive.tick() => connection.on_keepalive().await?,
         }
     }
+}
+
+/// Buffer one chunk and send every whole block it completes.
+///
+/// Deepgram reads audio in blocks of `BLOCK_MS`, so a chunk that arrives in two
+/// halves is held until the second half completes the block.
+async fn send_audio(
+    sink: &mut WsSink,
+    state: &mut SessionState,
+    sent: &mut usize,
+    pending: &mut Vec<f32>,
+    pending_rate: &mut u32,
+    chunk: AudioChunk,
+) -> Result<()> {
+    *pending_rate = chunk.sample_rate;
+    pending.extend_from_slice(&chunk.samples);
+    let block_samples = ((*pending_rate as usize) * BLOCK_MS as usize / 1000).max(1);
+    while pending.len() >= block_samples {
+        let rest = pending.split_off(block_samples);
+        let block = std::mem::replace(pending, rest);
+        let resampled = WhisperManager::resample(&block, *pending_rate, TARGET_SAMPLE_RATE);
+        state.push_samples(&resampled);
+        flush_audio(sink, &state.pcm, sent).await?;
+    }
+    Ok(())
+}
+
+/// One text frame: an error ends the connection, anything else is folded into
+/// the session and reported.
+fn apply_frame(raw: &str, state: &mut SessionState, on_progress: &ProgressSink) -> Result<()> {
+    if let ServerMessage::Error(err) = parse_server_message(raw) {
+        bail!("Deepgram: {}", err);
+    }
+    apply_message(raw, state, on_progress);
+    Ok(())
 }
 
 /// Flush the tail, close the stream, and collect the final transcript.
@@ -707,489 +803,5 @@ async fn flush_audio(sink: &mut WsSink, pcm: &[i16], sent: &mut usize) -> Result
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn cfg() -> DeepgramConfig {
-        DeepgramConfig {
-            api_key: "not-a-real-deepgram-key".to_string(),
-            ..DeepgramConfig::default()
-        }
-    }
-
-    // â”€â”€ URL building â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    #[test]
-    fn test_build_listen_url_enables_the_normal_things() {
-        let url = build_listen_url(&cfg());
-
-        assert!(url.starts_with("wss://api.deepgram.com/v1/listen?"));
-        assert!(url.contains("model=nova-3"));
-        assert!(url.contains("language=en"));
-        assert!(url.contains("encoding=linear16"));
-        assert!(url.contains("sample_rate=16000"));
-        assert!(url.contains("channels=1"));
-        assert!(url.contains("smart_format=true"));
-        assert!(url.contains("punctuate=true"));
-        // `dictation` is deliberately absent by default: it replaces automatic
-        // punctuation, it does not add to it.
-        assert!(!url.contains("dictation"), "URL was: {}", url);
-        assert!(url.contains("interim_results=true"));
-        assert!(url.contains("endpointing=300"));
-        assert!(url.contains("utterance_end_ms=1000"));
-    }
-
-    #[test]
-    fn test_build_recorded_url_is_a_batch_request() {
-        let url = build_recorded_url(&cfg());
-
-        assert!(url.starts_with("https://api.deepgram.com/v1/listen?"));
-        assert!(url.contains("model=nova-3"));
-        assert!(url.contains("language=en"));
-        assert!(url.contains("smart_format=true"));
-        assert!(url.contains("punctuate=true"));
-        // The audio is a complete WAV, so raw-PCM hints must be absentâ€¦
-        assert!(!url.contains("encoding"), "URL was: {}", url);
-        assert!(!url.contains("sample_rate"));
-        assert!(!url.contains("channels"));
-        // â€¦and so must live-only parameters.
-        assert!(!url.contains("interim_results"));
-        assert!(!url.contains("utterance_end_ms"));
-        assert!(!url.contains("endpointing"));
-        assert!(!url.contains("vad_events"));
-    }
-
-    #[test]
-    fn test_parse_recorded_transcript_extracts_the_text() {
-        let body = r#"{"metadata":{"request_id":"x"},
-            "results":{"channels":[{"alternatives":[{"transcript":" The quick brown fox. ",
-            "confidence":0.99,"words":[]}]}]}}"#;
-        assert_eq!(
-            parse_recorded_transcript(body).unwrap(),
-            "The quick brown fox."
-        );
-    }
-
-    #[test]
-    fn test_parse_recorded_transcript_rejects_an_empty_result() {
-        let body = r#"{"results":{"channels":[{"alternatives":[{"transcript":""}]}]}}"#;
-        assert!(parse_recorded_transcript(body).is_err());
-        assert!(parse_recorded_transcript("not json").is_err());
-    }
-
-    #[test]
-    fn test_build_listen_url_never_sends_diarization() {
-        // Diarization was deliberately left out of this provider.
-        let url = build_listen_url(&cfg());
-        assert!(!url.contains("diarize"), "URL was: {}", url);
-    }
-
-    #[test]
-    fn test_build_listen_url_forces_punctuate_when_dictation_is_on() {
-        let mut config = cfg();
-        config.punctuate = false;
-        config.dictation = true;
-
-        let url = build_listen_url(&config);
-        assert!(url.contains("punctuate=true"), "URL was: {}", url);
-        assert!(url.contains("dictation=true"));
-    }
-
-    #[test]
-    fn test_build_listen_url_sends_dictation_only_when_enabled() {
-        let mut config = cfg();
-        config.dictation = true;
-        assert!(build_listen_url(&config).contains("dictation=true"));
-
-        config.dictation = false;
-        assert!(!build_listen_url(&config).contains("dictation"));
-    }
-
-    #[test]
-    fn test_build_listen_url_omits_disabled_flags() {
-        let mut config = cfg();
-        config.smart_format = false;
-        config.punctuate = false;
-        config.dictation = false;
-        config.interim_results = false;
-
-        let url = build_listen_url(&config);
-        assert!(!url.contains("smart_format"));
-        assert!(!url.contains("punctuate"));
-        assert!(!url.contains("dictation"));
-        assert!(!url.contains("interim_results"));
-        // utterance end only means something with interim results
-        assert!(!url.contains("utterance_end_ms"));
-        assert!(!url.contains("vad_events"));
-    }
-
-    #[test]
-    fn test_build_listen_url_clamps_utterance_end_to_the_supported_range() {
-        let mut config = cfg();
-        config.utterance_end_ms = 200; // below Deepgram's 1000 ms minimum
-
-        let url = build_listen_url(&config);
-        assert!(url.contains("utterance_end_ms=1000"), "URL was: {}", url);
-
-        config.utterance_end_ms = 90_000; // above the 5000 ms maximum
-        let url = build_listen_url(&config);
-        assert!(url.contains("utterance_end_ms=5000"), "URL was: {}", url);
-    }
-
-    #[test]
-    fn test_build_listen_url_encodes_model_and_language() {
-        let mut config = cfg();
-        config.model = "nova-3 custom".to_string();
-        config.language = "en-US".to_string();
-
-        let url = build_listen_url(&config);
-        assert!(url.contains("model=nova-3%20custom"), "URL was: {}", url);
-        assert!(url.contains("language=en-US"));
-    }
-
-    // â”€â”€ Message parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    #[test]
-    fn test_parse_interim_result() {
-        // Note: no "type" field, exactly as Deepgram sends it.
-        let raw = r#"{"channel_index":[0,1],"duration":1.039875,"start":0,"is_final":false,
-            "channel":{"alternatives":[{"transcript":"another big","confidence":0.96,
-            "words":[]}]}}"#;
-        assert_eq!(
-            parse_server_message(raw),
-            ServerMessage::Interim("another big".to_string())
-        );
-    }
-
-    #[test]
-    fn test_parse_final_result() {
-        let raw = r#"{"type":"Results","is_final":true,"speech_final":true,
-            "channel":{"alternatives":[{"transcript":" hello there. ","confidence":1.0}]}}"#;
-        assert_eq!(
-            parse_server_message(raw),
-            ServerMessage::Final {
-                text: "hello there.".to_string(),
-                from_finalize: false,
-            }
-        );
-    }
-
-    #[test]
-    fn test_parse_final_from_finalize() {
-        let raw = r#"{"type":"Results","is_final":true,"from_finalize":true,
-            "channel":{"alternatives":[{"transcript":" tail words"}]}}"#;
-        match parse_server_message(raw) {
-            ServerMessage::Final {
-                text,
-                from_finalize,
-            } => {
-                assert_eq!(text, "tail words");
-                assert!(from_finalize, "from_finalize must be preserved");
-            }
-            other => panic!("expected a final, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_speech_final_without_is_final_is_not_a_commit() {
-        // Deepgram's own docs show is_final:false together with speech_final:true.
-        let raw = r#"{"type":"Results","is_final":false,"speech_final":true,
-            "channel":{"alternatives":[{"transcript":"half a thought"}]}}"#;
-        assert_eq!(
-            parse_server_message(raw),
-            ServerMessage::Interim("half a thought".to_string())
-        );
-    }
-
-    #[test]
-    fn test_parse_utterance_end_is_a_turn_boundary() {
-        let raw = r#"{"type":"UtteranceEnd","channel":[0,1],"last_word_end":2.395}"#;
-        assert_eq!(parse_server_message(raw), ServerMessage::TurnBoundary);
-    }
-
-    fn final_frame(text: &str) -> String {
-        format!(
-            r#"{{"type":"Results","is_final":true,
-                "channel":{{"alternatives":[{{"transcript":"{}"}}]}}}}"#,
-            text
-        )
-    }
-
-    /// Collect the finals a sink is given, in order.
-    fn collecting_sink() -> (ProgressSink, Arc<std::sync::Mutex<Vec<String>>>) {
-        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let sink: ProgressSink = {
-            let seen = Arc::clone(&seen);
-            Arc::new(move |event: Progress| {
-                if let Progress::Final(text) = event {
-                    seen.lock().unwrap().push(text);
-                }
-            })
-        };
-        (sink, seen)
-    }
-
-    #[test]
-    fn test_a_replayed_final_is_not_reported_twice() {
-        let (sink, seen) = collecting_sink();
-        let mut state = SessionState::new();
-
-        apply_message(&final_frame("one"), &mut state, &sink);
-        apply_message(&final_frame("two"), &mut state, &sink);
-
-        // The socket dropped: the next connection re-transcribes the whole
-        // utterance from the beginning and reports the same sentences again.
-        state.finals.clear();
-        apply_message(&final_frame("one"), &mut state, &sink);
-        apply_message(&final_frame("two"), &mut state, &sink);
-
-        assert_eq!(*seen.lock().unwrap(), ["one", "two"]);
-        assert_eq!(state.transcript(), "one two");
-    }
-
-    #[test]
-    fn test_a_final_from_new_audio_after_a_replay_is_still_reported() {
-        let (sink, seen) = collecting_sink();
-        let mut state = SessionState::new();
-
-        apply_message(&final_frame("one"), &mut state, &sink);
-        apply_message(&final_frame("two"), &mut state, &sink);
-
-        state.finals.clear();
-        apply_message(&final_frame("one"), &mut state, &sink);
-        // The audio spoken after the reconnect commits its own sentence.
-        apply_message(&final_frame("three"), &mut state, &sink);
-
-        assert_eq!(*seen.lock().unwrap(), ["one", "two", "three"]);
-    }
-
-    #[test]
-    fn test_a_blank_final_does_not_desync_the_replay_guard() {
-        let (sink, seen) = collecting_sink();
-        let mut state = SessionState::new();
-
-        // Deepgram emits whitespace-only finals on silence.
-        apply_message(&final_frame("one"), &mut state, &sink);
-        apply_message(&final_frame("   "), &mut state, &sink);
-        apply_message(&final_frame("two"), &mut state, &sink);
-
-        state.finals.clear();
-        apply_message(&final_frame("one"), &mut state, &sink);
-        apply_message(&final_frame("   "), &mut state, &sink);
-        apply_message(&final_frame("two"), &mut state, &sink);
-
-        assert_eq!(*seen.lock().unwrap(), ["one", "two"]);
-        assert_eq!(state.transcript(), "one two");
-    }
-
-    #[test]
-    fn test_parse_metadata() {
-        let raw = r#"{"type":"Metadata","request_id":"abc","duration":0.0,"channels":0}"#;
-        assert_eq!(parse_server_message(raw), ServerMessage::Metadata);
-    }
-
-    #[test]
-    fn test_parse_error_carries_a_message() {
-        let raw = r#"{"type":"Error","description":"NET-0001"}"#;
-        assert_eq!(
-            parse_server_message(raw),
-            ServerMessage::Error("NET-0001".to_string())
-        );
-    }
-
-    #[test]
-    fn test_parse_garbage_is_ignored() {
-        assert_eq!(parse_server_message("not json"), ServerMessage::Ignored);
-        assert_eq!(
-            parse_server_message("{}"),
-            ServerMessage::Interim(String::new())
-        );
-    }
-
-    // â”€â”€ Transcript assembly â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    #[test]
-    fn test_session_state_joins_finals_once() {
-        let mut state = SessionState::new();
-        state.commit(" hello there. ");
-        state.commit("");
-        state.commit("how are you?");
-        assert_eq!(state.transcript(), "hello there. how are you?");
-    }
-
-    #[test]
-    fn test_session_state_clears_finals_on_reconnect() {
-        let mut state = SessionState::new();
-        state.commit("first attempt");
-        state.finals.clear(); // what run_connection does on reconnect
-        state.commit("replayed properly");
-        assert_eq!(state.transcript(), "replayed properly");
-    }
-
-    #[test]
-    fn test_session_state_accumulates_pcm_for_replay() {
-        let mut state = SessionState::new();
-        let chunk = vec![0.0f32; 100];
-        state.push_samples(&chunk);
-        state.push_samples(&chunk);
-        assert_eq!(state.pcm.len(), 200);
-    }
-
-    // â”€â”€ Live network test â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    /// The key the app itself would use: `settings.json` first, because that is
-    /// where Settings â†’ Engine writes it, then an environment override.
-    fn live_api_key() -> Option<String> {
-        let from_env = std::env::var("DEEPGRAM_API_KEY")
-            .ok()
-            .map(|k| k.trim().to_string())
-            .filter(|k| !k.is_empty());
-        if from_env.is_some() {
-            return from_env;
-        }
-
-        let path = crate::config::ConfigManager::config_dir()
-            .ok()?
-            .join("settings.json");
-        let raw = std::fs::read_to_string(path).ok()?;
-        let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
-        json.get("deepgram")?
-            .get("api_key")?
-            .as_str()
-            .map(|k| k.trim().to_string())
-            .filter(|k| !k.is_empty())
-    }
-
-    /// End-to-end check of the recorded (prerecorded) path.
-    ///
-    /// ```text
-    /// cargo test --lib live_deepgram_recorded -- --ignored --nocapture
-    /// ```
-    #[tokio::test]
-    #[ignore]
-    async fn live_deepgram_recorded_transcribes_synthesized_speech() {
-        let _ = env_logger::builder().is_test(true).try_init();
-
-        let Some(api_key) = live_api_key() else {
-            eprintln!("skipping: no Deepgram key (Settings → Engine or DEEPGRAM_API_KEY)");
-            return;
-        };
-        let fixture = std::path::Path::new("spike_speech.wav");
-        if !fixture.exists() {
-            eprintln!("skipping: spike_speech.wav is missing");
-            return;
-        }
-
-        let reader = hound::WavReader::open(fixture).expect("open fixture");
-        let spec = reader.spec();
-        let samples: Vec<f32> = reader
-            .into_samples::<i16>()
-            .filter_map(|s| s.ok())
-            .map(|s| s as f32 / i16::MAX as f32)
-            .collect();
-
-        let config = DeepgramConfig {
-            api_key,
-            ..DeepgramConfig::default()
-        };
-        assert!(!config.is_live(), "recorded must be the default mode");
-
-        let transcript = transcribe_recorded(&config, samples, spec.sample_rate)
-            .await
-            .expect("recorded transcription");
-        println!("recorded transcript: {}", transcript);
-        assert!(
-            transcript.trim_end().ends_with('.'),
-            "expected punctuation from the recorded endpoint, got {:?}",
-            transcript
-        );
-    }
-    /// End-to-end check against the real service.
-    ///
-    /// The key is taken from the app's own settings first, so a key pasted into
-    /// Settings â†’ Engine â†’ Deepgram is enough; `DEEPGRAM_API_KEY` is only an
-    /// override for CI. Also needs the gitignored `spike_speech.wav` fixture.
-    ///
-    /// ```text
-    /// cargo test --lib live_deepgram -- --ignored --nocapture
-    /// ```
-    #[tokio::test]
-    #[ignore]
-    async fn live_deepgram_transcribes_synthesized_speech() {
-        // `RUST_LOG=debug` dumps every raw frame, which is how you tell
-        // "Deepgram didn't punctuate" apart from "we dropped the punctuation".
-        let _ = env_logger::builder().is_test(true).try_init();
-
-        let Some(api_key) = live_api_key() else {
-            eprintln!(
-                "skipping: no Deepgram key. Paste one into Settings â†’ Engine â†’ Deepgram \
-                 (written to settings.json) or set DEEPGRAM_API_KEY."
-            );
-            return;
-        };
-        let fixture = std::path::Path::new("spike_speech.wav");
-        if !fixture.exists() {
-            eprintln!("skipping: spike_speech.wav is missing");
-            return;
-        }
-
-        let reader = hound::WavReader::open(fixture).expect("open fixture");
-        let spec = reader.spec();
-        let samples: Vec<f32> = reader
-            .into_samples::<i16>()
-            .filter_map(|s| s.ok())
-            .map(|s| s as f32 / i16::MAX as f32)
-            .collect();
-        if samples.is_empty() {
-            eprintln!("skipping: fixture contains no samples");
-            return;
-        }
-
-        let config = DeepgramConfig {
-            api_key,
-            ..DeepgramConfig::default()
-        };
-        let (audio_tx, audio_rx) = mpsc::unbounded_channel();
-        let progress: ProgressSink = Arc::new(|event: Progress| {
-            if let Progress::Interim(text) = event {
-                println!("interim: {}", text);
-            }
-        });
-
-        let session = LiveSession::start(
-            tokio::runtime::Handle::current(),
-            config,
-            audio_rx,
-            progress,
-        );
-
-        // Feed the clip at roughly realtime: Deepgram accepts at most 1.25x.
-        let block = (spec.sample_rate as usize) / 10;
-        for chunk in samples.chunks(block.max(1)) {
-            audio_tx
-                .send(AudioChunk {
-                    samples: chunk.to_vec(),
-                    sample_rate: spec.sample_rate,
-                })
-                .expect("session alive");
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        drop(audio_tx);
-
-        let transcript = session.finish().await.expect("live transcription");
-        println!("transcript: {}", transcript);
-        assert!(
-            transcript.split_whitespace().count() >= 2,
-            "expected a real transcript, got {:?}",
-            transcript
-        );
-        // Regression guard for the measured `dictation` behaviour: turning spoken
-        // punctuation on silently removes automatic punctuation, so if this ever
-        // comes back unpunctuated the defaults have drifted.
-        assert!(
-            transcript.trim_end().ends_with('.'),
-            "expected Deepgram to punctuate the sentence, got {:?}",
-            transcript
-        );
-    }
-}
+#[path = "deepgram/tests.rs"]
+mod tests;

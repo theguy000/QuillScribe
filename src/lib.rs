@@ -421,146 +421,205 @@ fn flush_pending_max_history_entries(
 /// anything, and the recorder's own buffer is empty.
 const SAMPLE_RATE_FALLBACK: u32 = 16_000;
 
-/// Open a Deepgram live session when the active provider needs one.
+/// The Deepgram settings when this utterance would run over a live socket.
 ///
-/// Batch providers skip this entirely: they still receive the whole recording
-/// from `stop_recording`, exactly as before.
+/// Batch providers and recorded mode both return `None`: their audio reaches the
+/// provider from `stop_recording`, exactly as before, so no socket opens and the
+/// microphone tap stays off.
+fn live_provider(shared: &SharedAppState) -> Option<config::DeepgramConfig> {
+    let config = shared.state.config.lock().unwrap();
+    let whisper_cfg = config.get_whisper();
+    let deepgram_available = whisper_cfg.mode == "api"
+        && whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider);
+    let cfg = config.get_deepgram();
+    (deepgram_available && cfg.is_live()).then_some(cfg)
+}
+
+/// The Deepgram settings when the key is present, or `None` after undoing the
+/// recording when it is missing.
 ///
-/// `bound_window` is the window that held focus at hotkey time, and it owns the
-/// whole utterance. `target` is what the platform said about it, which decides
-/// whether it may receive text at all.
-fn start_live_session_if_needed(
+/// Recording has already started by the time this runs, so a missing key undoes
+/// it rather than leaving the microphone hot with nothing consuming it. `None`
+/// means the utterance ended here.
+fn start_live_deepgram_with_key(
     shared: &Arc<SharedAppState>,
-    rt: &tokio::runtime::Handle,
     overlay: &slint::Weak<RecordingOverlay>,
-    bound_window: Option<delivery::WindowId>,
-    target: verdict::TargetWindow,
-) {
-    // Nothing left over from an earlier utterance may be mistaken for this one.
-    *shared.state.delivery.lock().unwrap() = None;
-
-    let whisper_cfg = {
-        let config = shared.state.config.lock().unwrap();
-        config.get_whisper()
-    };
-    if whisper_cfg.mode != "api"
-        || !whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider)
-    {
-        return;
-    }
-    if !shared.state.config.lock().unwrap().get_deepgram().is_live() {
-        // Recorded mode: the utterance is uploaded when the user stops.
-        return;
+) -> Option<config::DeepgramConfig> {
+    let cfg = live_provider(shared)?;
+    if !cfg.api_key.trim().is_empty() {
+        return Some(cfg);
     }
 
-    let cfg = {
-        let config = shared.state.config.lock().unwrap();
-        config.get_deepgram()
-    };
-
-    if cfg.api_key.trim().is_empty() {
-        // Recording has already started by the time this runs, so undo it
-        // rather than leaving the microphone hot with nothing consuming it.
-        {
-            let mut audio = shared.state.audio.lock().unwrap();
-            audio.set_tap(None);
-            let _ = audio.stop_recording();
-        }
-        if let Some(overlay) = overlay.upgrade() {
-            hide_recording_overlay(&overlay);
-        }
-        shared.with_ui(|app| {
-            app.set_is_recording(false);
-            app.set_is_transcribing(false);
-            app.set_status_message("Add a Deepgram API key in Settings → Engine".into());
-        });
-        return;
-    }
-
-    let (tap_tx, tap_rx) = tokio::sync::mpsc::unbounded_channel();
     {
         let mut audio = shared.state.audio.lock().unwrap();
-        audio.set_tap(Some(tap_tx));
+        audio.set_tap(None);
+        let _ = audio.stop_recording();
+    }
+    if let Some(overlay) = overlay.upgrade() {
+        hide_recording_overlay(&overlay);
+    }
+    shared.with_ui(|app| {
+        app.set_is_recording(false);
+        app.set_is_transcribing(false);
+        app.set_status_message("Add a Deepgram API key in Settings → Engine".into());
+    });
+    None
+}
+
+/// One utterance that starts recording before the live session can be opened.
+///
+/// The key and the target are read together, so the recording start and the
+/// session start cannot disagree about whether this utterance is going live.
+struct LiveUtterance {
+    cfg: config::DeepgramConfig,
+    bound_window: Option<delivery::WindowId>,
+    target: verdict::TargetWindow,
+}
+
+/// One utterance, from the hotkey press to the socket it opens.
+impl LiveUtterance {
+    /// The utterance a hotkey starts, or `None` when it is not a live one.
+    ///
+    /// A batch provider and recorded mode both deliver at stop, so they never
+    /// read the key, the window, or the target.
+    fn begin(
+        shared: &Arc<SharedAppState>,
+        overlay: &slint::Weak<RecordingOverlay>,
+        window: Option<delivery::WindowId>,
+        target: verdict::TargetWindow,
+    ) -> Option<Self> {
+        live_provider(shared)?;
+        Some(Self {
+            cfg: start_live_deepgram_with_key(shared, overlay)?,
+            bound_window: window,
+            target,
+        })
+    }
+}
+
+/// What a live utterance shows in QuillScribe's own panel while the user speaks.
+///
+/// The panel shows the committed text so far plus the segment still in
+/// progress, and each Final also reaches live typing, which writes it into the
+/// bound window.
+struct LiveProgress {
+    shared: std::sync::Weak<SharedAppState>,
+    committed: Arc<std::sync::Mutex<String>>,
+    delivery: Option<Arc<Mutex<delivery::DeliverySession>>>,
+}
+
+impl LiveProgress {
+    fn new(
+        shared: &Arc<SharedAppState>,
+        delivery: Option<Arc<Mutex<delivery::DeliverySession>>>,
+    ) -> Self {
+        Self {
+            shared: Arc::downgrade(shared),
+            // Committed text, so the live view can show what has been said so
+            // far plus the segment still in progress.
+            committed: Arc::new(std::sync::Mutex::new(String::new())),
+            delivery,
+        }
     }
 
-    // Live typing: every committed segment is written into the bound window as
-    // it arrives. Interim segments never leave our own panel.
-    let delivery = start_live_typing(shared, bound_window, target);
+    /// The committed text so far with the segment in progress after it.
+    fn live_text(&self, text: &str) -> String {
+        let prefix = self.committed.lock().map(|c| c.clone()).unwrap_or_default();
+        if prefix.is_empty() {
+            text.to_string()
+        } else {
+            format!("{} {}", prefix, text)
+        }
+    }
 
-    // Committed text, so the live view can show what has been said so far plus
-    // the segment still in progress.
-    let committed_cb = Arc::new(std::sync::Mutex::new(String::new()));
-    let weak_shared = Arc::downgrade(shared);
-    let delivery_for_sink = delivery;
-
-    let on_progress: deepgram::ProgressSink = Arc::new(move |event: deepgram::Progress| {
-        let Some(shared) = weak_shared.upgrade() else {
-            return;
-        };
-
-        match event {
-            deepgram::Progress::Interim(text) => {
-                let prefix = committed_cb.lock().map(|c| c.clone()).unwrap_or_default();
-                let live = if prefix.is_empty() {
-                    text
-                } else {
-                    format!("{} {}", prefix, text)
-                };
-                let words = live.split_whitespace().count();
-                let live_for_ui = live.clone();
-                // Fallback utterances already carry the reason live typing is
-                // off; a per-word status would overwrite it.
-                let types_as_you_speak = delivery_for_sink.is_some();
-                let _ = slint::invoke_from_event_loop(move || {
-                    shared.with_ui(|app| {
-                        app.set_transcription_text(live_for_ui.into());
-                        if types_as_you_speak {
-                            app.set_status_message(format!("Recording… {} words", words).into());
-                        }
-                    });
-                });
-            }
-            deepgram::Progress::Final(text) => {
-                if let Some(session) = &delivery_for_sink {
-                    if let Ok(mut session) = session.lock() {
-                        // A fragment the bound window will not take is not
-                        // lost: the session keeps it owed, in order, and the
-                        // stop path retries it there.
-                        if let Err(err) = session.deliver(&text) {
-                            log::debug!("Live typing held a fragment: {:?}", err);
-                        }
-                    }
+    /// Commit `text` for the live view and hand it to live typing.
+    ///
+    /// A fragment the bound window will not take is not lost: the session keeps
+    /// it owed, in order, and the stop path retries it there.
+    fn commit(&self, text: &str) {
+        if let Some(session) = &self.delivery {
+            if let Ok(mut session) = session.lock() {
+                if let Err(err) = session.deliver(text) {
+                    log::debug!("Live typing held a fragment: {:?}", err);
                 }
-
-                let live = match committed_cb.lock() {
-                    Ok(mut committed) => {
-                        if !committed.is_empty() {
-                            committed.push(' ');
-                        }
-                        committed.push_str(&text);
-                        committed.clone()
-                    }
-                    Err(_) => text,
-                };
-                let live_for_ui = live.clone();
-                let _ = slint::invoke_from_event_loop(move || {
-                    shared.with_ui(|app| {
-                        app.set_transcription_text(live_for_ui.into());
-                    });
-                });
-            }
-            deepgram::Progress::Status(message) => {
-                let _ = slint::invoke_from_event_loop(move || {
-                    shared.with_ui(|app| {
-                        app.set_status_message(message.into());
-                    });
-                });
             }
         }
-    });
 
-    let session = deepgram::LiveSession::start(rt.clone(), cfg, tap_rx, on_progress);
-    *shared.state.live.lock().unwrap() = Some(session);
+        let live = match self.committed.lock() {
+            Ok(mut committed) => {
+                if !committed.is_empty() {
+                    committed.push(' ');
+                }
+                committed.push_str(text);
+                committed.clone()
+            }
+            Err(_) => text.to_string(),
+        };
+        let words = live.split_whitespace().count();
+        // Fallback utterances already carry the reason live typing is off; a
+        // per-word status would overwrite it.
+        let types_as_you_speak = self.delivery.is_some();
+        self.show(move |app| {
+            app.set_transcription_text(live.clone().into());
+            if types_as_you_speak {
+                app.set_status_message(format!("Recording… {} words", words).into());
+            }
+        });
+    }
+
+    fn show(&self, show: impl Fn(&App) + Send + 'static) {
+        let Some(shared) = self.shared.upgrade() else {
+            return;
+        };
+        let _ = slint::invoke_from_event_loop(move || {
+            shared.with_ui(|app| show(&app));
+        });
+    }
+}
+
+impl LiveUtterance {
+    /// Tap the recorder, start live typing, and hand the socket its progress.
+    ///
+    /// The bound window owns the whole utterance, and the target describes what
+    /// the platform said about it at hotkey time, which decides whether it may
+    /// receive text at all.
+    fn open(
+        self,
+        shared: &Arc<SharedAppState>,
+        rt: &tokio::runtime::Handle,
+    ) -> Option<deepgram::LiveSession> {
+        let (tap_tx, tap_rx) = tokio::sync::mpsc::unbounded_channel();
+        {
+            let mut audio = shared.state.audio.lock().unwrap();
+            audio.set_tap(Some(tap_tx));
+        }
+
+        // Live typing: every committed segment is written into the bound window
+        // as it arrives. Interim segments never leave our own panel.
+        let delivery = start_live_typing(shared, self.bound_window, self.target);
+        let progress = Arc::new(LiveProgress::new(shared, delivery));
+
+        let on_progress: deepgram::ProgressSink = {
+            let progress = Arc::clone(&progress);
+            Arc::new(move |event| match event {
+                deepgram::Progress::Interim(text) => {
+                    let live = progress.live_text(&text);
+                    progress.show(move |app| app.set_transcription_text(live.clone().into()));
+                }
+                deepgram::Progress::Final(text) => progress.commit(&text),
+                deepgram::Progress::Status(message) => {
+                    progress.show(move |app| app.set_status_message(message.clone().into()));
+                }
+            })
+        };
+
+        Some(deepgram::LiveSession::start(
+            rt.clone(),
+            self.cfg,
+            tap_rx,
+            on_progress,
+        ))
+    }
 }
 
 /// Whether live typing can apply to an utterance at all, before any window is
@@ -731,6 +790,19 @@ fn write_stop_output(
         return None;
     };
 
+    let note = report_stop_route(&output, text, report, mode);
+    copy_whole_transcript(&output, text, report, mode);
+    note
+}
+
+/// Say what the stop path did with the words the document never took, and put
+/// them on the clipboard when they went that way.
+fn report_stop_route(
+    output: &crate::output::OutputManager,
+    text: &str,
+    report: &delivery::DeliveryReport,
+    mode: output::OutputMode,
+) -> Option<String> {
     // A refusal is worth saying out loud: the words did not fail to arrive, the
     // app chose not to send them into the field the user had focused.
     let because = match report.refused {
@@ -738,7 +810,7 @@ fn write_stop_output(
         None => String::new(),
     };
 
-    let note = match StopRoute::decide(text, report, mode) {
+    match StopRoute::decide(text, report, mode) {
         StopRoute::Nothing => {
             log::debug!("Stop path: every word already reached the document");
             None
@@ -746,28 +818,7 @@ fn write_stop_output(
         StopRoute::Clipboard {
             text: unwritten,
             words,
-        } => {
-            log::warn!(
-                "Live typing left {} word(s) undelivered{}, so they went to the clipboard",
-                words,
-                because
-            );
-            // The status line must not promise a clipboard the app could not
-            // write: those words are the only copy the user has left.
-            Some(match output.copy_to_clipboard(&unwritten) {
-                Ok(()) => format!(
-                    "Transcription complete, {} word(s) not typed{}, copied to the clipboard",
-                    words, because
-                ),
-                Err(err) => {
-                    log::error!("Could not copy the undelivered text: {}", err);
-                    format!(
-                        "Transcription complete, {} word(s) not typed{} and could not be copied",
-                        words, because
-                    )
-                }
-            })
-        }
+        } => Some(copy_leftovers(output, &unwritten, words, &because)),
         StopRoute::Reported { words } => {
             log::warn!(
                 "Live typing left {} word(s) undelivered{}; the clipboard holds the transcript",
@@ -779,18 +830,54 @@ fn write_stop_output(
                 words, because
             ))
         }
-    };
+    }
+}
 
-    // Copy & type promises the whole transcript on the clipboard, and writing
-    // into the document during the utterance does not put it there. Copy-only
-    // live typing already left it there segment by segment.
-    let whole_transcript_on_clipboard = mode == output::OutputMode::CopyAndType
+/// The clipboard line after the leftovers went there, or the honest line when
+/// the clipboard refused them.
+///
+/// The status line must not promise a clipboard the app could not write: those
+/// words are the only copy the user has left.
+fn copy_leftovers(
+    output: &crate::output::OutputManager,
+    unwritten: &str,
+    words: usize,
+    because: &str,
+) -> String {
+    log::warn!(
+        "Live typing left {} word(s) undelivered{}, so they went to the clipboard",
+        words,
+        because
+    );
+    match output.copy_to_clipboard(unwritten) {
+        Ok(()) => format!(
+            "Transcription complete, {} word(s) not typed{}, copied to the clipboard",
+            words, because
+        ),
+        Err(err) => {
+            log::error!("Could not copy the undelivered text: {}", err);
+            format!(
+                "Transcription complete, {} word(s) not typed{} and could not be copied",
+                words, because
+            )
+        }
+    }
+}
+
+/// Copy & type promises the whole transcript on the clipboard, and writing into
+/// the document during the utterance does not put it there. Copy-only live
+/// typing already left it there segment by segment.
+fn copy_whole_transcript(
+    output: &crate::output::OutputManager,
+    text: &str,
+    report: &delivery::DeliveryReport,
+    mode: output::OutputMode,
+) {
+    let on_clipboard = mode == output::OutputMode::CopyAndType
         || (mode == output::OutputMode::CopyToClipboard && report.copies_instead_of_typing);
-    if whole_transcript_on_clipboard {
+    if on_clipboard {
         let _ = output.copy_to_clipboard(text);
     }
-
-    note
 }
 
 /// Record one utterance's outcome — statistics, output, history, UI — the same
@@ -821,35 +908,8 @@ fn emit_transcription_result(
                 &text,
                 1.0,
             );
-
             shared.state.sound.play_stop_sound();
-
-            // Process output. Words live typing already wrote are not written
-            // again, and whatever it could not write goes to the clipboard
-            // rather than into whichever window happens to hold focus now.
-            let stop_note = write_stop_output(shared, &text, live_delivery.as_ref());
-
-            // Update UI from the Slint event loop thread
-            let status = stop_note.unwrap_or_else(|| "Transcription complete".to_string());
-            let text_for_ui = text.clone();
-            let s_invoke = Arc::clone(shared);
-            let _ = slint::invoke_from_event_loop(move || {
-                s_invoke.with_ui(|app| {
-                    app.set_is_transcribing(false);
-                    app.set_transcription_text(text_for_ui.into());
-                    app.set_status_message(status.into());
-                    refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
-
-                    // Trigger completion burst animation
-                    app.set_show_burst(true);
-                    let weak = app.as_weak();
-                    slint::Timer::single_shot(std::time::Duration::from_millis(800), move || {
-                        if let Some(app) = weak.upgrade() {
-                            app.set_show_burst(false);
-                        }
-                    });
-                });
-            });
+            report_transcribed(shared, &text, live_delivery.as_ref());
         }
         Err(e) => {
             shared.state.statistics.record_transcription_result(
@@ -861,16 +921,57 @@ fn emit_transcription_result(
                 0.0,
             );
             let err_msg = format!("Error: {}", e);
-            let s_invoke = Arc::clone(shared);
-            let _ = slint::invoke_from_event_loop(move || {
-                s_invoke.with_ui(|app| {
-                    app.set_is_transcribing(false);
-                    app.set_status_message(err_msg.into());
-                    refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
-                });
+            show_on_ui_thread(shared, move |app, shared| {
+                app.set_is_transcribing(false);
+                app.set_status_message(err_msg.clone().into());
+                refresh_history_ui(app, &shared.state, HISTORY_DAYS);
             });
         }
     }
+}
+
+/// Deliver the transcript and show it, from the Slint event loop thread.
+///
+/// Words live typing already wrote are not written again, and whatever it could
+/// not write goes to the clipboard rather than into whichever window happens to
+/// hold focus now.
+fn report_transcribed(
+    shared: &Arc<SharedAppState>,
+    text: &str,
+    live_delivery: Option<&delivery::DeliveryReport>,
+) {
+    let stop_note = write_stop_output(shared, text, live_delivery);
+    let status = stop_note.unwrap_or_else(|| "Transcription complete".to_string());
+    let text_for_ui = text.to_string();
+    show_on_ui_thread(shared, move |app, shared| {
+        app.set_is_transcribing(false);
+        app.set_transcription_text(text_for_ui.clone().into());
+        app.set_status_message(status.clone().into());
+        refresh_history_ui(app, &shared.state, HISTORY_DAYS);
+        show_completion_burst(app);
+    });
+}
+
+/// Run `show` on the Slint event loop thread, if the loop is still there.
+fn show_on_ui_thread(
+    shared: &Arc<SharedAppState>,
+    show: impl Fn(&App, &Arc<SharedAppState>) + Send + 'static,
+) {
+    let s_invoke = Arc::clone(shared);
+    let _ = slint::invoke_from_event_loop(move || {
+        s_invoke.with_ui(|app| show(&app, &s_invoke));
+    });
+}
+
+/// The short animation that marks a finished transcript.
+fn show_completion_burst(app: &App) {
+    app.set_show_burst(true);
+    let weak = app.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(800), move || {
+        if let Some(app) = weak.upgrade() {
+            app.set_show_burst(false);
+        }
+    });
 }
 
 /// Rebuild the language dropdown for `provider` and show `current` as selected.
@@ -1193,6 +1294,9 @@ pub fn run() {
             } else {
                 (None, verdict::TargetWindow::default())
             };
+            // Read before recording starts, because a missing key undoes it
+            // rather than leaving the microphone hot with nothing consuming it.
+            let live_utterance = LiveUtterance::begin(&s, &overlay_toggle, bound_window, target);
 
             // Start recording synchronously on the UI thread before presenting it as active.
             let start_result = s
@@ -1220,7 +1324,10 @@ pub fn run() {
                 show_recording_overlay(&overlay, &s, 0);
             }
 
-            start_live_session_if_needed(&s, &rt_handle, &overlay_toggle, bound_window, target);
+            // The live session opens after the recorder is running, so every
+            // sample it hears reaches the socket.
+            let live_session = live_utterance.and_then(|utterance| utterance.open(&s, &rt_handle));
+            *s.state.live.lock().unwrap() = live_session;
         } else {
             // Stop recording — synchronous UI update on UI thread
             s.with_ui(|app| {
@@ -2275,6 +2382,9 @@ mod stop_route_tests {
             }
             fn focused_window(&self) -> Option<WindowId> {
                 Some(WindowId::new("win:1"))
+            }
+            fn focused_window_exists(&self) -> bool {
+                true
             }
         }
 

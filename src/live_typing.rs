@@ -117,30 +117,14 @@ pub fn live_typing_capability_on(
     let delivery = delivery_for(OutputMode::from(settings.output.mode));
     let live = settings.deepgram.is_live() && settings.deepgram.live_typing;
 
-    // The machine reason only applies to the delivery that reads a window.
-    let machine = match delivery {
-        Some(LiveDelivery::Type) => machine,
-        _ => None,
+    let reason = match delivery {
+        // Copy mode never reads a window, so what the machine says about focus
+        // reading does not apply to it.
+        Some(LiveDelivery::Type) => settings_reason(settings).or(machine),
+        _ => settings_reason(settings),
     };
 
-    let mut reason = if !control_available {
-        Some("Live typing is only available with Deepgram")
-    } else if delivery.is_none() {
-        Some("Display only mode keeps text inside QuillScribe")
-    } else if settings.deepgram.api_key.trim().is_empty() {
-        // The recording path stops an utterance with no key before it starts,
-        // so a switch that looked operable would promise text that never comes.
-        Some("Add a Deepgram API key to type as you speak")
-    } else if !settings.deepgram.is_live() {
-        Some("Live typing needs the live Deepgram mode")
-    } else {
-        None
-    };
-    if reason.is_none() {
-        reason = machine;
-    }
-
-    let enabled = reason.is_none() && control_available;
+    let enabled = reason.is_none();
     LiveTypingCapability {
         // A disabled switch cannot act, whatever the stored setting says, so
         // the recording path and the screen read the same answer.
@@ -149,6 +133,28 @@ pub fn live_typing_capability_on(
         control_enabled: enabled,
         reason,
         delivery: delivery.unwrap_or(LiveDelivery::CopyToClipboard),
+    }
+}
+
+/// Why the settings alone rule live typing out, or `None` when they allow it.
+///
+/// Each answer matches what a recording would do. Only Deepgram has a Live
+/// session to type from. Display only writes nothing outside the app. With no
+/// key the recording path stops the utterance before it starts, and a recorded
+/// session sends its text at stop.
+fn settings_reason(settings: &Settings) -> Option<&'static str> {
+    let on_deepgram = settings.whisper.mode == "api"
+        && crate::whisper::WhisperManager::is_live_provider(&settings.whisper.api_provider);
+    if !on_deepgram {
+        Some("Live typing is only available with Deepgram")
+    } else if OutputMode::from(settings.output.mode) == OutputMode::DisplayOnly {
+        Some("Display only mode keeps text inside QuillScribe")
+    } else if settings.deepgram.api_key.trim().is_empty() {
+        Some("Add a Deepgram API key to type as you speak")
+    } else if !settings.deepgram.is_live() {
+        Some("Live typing needs the live Deepgram mode")
+    } else {
+        None
     }
 }
 
