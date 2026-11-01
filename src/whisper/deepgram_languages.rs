@@ -1,146 +1,317 @@
 //! Every language Deepgram publishes for Nova-3.
+//!
+//! Taken from the official Models & Languages table rather than picked by hand.
+//! `multi` comes first (55-language code-switching), then all monolingual codes
+//! including regional variants, alphabetical by display name. Labels are unique
+//! because the dropdown selects by label string.
+//!
+//! A code is only valid with a model that supports it: `enhanced` and `base`
+//! support far fewer, and Deepgram rejects the connection if you pick a
+//! combination it does not serve.
+//!
+//! The table is split into one constant per language so that no single item
+//! holds the whole list; [`languages`] stitches them back together.
+
+/// A code and the label the dropdown shows for it.
+type Language = (&'static str, &'static str);
+
+/// Multilingual.
+const MULTILINGUAL: [Language; 1] = [("multi", "Multilingual (code-switching)")];
+
+/// Afrikaans.
+const AF: [Language; 2] = [("af", "Afrikaans"), ("af-ZA", "Afrikaans (South Africa)")];
+
+/// Arabic.
+const AR: [Language; 17] = [
+    ("ar", "Arabic"),
+    ("ar-DZ", "Arabic (Algeria)"),
+    ("ar-TD", "Arabic (Chad)"),
+    ("ar-EG", "Arabic (Egypt)"),
+    ("ar-IR", "Arabic (Iran)"),
+    ("ar-IQ", "Arabic (Iraq)"),
+    ("ar-JO", "Arabic (Jordan)"),
+    ("ar-KW", "Arabic (Kuwait)"),
+    ("ar-LB", "Arabic (Lebanon)"),
+    ("ar-MA", "Arabic (Morocco)"),
+    ("ar-PS", "Arabic (Palestine)"),
+    ("ar-QA", "Arabic (Qatar)"),
+    ("ar-SA", "Arabic (Saudi Arabia)"),
+    ("ar-SD", "Arabic (Sudan)"),
+    ("ar-SY", "Arabic (Syria)"),
+    ("ar-TN", "Arabic (Tunisia)"),
+    ("ar-AE", "Arabic (UAE)"),
+];
+
+/// Armenian.
+const HY: [Language; 1] = [("hy", "Armenian")];
+
+/// Assamese.
+const AS: [Language; 2] = [("as", "Assamese"), ("as-IN", "Assamese (India)")];
+
+/// Belarusian.
+const BE: [Language; 1] = [("be", "Belarusian")];
+
+/// Bengali.
+const BN: [Language; 1] = [("bn", "Bengali")];
+
+/// Bosnian.
+const BS: [Language; 1] = [("bs", "Bosnian")];
+
+/// Bulgarian.
+const BG: [Language; 1] = [("bg", "Bulgarian")];
+
+/// Catalan.
+const CA: [Language; 1] = [("ca", "Catalan")];
+
+/// Chinese.
+const ZH: [Language; 6] = [
+    ("zh-HK", "Chinese (Cantonese, Traditional)"),
+    ("zh", "Chinese (Mandarin, Simplified)"),
+    ("zh-CN", "Chinese (Mandarin, Simplified) — zh-CN"),
+    ("zh-Hans", "Chinese (Mandarin, Simplified) — zh-Hans"),
+    ("zh-Hant", "Chinese (Mandarin, Traditional)"),
+    ("zh-TW", "Chinese (Mandarin, Traditional) — zh-TW"),
+];
+
+/// Croatian.
+const HR: [Language; 1] = [("hr", "Croatian")];
+
+/// Czech.
+const CS: [Language; 2] = [("cs", "Czech"), ("cs-CZ", "Czech (Czechia)")];
+
+/// Danish.
+const DA: [Language; 2] = [("da", "Danish"), ("da-DK", "Danish (Denmark)")];
+
+/// Dutch.
+const NL: [Language; 2] = [("nl", "Dutch"), ("nl-BE", "Dutch (Belgium)")];
+
+/// English.
+const EN: [Language; 7] = [
+    ("en", "English"),
+    ("en-AU", "English (Australia)"),
+    ("en-CA", "English (Canada)"),
+    ("en-IN", "English (India)"),
+    ("en-NZ", "English (New Zealand)"),
+    ("en-GB", "English (United Kingdom)"),
+    ("en-US", "English (United States)"),
+];
+
+/// Estonian.
+const ET: [Language; 1] = [("et", "Estonian")];
+
+/// Finnish.
+const FI: [Language; 1] = [("fi", "Finnish")];
+
+/// French.
+const FR: [Language; 2] = [("fr", "French"), ("fr-CA", "French (Canada)")];
+
+/// Galician.
+const GL: [Language; 1] = [("gl", "Galician")];
+
+/// Georgian.
+const KA: [Language; 2] = [("ka", "Georgian"), ("ka-GE", "Georgian (Georgia)")];
+
+/// German.
+const DE: [Language; 2] = [("de", "German"), ("de-CH", "German (Switzerland)")];
+
+/// Greek.
+const EL: [Language; 1] = [("el", "Greek")];
+
+/// Gujarati.
+const GU: [Language; 2] = [("gu", "Gujarati"), ("gu-IN", "Gujarati (India)")];
+
+/// Hebrew.
+const HE: [Language; 1] = [("he", "Hebrew")];
+
+/// Hindi.
+const HI: [Language; 1] = [("hi", "Hindi")];
+
+/// Hungarian.
+const HU: [Language; 1] = [("hu", "Hungarian")];
+
+/// Indonesian.
+const ID: [Language; 1] = [("id", "Indonesian")];
+
+/// Italian.
+const IT: [Language; 1] = [("it", "Italian")];
+
+/// Japanese.
+const JA: [Language; 1] = [("ja", "Japanese")];
+
+/// Kannada.
+const KN: [Language; 1] = [("kn", "Kannada")];
+
+/// Kazakh.
+const KK: [Language; 2] = [("kk", "Kazakh"), ("kk-KZ", "Kazakh (Kazakhstan)")];
+
+/// Korean.
+const KO: [Language; 2] = [("ko", "Korean"), ("ko-KR", "Korean (Korea)")];
+
+/// Latvian.
+const LV: [Language; 1] = [("lv", "Latvian")];
+
+/// Lithuanian.
+const LT: [Language; 1] = [("lt", "Lithuanian")];
+
+/// Macedonian.
+const MK: [Language; 1] = [("mk", "Macedonian")];
+
+/// Malay.
+const MS: [Language; 1] = [("ms", "Malay")];
+
+/// Marathi.
+const MR: [Language; 1] = [("mr", "Marathi")];
+
+/// Mongolian.
+const MN: [Language; 1] = [("mn", "Mongolian")];
+
+/// Nepali.
+const NE: [Language; 1] = [("ne", "Nepali")];
+
+/// Norwegian.
+const NO: [Language; 1] = [("no", "Norwegian")];
+
+/// Pashto.
+const PS: [Language; 2] = [("ps", "Pashto"), ("ps-AF", "Pashto (Afghanistan)")];
+
+/// Persian.
+const FA: [Language; 1] = [("fa", "Persian")];
+
+/// Polish.
+const PL: [Language; 1] = [("pl", "Polish")];
+
+/// Portuguese.
+const PT: [Language; 3] = [
+    ("pt", "Portuguese"),
+    ("pt-BR", "Portuguese (Brazil)"),
+    ("pt-PT", "Portuguese (Portugal)"),
+];
+
+/// Punjabi.
+const PA: [Language; 2] = [("pa", "Punjabi"), ("pa-IN", "Punjabi (India)")];
+
+/// Romanian.
+const RO: [Language; 1] = [("ro", "Romanian")];
+
+/// Russian.
+const RU: [Language; 1] = [("ru", "Russian")];
+
+/// Serbian.
+const SR: [Language; 1] = [("sr", "Serbian")];
+
+/// Slovak.
+const SK: [Language; 1] = [("sk", "Slovak")];
+
+/// Slovenian.
+const SL: [Language; 1] = [("sl", "Slovenian")];
+
+/// Spanish.
+const ES: [Language; 2] = [("es", "Spanish"), ("es-419", "Spanish (Latin America)")];
+
+/// Swedish.
+const SV: [Language; 2] = [("sv", "Swedish"), ("sv-SE", "Swedish (Sweden)")];
+
+/// Tagalog.
+const TL: [Language; 1] = [("tl", "Tagalog")];
+
+/// Tamil.
+const TA: [Language; 1] = [("ta", "Tamil")];
+
+/// Telugu.
+const TE: [Language; 1] = [("te", "Telugu")];
+
+/// Thai.
+const TH: [Language; 2] = [("th", "Thai"), ("th-TH", "Thai (Thailand)")];
+
+/// Turkish.
+const TR: [Language; 2] = [("tr", "Turkish"), ("tr-TR", "Turkish (TR)")];
+
+/// Ukrainian.
+const UK: [Language; 1] = [("uk", "Ukrainian")];
+
+/// Urdu.
+const UR: [Language; 1] = [("ur", "Urdu")];
+
+/// Vietnamese.
+const VI: [Language; 1] = [("vi", "Vietnamese")];
+
+/// Xhosa.
+const XH: [Language; 1] = [("xh", "Xhosa")];
+
+/// Zulu.
+const ZU: [Language; 1] = [("zu", "Zulu")];
 
 /// The list, as the dropdown shows it.
-///
-/// Taken from the official Models & Languages table rather than picked by hand.
-/// `multi` comes first (55-language code-switching), then all monolingual codes
-/// including regional variants, alphabetical by display name. Labels are unique
-/// because the dropdown selects by label string.
-///
-/// A code is only valid with a model that supports it: `enhanced` and `base`
-/// support far fewer, and Deepgram rejects the connection if you pick a
-/// combination it does not serve.
 pub(super) fn languages() -> Vec<(String, String)> {
-    vec![
-        (
-            "multi".to_string(),
-            "Multilingual (code-switching)".to_string(),
-        ),
-        ("af".to_string(), "Afrikaans".to_string()),
-        ("af-ZA".to_string(), "Afrikaans (South Africa)".to_string()),
-        ("ar".to_string(), "Arabic".to_string()),
-        ("ar-DZ".to_string(), "Arabic (Algeria)".to_string()),
-        ("ar-TD".to_string(), "Arabic (Chad)".to_string()),
-        ("ar-EG".to_string(), "Arabic (Egypt)".to_string()),
-        ("ar-IR".to_string(), "Arabic (Iran)".to_string()),
-        ("ar-IQ".to_string(), "Arabic (Iraq)".to_string()),
-        ("ar-JO".to_string(), "Arabic (Jordan)".to_string()),
-        ("ar-KW".to_string(), "Arabic (Kuwait)".to_string()),
-        ("ar-LB".to_string(), "Arabic (Lebanon)".to_string()),
-        ("ar-MA".to_string(), "Arabic (Morocco)".to_string()),
-        ("ar-PS".to_string(), "Arabic (Palestine)".to_string()),
-        ("ar-QA".to_string(), "Arabic (Qatar)".to_string()),
-        ("ar-SA".to_string(), "Arabic (Saudi Arabia)".to_string()),
-        ("ar-SD".to_string(), "Arabic (Sudan)".to_string()),
-        ("ar-SY".to_string(), "Arabic (Syria)".to_string()),
-        ("ar-TN".to_string(), "Arabic (Tunisia)".to_string()),
-        ("ar-AE".to_string(), "Arabic (UAE)".to_string()),
-        ("hy".to_string(), "Armenian".to_string()),
-        ("as".to_string(), "Assamese".to_string()),
-        ("as-IN".to_string(), "Assamese (India)".to_string()),
-        ("be".to_string(), "Belarusian".to_string()),
-        ("bn".to_string(), "Bengali".to_string()),
-        ("bs".to_string(), "Bosnian".to_string()),
-        ("bg".to_string(), "Bulgarian".to_string()),
-        ("ca".to_string(), "Catalan".to_string()),
-        (
-            "zh-HK".to_string(),
-            "Chinese (Cantonese, Traditional)".to_string(),
-        ),
-        (
-            "zh".to_string(),
-            "Chinese (Mandarin, Simplified)".to_string(),
-        ),
-        (
-            "zh-CN".to_string(),
-            "Chinese (Mandarin, Simplified) — zh-CN".to_string(),
-        ),
-        (
-            "zh-Hans".to_string(),
-            "Chinese (Mandarin, Simplified) — zh-Hans".to_string(),
-        ),
-        (
-            "zh-Hant".to_string(),
-            "Chinese (Mandarin, Traditional)".to_string(),
-        ),
-        (
-            "zh-TW".to_string(),
-            "Chinese (Mandarin, Traditional) — zh-TW".to_string(),
-        ),
-        ("hr".to_string(), "Croatian".to_string()),
-        ("cs".to_string(), "Czech".to_string()),
-        ("cs-CZ".to_string(), "Czech (Czechia)".to_string()),
-        ("da".to_string(), "Danish".to_string()),
-        ("da-DK".to_string(), "Danish (Denmark)".to_string()),
-        ("nl".to_string(), "Dutch".to_string()),
-        ("nl-BE".to_string(), "Dutch (Belgium)".to_string()),
-        ("en".to_string(), "English".to_string()),
-        ("en-AU".to_string(), "English (Australia)".to_string()),
-        ("en-CA".to_string(), "English (Canada)".to_string()),
-        ("en-IN".to_string(), "English (India)".to_string()),
-        ("en-NZ".to_string(), "English (New Zealand)".to_string()),
-        ("en-GB".to_string(), "English (United Kingdom)".to_string()),
-        ("en-US".to_string(), "English (United States)".to_string()),
-        ("et".to_string(), "Estonian".to_string()),
-        ("fi".to_string(), "Finnish".to_string()),
-        ("fr".to_string(), "French".to_string()),
-        ("fr-CA".to_string(), "French (Canada)".to_string()),
-        ("gl".to_string(), "Galician".to_string()),
-        ("ka".to_string(), "Georgian".to_string()),
-        ("ka-GE".to_string(), "Georgian (Georgia)".to_string()),
-        ("de".to_string(), "German".to_string()),
-        ("de-CH".to_string(), "German (Switzerland)".to_string()),
-        ("el".to_string(), "Greek".to_string()),
-        ("gu".to_string(), "Gujarati".to_string()),
-        ("gu-IN".to_string(), "Gujarati (India)".to_string()),
-        ("he".to_string(), "Hebrew".to_string()),
-        ("hi".to_string(), "Hindi".to_string()),
-        ("hu".to_string(), "Hungarian".to_string()),
-        ("id".to_string(), "Indonesian".to_string()),
-        ("it".to_string(), "Italian".to_string()),
-        ("ja".to_string(), "Japanese".to_string()),
-        ("kn".to_string(), "Kannada".to_string()),
-        ("kk".to_string(), "Kazakh".to_string()),
-        ("kk-KZ".to_string(), "Kazakh (Kazakhstan)".to_string()),
-        ("ko".to_string(), "Korean".to_string()),
-        ("ko-KR".to_string(), "Korean (Korea)".to_string()),
-        ("lv".to_string(), "Latvian".to_string()),
-        ("lt".to_string(), "Lithuanian".to_string()),
-        ("mk".to_string(), "Macedonian".to_string()),
-        ("ms".to_string(), "Malay".to_string()),
-        ("mr".to_string(), "Marathi".to_string()),
-        ("mn".to_string(), "Mongolian".to_string()),
-        ("ne".to_string(), "Nepali".to_string()),
-        ("no".to_string(), "Norwegian".to_string()),
-        ("ps".to_string(), "Pashto".to_string()),
-        ("ps-AF".to_string(), "Pashto (Afghanistan)".to_string()),
-        ("fa".to_string(), "Persian".to_string()),
-        ("pl".to_string(), "Polish".to_string()),
-        ("pt".to_string(), "Portuguese".to_string()),
-        ("pt-BR".to_string(), "Portuguese (Brazil)".to_string()),
-        ("pt-PT".to_string(), "Portuguese (Portugal)".to_string()),
-        ("pa".to_string(), "Punjabi".to_string()),
-        ("pa-IN".to_string(), "Punjabi (India)".to_string()),
-        ("ro".to_string(), "Romanian".to_string()),
-        ("ru".to_string(), "Russian".to_string()),
-        ("sr".to_string(), "Serbian".to_string()),
-        ("sk".to_string(), "Slovak".to_string()),
-        ("sl".to_string(), "Slovenian".to_string()),
-        ("es".to_string(), "Spanish".to_string()),
-        ("es-419".to_string(), "Spanish (Latin America)".to_string()),
-        ("sv".to_string(), "Swedish".to_string()),
-        ("sv-SE".to_string(), "Swedish (Sweden)".to_string()),
-        ("tl".to_string(), "Tagalog".to_string()),
-        ("ta".to_string(), "Tamil".to_string()),
-        ("te".to_string(), "Telugu".to_string()),
-        ("th".to_string(), "Thai".to_string()),
-        ("th-TH".to_string(), "Thai (Thailand)".to_string()),
-        ("tr".to_string(), "Turkish".to_string()),
-        ("tr-TR".to_string(), "Turkish (TR)".to_string()),
-        ("uk".to_string(), "Ukrainian".to_string()),
-        ("ur".to_string(), "Urdu".to_string()),
-        ("vi".to_string(), "Vietnamese".to_string()),
-        ("xh".to_string(), "Xhosa".to_string()),
-        ("zu".to_string(), "Zulu".to_string()),
-    ]
+    const CHUNKS: &[&[Language]] = &[
+        &MULTILINGUAL,
+        &AF,
+        &AR,
+        &HY,
+        &AS,
+        &BE,
+        &BN,
+        &BS,
+        &BG,
+        &CA,
+        &ZH,
+        &HR,
+        &CS,
+        &DA,
+        &NL,
+        &EN,
+        &ET,
+        &FI,
+        &FR,
+        &GL,
+        &KA,
+        &DE,
+        &EL,
+        &GU,
+        &HE,
+        &HI,
+        &HU,
+        &ID,
+        &IT,
+        &JA,
+        &KN,
+        &KK,
+        &KO,
+        &LV,
+        &LT,
+        &MK,
+        &MS,
+        &MR,
+        &MN,
+        &NE,
+        &NO,
+        &PS,
+        &FA,
+        &PL,
+        &PT,
+        &PA,
+        &RO,
+        &RU,
+        &SR,
+        &SK,
+        &SL,
+        &ES,
+        &SV,
+        &TL,
+        &TA,
+        &TE,
+        &TH,
+        &TR,
+        &UK,
+        &UR,
+        &VI,
+        &XH,
+        &ZU,
+    ];
+
+    CHUNKS
+        .iter()
+        .flat_map(|chunk| chunk.iter())
+        .map(|(code, label)| (code.to_string(), label.to_string()))
+        .collect()
 }

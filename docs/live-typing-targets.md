@@ -3,8 +3,7 @@
 Live typing puts each Final segment into the application that held focus when
 the user started recording. The decision lives in `src/verdict.rs` as a pure
 function over a description of the target, and the platform only supplies that
-description (`target_window` in `src/delivery.rs`, and its Windows readings in
-`src/delivery/windows.rs`).
+description (`target_window` in `src/delivery.rs`, reading `src/delivery/platform/`).
 
 ## The rules
 

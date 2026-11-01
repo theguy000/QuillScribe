@@ -28,8 +28,7 @@ use crate::output::OutputManager;
 use crate::verdict::{target_verdict, Refusal, TargetWindow, Verdict};
 
 mod joining;
-#[cfg(windows)]
-mod windows;
+mod platform;
 
 /// The window an utterance is bound to.
 ///
@@ -41,12 +40,6 @@ pub struct WindowId(String);
 impl WindowId {
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
-    }
-
-    /// The platform's own text for this window.
-    #[cfg(windows)]
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
     }
 }
 
@@ -689,7 +682,7 @@ fn without_words<'a>(words: &[&'a str], held: &[String]) -> Option<Vec<&'a str>>
 /// Read when the utterance starts, because that window owns the whole
 /// utterance. `None` means live typing cannot run for this utterance.
 pub fn focused_window() -> Option<WindowId> {
-    platform_focused_window()
+    platform::focused_window()
 }
 
 /// What the platform can say about where focused text would go.
@@ -703,7 +696,7 @@ pub fn focused_window() -> Option<WindowId> {
 /// reads as an ordinary text field and the app types rather than refusing. That
 /// limit is recorded in `docs/live-typing-targets.md`.
 pub fn target_window(keys: &[String]) -> TargetWindow {
-    platform_target_window(keys)
+    platform::target_window(keys)
 }
 
 /// Read the target by identifying the focused controls by name.
@@ -750,7 +743,7 @@ impl DeliverySurface for PlatformSurface {
         // One helper per platform, because a closed window can leave a stale
         // handle behind on Windows. Where the platform cannot say who holds
         // focus, there is no window to write into, so stop takes the words.
-        platform_focused_window_exists()
+        platform::focused_window_exists()
     }
 
     fn replace_clipboard(&mut self, text: &str) -> Result<()> {
@@ -758,21 +751,6 @@ impl DeliverySurface for PlatformSurface {
         // there and stays, so a paste after a pause has everything said.
         self.output.copy_to_clipboard(text)
     }
-}
-
-/// Windows can tell a closed window from a missing answer, so it uses its own
-/// reading. Without a focused window there is no window to write into, so stop
-/// takes the words.
-#[cfg(windows)]
-fn platform_focused_window_exists() -> bool {
-    windows::focused_window_exists().unwrap_or(false)
-}
-
-#[cfg(target_os = "linux")]
-fn platform_focused_window_exists() -> bool {
-    // The platform either names the focused window or cannot answer at all, so
-    // a missing id means "no window to write into".
-    platform_focused_window().is_some()
 }
 
 /// What the caret's host says about itself, once the platform has read it.
@@ -817,119 +795,9 @@ fn describe_target(element: &FocusedElement, own: bool, keys: &[String]) -> Targ
     }
 }
 
-/// The window handle behind a [`WindowId`] read from this platform.
-#[cfg(windows)]
-fn window_handle(window: &WindowId) -> Option<usize> {
-    window.as_str().strip_prefix("win:")?.parse().ok()
-}
-
 /// The key-field names the app always recognises, on any platform and any build.
 #[allow(dead_code)]
 pub const KEY_FIELD_NAMES: &[&str] = &["40-character key", "sk-...", "gsk_...", "AIzaSy..."];
-
-/// Windows reads the target through its own module, where the operating-system
-/// calls live.
-#[cfg(windows)]
-fn platform_target_window(keys: &[String]) -> TargetWindow {
-    windows::target_window(keys)
-}
-
-#[cfg(windows)]
-fn platform_focused_window() -> Option<WindowId> {
-    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-
-    let window = unsafe { GetForegroundWindow() };
-    if window.0.is_null() {
-        return None;
-    }
-    Some(WindowId::new(format!("win:{}", window.0 as isize)))
-}
-
-#[cfg(target_os = "linux")]
-fn platform_focused_window() -> Option<WindowId> {
-    // xdotool is already a dependency of the X11 paste path, so reading the
-    // active window costs no new window-system code. Under Wayland it cannot
-    // answer, and neither can the app: an utterance with no window to bind
-    // delivers at stop instead (`output::focus_reading_unavailable`).
-    let output = std::process::Command::new("xdotool")
-        .arg("getactivewindow")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let window = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if window.is_empty() {
-        return None;
-    }
-    Some(WindowId::new(format!("x11:{}", window)))
-}
-
-/// What the X11 window manager and the shell say about the focused window.
-///
-/// There is no role query on Linux without a desktop-specific accessibility
-/// bridge, so the window's class and name are all the rule can read. That is
-/// enough for the terminal rule and for recognising QuillScribe's own key
-/// fields, and it is why a password box on Linux is best effort only: see
-/// `docs/live-typing-targets.md`.
-///
-/// Ydotool pastes on Wayland, where nothing can name the focused window, so the
-/// app never reaches this description there: no delivery session is created.
-#[cfg(target_os = "linux")]
-fn platform_target_window(keys: &[String]) -> TargetWindow {
-    if platform_focused_window().is_none() {
-        return TargetWindow::default();
-    }
-
-    // `getwindowclassname` is the window class (`gnome-terminal-server`) and
-    // `getwindowname` is the title. Both open no accessibility connection, which
-    // is also why no role is read here: a password box on Linux is best effort.
-    let class_name = xdotool(&["getwindowclassname", "@"]).unwrap_or_default();
-    let name = xdotool(&["getwindowname", "@"]).unwrap_or_default();
-
-    // The app's own window carries its own process id.
-    let own = xdotool(&["getwindowpid", "@"])
-        .and_then(|pid| pid.parse::<u32>().ok())
-        .map(|pid| pid == std::process::id())
-        .unwrap_or(false);
-
-    describe_target(
-        &FocusedElement {
-            class_name,
-            name,
-            ..FocusedElement::default()
-        },
-        own,
-        keys,
-    )
-}
-
-#[cfg(target_os = "linux")]
-fn xdotool(args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new("xdotool")
-        .args(args)
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-#[cfg(not(any(windows, target_os = "linux")))]
-fn platform_target_window(_keys: &[String]) -> TargetWindow {
-    TargetWindow::default()
-}
-
-#[cfg(not(any(windows, target_os = "linux")))]
-fn platform_focused_window() -> Option<WindowId> {
-    None
-}
-
-#[cfg(not(any(windows, target_os = "linux")))]
-fn platform_focused_window_exists() -> bool {
-    false
-}
 
 #[cfg(test)]
 #[path = "delivery/tests.rs"]

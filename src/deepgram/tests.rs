@@ -1,6 +1,9 @@
 //! The Deepgram frames and sessions, checked against captured shapes.
 
+use super::stream::{apply_message, SessionState};
 use super::*;
+use crate::audio::AudioChunk;
+use tokio::sync::mpsc;
 
 fn cfg() -> DeepgramConfig {
     DeepgramConfig {
@@ -352,6 +355,25 @@ fn live_api_key() -> Option<String> {
         .filter(|k| !k.is_empty())
 }
 
+/// The speech fixture and its samples, or `None` when a live run has nothing to
+/// send. Both live tests skip rather than fail when it is missing.
+fn speech_fixture() -> Option<(hound::WavSpec, Vec<f32>)> {
+    let fixture = std::path::Path::new("spike_speech.wav");
+    if !fixture.exists() {
+        eprintln!("skipping: spike_speech.wav is missing");
+        return None;
+    }
+
+    let reader = hound::WavReader::open(fixture).expect("open fixture");
+    let spec = reader.spec();
+    let samples: Vec<f32> = reader
+        .into_samples::<i16>()
+        .filter_map(|s| s.ok())
+        .map(|s| s as f32 / i16::MAX as f32)
+        .collect();
+    Some((spec, samples))
+}
+
 /// End-to-end check of the recorded (prerecorded) path.
 ///
 /// ```text
@@ -366,19 +388,9 @@ async fn live_deepgram_recorded_transcribes_synthesized_speech() {
         eprintln!("skipping: no Deepgram key (Settings → Engine or DEEPGRAM_API_KEY)");
         return;
     };
-    let fixture = std::path::Path::new("spike_speech.wav");
-    if !fixture.exists() {
-        eprintln!("skipping: spike_speech.wav is missing");
+    let Some((spec, samples)) = speech_fixture() else {
         return;
-    }
-
-    let reader = hound::WavReader::open(fixture).expect("open fixture");
-    let spec = reader.spec();
-    let samples: Vec<f32> = reader
-        .into_samples::<i16>()
-        .filter_map(|s| s.ok())
-        .map(|s| s as f32 / i16::MAX as f32)
-        .collect();
+    };
 
     let config = DeepgramConfig {
         api_key,
@@ -396,6 +408,44 @@ async fn live_deepgram_recorded_transcribes_synthesized_speech() {
         transcript
     );
 }
+/// Feed the clip at roughly realtime: Deepgram accepts at most 1.25x.
+async fn feed_realtime(
+    audio_tx: &mpsc::UnboundedSender<AudioChunk>,
+    samples: &[f32],
+    sample_rate: u32,
+) {
+    let block = (sample_rate as usize) / 10;
+    for chunk in samples.chunks(block.max(1)) {
+        audio_tx
+            .send(AudioChunk {
+                samples: chunk.to_vec(),
+                sample_rate,
+            })
+            .expect("session alive");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// The live path must produce real words, punctuated.
+///
+/// The punctuation half is a regression guard for the measured `dictation`
+/// behaviour: turning spoken punctuation on silently removes automatic
+/// punctuation, so if this ever comes back unpunctuated the defaults have
+/// drifted.
+fn assert_punctuated_transcript(transcript: &str) {
+    println!("transcript: {}", transcript);
+    assert!(
+        transcript.split_whitespace().count() >= 2,
+        "expected a real transcript, got {:?}",
+        transcript
+    );
+    assert!(
+        transcript.trim_end().ends_with('.'),
+        "expected Deepgram to punctuate the sentence, got {:?}",
+        transcript
+    );
+}
+
 /// End-to-end check against the real service.
 ///
 /// The key is taken from the app's own settings first, so a key pasted into
@@ -419,19 +469,9 @@ async fn live_deepgram_transcribes_synthesized_speech() {
         );
         return;
     };
-    let fixture = std::path::Path::new("spike_speech.wav");
-    if !fixture.exists() {
-        eprintln!("skipping: spike_speech.wav is missing");
+    let Some((spec, samples)) = speech_fixture() else {
         return;
-    }
-
-    let reader = hound::WavReader::open(fixture).expect("open fixture");
-    let spec = reader.spec();
-    let samples: Vec<f32> = reader
-        .into_samples::<i16>()
-        .filter_map(|s| s.ok())
-        .map(|s| s as f32 / i16::MAX as f32)
-        .collect();
+    };
     if samples.is_empty() {
         eprintln!("skipping: fixture contains no samples");
         return;
@@ -455,32 +495,9 @@ async fn live_deepgram_transcribes_synthesized_speech() {
         progress,
     );
 
-    // Feed the clip at roughly realtime: Deepgram accepts at most 1.25x.
-    let block = (spec.sample_rate as usize) / 10;
-    for chunk in samples.chunks(block.max(1)) {
-        audio_tx
-            .send(AudioChunk {
-                samples: chunk.to_vec(),
-                sample_rate: spec.sample_rate,
-            })
-            .expect("session alive");
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    feed_realtime(&audio_tx, &samples, spec.sample_rate).await;
     drop(audio_tx);
 
     let transcript = session.finish().await.expect("live transcription");
-    println!("transcript: {}", transcript);
-    assert!(
-        transcript.split_whitespace().count() >= 2,
-        "expected a real transcript, got {:?}",
-        transcript
-    );
-    // Regression guard for the measured `dictation` behaviour: turning spoken
-    // punctuation on silently removes automatic punctuation, so if this ever
-    // comes back unpunctuated the defaults have drifted.
-    assert!(
-        transcript.trim_end().ends_with('.'),
-        "expected Deepgram to punctuate the sentence, got {:?}",
-        transcript
-    );
+    assert_punctuated_transcript(&transcript);
 }

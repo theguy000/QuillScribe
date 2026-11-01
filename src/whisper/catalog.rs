@@ -1,0 +1,284 @@
+//! What the Settings dropdown offers: models, languages and their labels.
+//!
+//! Pure data and lookups, so a settings screen can be built without touching
+//! the network or the disk.
+
+use super::WhisperManager;
+
+use super::{deepgram_languages, ModelInfo};
+
+impl WhisperManager {
+    pub fn get_available_api_models() -> Vec<String> {
+        vec![
+            "gpt-4o-transcribe".to_string(),
+            "gpt-4o-mini-transcribe".to_string(),
+        ]
+    }
+
+    pub fn get_available_groq_models() -> Vec<String> {
+        vec![
+            "whisper-large-v3-turbo".to_string(),
+            "whisper-large-v3".to_string(),
+        ]
+    }
+
+    pub fn get_available_gemini_models() -> Vec<String> {
+        vec![
+            "gemini-2.0-flash".to_string(),
+            "gemini-1.5-flash".to_string(),
+            "gemini-1.5-pro".to_string(),
+        ]
+    }
+
+    pub fn get_available_deepgram_models() -> Vec<String> {
+        vec![
+            "nova-3".to_string(),
+            "nova-2".to_string(),
+            "nova-2-general".to_string(),
+            "nova-2-phonecall".to_string(),
+            "enhanced".to_string(),
+            "base".to_string(),
+        ]
+    }
+
+    pub fn get_available_api_models_for_provider(provider: &str) -> Vec<String> {
+        match provider {
+            "gemini" => Self::get_available_gemini_models(),
+            "groq" => Self::get_available_groq_models(),
+            "deepgram" => Self::get_available_deepgram_models(),
+            _ => Self::get_available_api_models(),
+        }
+    }
+
+    pub fn get_available_local_models() -> Vec<String> {
+        vec![
+            "tiny".to_string(),
+            "tiny.en".to_string(),
+            "base".to_string(),
+            "base.en".to_string(),
+            "small".to_string(),
+            "small.en".to_string(),
+            "medium".to_string(),
+            "medium.en".to_string(),
+            "large-v1".to_string(),
+            "large-v2".to_string(),
+            "large-v3".to_string(),
+            "turbo".to_string(),
+            "distil-large-v2".to_string(),
+            "distil-large-v3".to_string(),
+            "distil-medium.en".to_string(),
+            "distil-small.en".to_string(),
+        ]
+    }
+
+    pub fn get_local_model_categories() -> Vec<String> {
+        vec![
+            "General".to_string(),
+            "Tiny".to_string(),
+            "Base".to_string(),
+            "Small".to_string(),
+            "Medium".to_string(),
+            "Large".to_string(),
+        ]
+    }
+
+    pub fn get_local_models_for_category(category: &str) -> Vec<String> {
+        let all_models = Self::get_available_local_models();
+        match category {
+            "General" => all_models,
+            "Tiny" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("tiny"))
+                .collect(),
+            "Base" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("base"))
+                .collect(),
+            "Small" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("small"))
+                .collect(),
+            "Medium" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("medium") || m.starts_with("distil-medium"))
+                .collect(),
+            "Large" => all_models
+                .into_iter()
+                .filter(|m| m.starts_with("large") || m == "turbo" || m.starts_with("distil-large"))
+                .collect(),
+            _ => all_models,
+        }
+    }
+
+    pub fn get_model_info(model_name: &str) -> ModelInfo {
+        match model_name {
+            "tiny" | "tiny.en" => ModelInfo::new("75 MB", "~390 MB", "~10x", "Low"),
+            "base" | "base.en" => ModelInfo::new("142 MB", "~500 MB", "~7x", "Low-Medium"),
+            "small" | "small.en" => ModelInfo::new("466 MB", "~1 GB", "~4x", "Medium"),
+            "medium" | "medium.en" => ModelInfo::new("1.5 GB", "~2.6 GB", "~2x", "Medium-High"),
+            "large-v1" | "large-v2" | "large-v3" => {
+                ModelInfo::new("2.9 GB", "~4.7 GB", "~1x", "High")
+            }
+            "turbo" => ModelInfo::new("1.5 GB", "~2.6 GB", "~8x", "High"),
+            "distil-large-v2" | "distil-large-v3" => {
+                ModelInfo::new("756 MB", "~1.5 GB", "~6x", "Medium-High")
+            }
+            "distil-medium.en" => ModelInfo::new("789 MB", "~1.5 GB", "~5x", "Medium"),
+            "distil-small.en" => ModelInfo::new("332 MB", "~800 MB", "~6x", "Low-Medium"),
+            "gpt-4o-transcribe" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),
+            "gpt-4o-mini-transcribe" => ModelInfo::new("Cloud", "N/A", "Very Fast", "High"),
+            "whisper-large-v3-turbo" => ModelInfo::new("Cloud", "N/A", "Very Fast", "High"),
+            "whisper-large-v3" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),
+            _ => ModelInfo::new("Unknown", "Unknown", "Unknown", "Unknown"),
+        }
+    }
+
+    /// Languages Deepgram accepts on a live session. Deepgram has its own
+    /// catalogue, and `multi` is the closest thing it has to auto-detection
+    /// (55 languages with per-word code-switching on Nova-3).
+    /// Every language Deepgram publishes for Nova-3.
+    ///
+    /// The list is built once and shared; the dropdown asks for it on every
+    /// settings screen and it never changes at runtime.
+    pub fn get_available_deepgram_languages() -> Vec<(String, String)> {
+        static LANGUAGES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+        LANGUAGES.get_or_init(deepgram_languages::languages).clone()
+    }
+
+    /// The language catalogue for a provider. Deepgram does not share the
+    /// OpenAI/Whisper code list, so it needs its own.
+    pub fn get_available_languages_for_provider(provider: &str) -> Vec<(String, String)> {
+        if provider == "deepgram" {
+            Self::get_available_deepgram_languages()
+        } else {
+            Self::get_available_languages()
+        }
+    }
+
+    /// Display labels for the language dropdown, in list order.
+    pub fn language_labels_for_provider(provider: &str) -> Vec<String> {
+        Self::get_available_languages_for_provider(provider)
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect()
+    }
+
+    /// The display label for a stored language code, so the dropdown can show
+    /// the saved value after a restart.
+    pub fn language_label_for(provider: &str, code: &str) -> String {
+        let resolved = Self::resolve_language_or_default(provider, code);
+        Self::get_available_languages_for_provider(provider)
+            .into_iter()
+            .find(|(c, _)| *c == resolved)
+            .map(|(_, label)| label)
+            .unwrap_or_else(|| "English".to_string())
+    }
+
+    pub fn get_available_languages() -> Vec<(String, String)> {
+        vec![
+            ("af", "Afrikaans"),
+            ("am", "Amharic"),
+            ("ar", "Arabic"),
+            ("as", "Assamese"),
+            ("az", "Azerbaijani"),
+            ("ba", "Bashkir"),
+            ("be", "Belarusian"),
+            ("bg", "Bulgarian"),
+            ("bn", "Bengali"),
+            ("bo", "Tibetan"),
+            ("br", "Breton"),
+            ("bs", "Bosnian"),
+            ("ca", "Catalan"),
+            ("cs", "Czech"),
+            ("cy", "Welsh"),
+            ("da", "Danish"),
+            ("de", "German"),
+            ("el", "Greek"),
+            ("en", "English"),
+            ("es", "Spanish"),
+            ("et", "Estonian"),
+            ("eu", "Basque"),
+            ("fa", "Persian"),
+            ("fi", "Finnish"),
+            ("fo", "Faroese"),
+            ("fr", "French"),
+            ("gl", "Galician"),
+            ("gu", "Gujarati"),
+            ("ha", "Hausa"),
+            ("haw", "Hawaiian"),
+            ("he", "Hebrew"),
+            ("hi", "Hindi"),
+            ("hr", "Croatian"),
+            ("ht", "Haitian Creole"),
+            ("hu", "Hungarian"),
+            ("hy", "Armenian"),
+            ("id", "Indonesian"),
+            ("is", "Icelandic"),
+            ("it", "Italian"),
+            ("ja", "Japanese"),
+            ("jw", "Javanese"),
+            ("ka", "Georgian"),
+            ("kk", "Kazakh"),
+            ("km", "Khmer"),
+            ("kn", "Kannada"),
+            ("ko", "Korean"),
+            ("la", "Latin"),
+            ("lb", "Luxembourgish"),
+            ("ln", "Lingala"),
+            ("lo", "Lao"),
+            ("lt", "Lithuanian"),
+            ("lv", "Latvian"),
+            ("mg", "Malagasy"),
+            ("mi", "Maori"),
+            ("mk", "Macedonian"),
+            ("ml", "Malayalam"),
+            ("mn", "Mongolian"),
+            ("mr", "Marathi"),
+            ("ms", "Malay"),
+            ("mt", "Maltese"),
+            ("my", "Myanmar"),
+            ("ne", "Nepali"),
+            ("nl", "Dutch"),
+            ("nn", "Nynorsk"),
+            ("no", "Norwegian"),
+            ("oc", "Occitan"),
+            ("pa", "Panjabi"),
+            ("pl", "Polish"),
+            ("ps", "Pashto"),
+            ("pt", "Portuguese"),
+            ("ro", "Romanian"),
+            ("ru", "Russian"),
+            ("sa", "Sanskrit"),
+            ("sd", "Sindhi"),
+            ("si", "Sinhala"),
+            ("sk", "Slovak"),
+            ("sl", "Slovenian"),
+            ("sn", "Shona"),
+            ("so", "Somali"),
+            ("sq", "Albanian"),
+            ("sr", "Serbian"),
+            ("su", "Sundanese"),
+            ("sv", "Swedish"),
+            ("sw", "Swahili"),
+            ("ta", "Tamil"),
+            ("te", "Telugu"),
+            ("tg", "Tajik"),
+            ("th", "Thai"),
+            ("tk", "Turkmen"),
+            ("tl", "Tagalog"),
+            ("tr", "Turkish"),
+            ("tt", "Tatar"),
+            ("uk", "Ukrainian"),
+            ("ur", "Urdu"),
+            ("uz", "Uzbek"),
+            ("vi", "Vietnamese"),
+            ("yi", "Yiddish"),
+            ("yo", "Yoruba"),
+            ("yue", "Cantonese"),
+            ("zh", "Chinese"),
+        ]
+        .into_iter()
+        .map(|(code, name)| (code.to_string(), name.to_string()))
+        .collect()
+    }
+}
