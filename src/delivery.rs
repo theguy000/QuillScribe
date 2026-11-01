@@ -767,6 +767,9 @@ impl DeliverySurface for PlatformSurface {
     }
 
     fn focused_window_exists(&self) -> bool {
+        // One helper per platform, because a closed window can leave a stale
+        // handle behind on Windows. Where the platform cannot say who holds
+        // focus, there is no window to write into, so stop takes the words.
         platform_focused_window_exists()
     }
 
@@ -792,14 +795,9 @@ fn platform_focused_window_exists() -> bool {
 
 #[cfg(target_os = "linux")]
 fn platform_focused_window_exists() -> bool {
-    let output = match std::process::Command::new("xdotool")
-        .args(["getwindowpid", "@"])
-        .output()
-    {
-        Ok(output) => output,
-        Err(_) => return false,
-    };
-    output.status.success()
+    // The platform either names the focused window or cannot answer at all, so
+    // a missing id means "no window to write into".
+    platform_focused_window().is_some()
 }
 
 /// What the caret's host says about itself, once the platform has read it.
@@ -984,8 +982,9 @@ fn platform_focused_window() -> Option<WindowId> {
 #[cfg(target_os = "linux")]
 fn platform_focused_window() -> Option<WindowId> {
     // xdotool is already a dependency of the X11 paste path, so reading the
-    // active window costs no new window-system code. Wayland has no portable
-    // answer, and without one live typing cannot run.
+    // active window costs no new window-system code. Under Wayland it cannot
+    // answer, and neither can the app: an utterance with no window to bind
+    // delivers at stop instead (`output::focus_reading_unavailable`).
     let output = std::process::Command::new("xdotool")
         .arg("getactivewindow")
         .output()
@@ -1006,8 +1005,10 @@ fn platform_focused_window() -> Option<WindowId> {
 /// bridge, so the window's class and name are all the rule can read. That is
 /// enough for the terminal rule and for recognising QuillScribe's own key
 /// fields, and it is why a password box on Linux is best effort only: see
-/// `docs/live-typing-targets.md`. Wayland cannot say which window is focused at
-/// all, so live typing does not run there (ticket 16).
+/// `docs/live-typing-targets.md`.
+///
+/// Ydotool pastes on Wayland, where nothing can name the focused window, so the
+/// app never reaches this description there: no delivery session is created.
 #[cfg(target_os = "linux")]
 fn platform_target_window(keys: &[String]) -> TargetWindow {
     if platform_focused_window().is_none() {

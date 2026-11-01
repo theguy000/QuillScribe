@@ -29,6 +29,7 @@ description (`target_window` in `src/delivery.rs`).
 | --- | --- | --- |
 | Windows | UI Automation `IsPassword` on the **focused element**, plus the app's own key fields by name | The window's class name |
 | Linux (X11) | The app's own key fields by name | The window's class name |
+| Wayland | Live typing does not run | Live typing does not run |
 | Everywhere else | Nothing is refused | Nothing is detected |
 
 The Windows role query asks for the focused element rather than the window,
@@ -36,6 +37,32 @@ because a password box sits inside an ordinary window class. It runs once, at
 hotkey time, before the socket opens. It needs the app's own accessibility tree
 enabled for QuillScribe's window; if the Windows accessibility settings turn the
 whole tree off, the app's key fields fall back to nothing and will be typed into.
+
+## Linux: what live typing needs
+
+Live typing binds each utterance to the window focused when recording starts,
+so the app has to read that window. On Linux one session type and one tool can
+do it:
+
+| Session | Reading and pasting | Result |
+| --- | --- | --- |
+| X11 | `xdotool` | Each sentence is pasted into the focused field while the user speaks. |
+| Wayland, native | Nothing reads focus | No session. The panel shows the interim text, and stop delivers the whole transcript. |
+| Wayland through XWayland | `xdotool` sees the X server | Works as X11 does. |
+
+`xdotool` is the one tool that names the active window, so it decides both. A
+ydotool install alone can paste but cannot read focus, so it is not enough on
+its own. When the machine cannot do it, the app creates no delivery session for
+the utterance and says why in the status line: the panel keeps showing the
+interim text, and stop delivers the whole transcript the way it always did.
+The "Type as I speak" switch is disabled with the same reason underneath, so it
+never claims text is being typed. Its stored value is untouched, so a machine
+that can type again reads it as before. Copy-to-clipboard output is unaffected,
+because it never reads a window.
+
+The check lives in `focus_reading_unavailable` in `src/output.rs`. The Wayland
+answer comes from `window::is_wayland_session`, the same reading that picks the
+window backend.
 
 ## The limitation, stated plainly
 
@@ -52,8 +79,8 @@ The consequences, so nobody meets them as a surprise:
   and the app's own key fields still work, because both read only the window
   class and the element name.
 - **On Wayland live typing does not run at all**, because the focused window
-  cannot be read, so this limitation cannot arise there. That fallback is
-  ticket 16's.
+  cannot be read, so this limitation cannot arise there. The whole transcript
+  arrives when the user stops, and the status line says why.
 - **On Windows, a target that answers no accessibility queries** reads as an
   ordinary field. The app types into it.
 - **The terminal rule is a class-name list**, not a proof. A terminal that reports

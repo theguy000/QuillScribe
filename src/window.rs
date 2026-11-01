@@ -104,6 +104,16 @@ fn is_likely_native_wayland() -> bool {
     )
 }
 
+/// Whether this Linux session runs on Wayland rather than X11.
+///
+/// The same reading that picks the window backend: a session advertised as
+/// Wayland, or a Wayland display with no forced X11 backend. Live typing uses it
+/// because a Wayland session shares no protocol that names the focused window.
+#[cfg(target_os = "linux")]
+pub fn is_wayland_session() -> bool {
+    is_likely_native_wayland()
+}
+
 #[cfg(target_os = "linux")]
 fn linux_has_compositor_from_env(
     session_type: Option<&str>,

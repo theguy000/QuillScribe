@@ -195,6 +195,33 @@ pub fn check_paste_tool() -> &'static PasteToolStatus {
     })
 }
 
+/// Why this machine cannot read which window holds focus, in one line, or
+/// `None` when it can.
+///
+/// Linux only. Every other platform reads the focused window directly. Two
+/// cases answer nothing:
+///
+/// - Wayland, where no shared protocol names the focused window. Ydotool can
+///   still paste there, which is why the paste tool check is not the test.
+/// - X11 without xdotool, the one tool that reads the active window here. A
+///   ydotool install alone can paste but cannot read focus.
+#[cfg(target_os = "linux")]
+pub fn focus_reading_unavailable() -> Option<&'static str> {
+    if crate::window::is_wayland_session() {
+        return Some("Wayland does not let an app read which window has focus");
+    }
+    if !check_paste_tool().xdotool_found {
+        return Some("xdotool is missing, and it is the only way to read the focused window");
+    }
+    None
+}
+
+/// Not a Linux question: every other platform reads the focused window.
+#[cfg(not(target_os = "linux"))]
+pub fn focus_reading_unavailable() -> Option<&'static str> {
+    None
+}
+
 /// On non-Linux platforms, return a dummy status (not applicable).
 #[cfg(not(target_os = "linux"))]
 pub fn check_paste_tool() -> PasteToolStatus {

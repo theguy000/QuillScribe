@@ -508,10 +508,15 @@ fn start_live_session_if_needed(
                 };
                 let words = live.split_whitespace().count();
                 let live_for_ui = live.clone();
+                // Fallback utterances already carry the reason live typing is
+                // off; a per-word status would overwrite it.
+                let types_as_you_speak = delivery_for_sink.is_some();
                 let _ = slint::invoke_from_event_loop(move || {
                     shared.with_ui(|app| {
                         app.set_transcription_text(live_for_ui.into());
-                        app.set_status_message(format!("Recording… {} words", words).into());
+                        if types_as_you_speak {
+                            app.set_status_message(format!("Recording… {} words", words).into());
+                        }
                     });
                 });
             }
@@ -590,6 +595,7 @@ fn start_live_typing(
 
     // Copy mode has no window to bind and no paste to make: the clipboard
     // carries the transcript so far, and the surface only ever rewrites it.
+    // Nothing about reading a window applies, so it runs on any machine.
     if capability.delivery == live_typing::LiveDelivery::CopyToClipboard {
         let session = Arc::new(Mutex::new(delivery::DeliverySession::copy_to_clipboard(
             delivery::PlatformSurface::default(),
@@ -598,8 +604,20 @@ fn start_live_typing(
         return Some(session);
     }
 
+    // Typing needs a window the app could read at hotkey time. When there is
+    // none, no session is created: the utterance records, the panel keeps
+    // showing the interim text, and stop delivers the whole transcript as it
+    // did before live typing. The status line says why rather than leaving the
+    // failure silent.
     let Some(window) = bound_window else {
         log::warn!("Live typing is unavailable: no focused window could be read");
+        let note = match capability.reason {
+            Some(reason) => format!("Live typing is unavailable: {reason}"),
+            None => "Live typing is unavailable: no focused window could be read".to_string(),
+        };
+        shared.with_ui(|app| {
+            app.set_status_message(note.into());
+        });
         return None;
     };
 
@@ -2294,6 +2312,26 @@ mod stop_route_tests {
             surface.headed.lock().unwrap().as_slice(),
             ["first", " second", " third"],
             "the utterance that started finishes with the rules it started with"
+        );
+    }
+
+    #[test]
+    fn a_fallback_utterance_reaches_the_document_only_once_at_stop() {
+        // Wayland: the settings say live typing is on, but the machine has no
+        // window to bind, so no session exists and nothing is written during
+        // the utterance. With no report, the stop path is the plain one the
+        // batch providers use: one delivery of the whole transcript.
+        let mut settings = Settings::default();
+        settings.whisper.api_provider = "deepgram".to_string();
+        settings.deepgram.api_key = "not-a-real-deepgram-key".to_string();
+        settings.output.mode = 2;
+        let capability =
+            live_typing::live_typing_capability_on(&settings, Some("Wayland has no focus read"));
+        assert!(!capability.active, "a disabled switch creates no session");
+        assert_eq!(
+            capability.reason,
+            Some("Wayland has no focus read"),
+            "the status line the user sees during the utterance"
         );
     }
 

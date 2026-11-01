@@ -24,8 +24,9 @@ export component WhisperTab inherits VerticalLayout {
     in-out property <bool> deepgram-dictation: false;
     in-out property <bool> deepgram-interim-results: true;
     // Live typing, as the derived capability describes it. The control shows
-    // `live-typing` (the stored setting) and is disabled with `live-typing-reason`
-    // when the capability says it cannot act.
+    // `live-typing` (whether live typing runs) and is disabled with
+    // `live-typing-reason` when the capability says it cannot act, whether the
+    // settings or the machine rule it out.
     in-out property <bool> live-typing: true;
     in property <bool> live-typing-available: true;
     in property <bool> live-typing-enabled: true;

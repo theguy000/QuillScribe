@@ -12,7 +12,7 @@
 //! No window, no provider, no socket.
 
 use crate::config::Settings;
-use crate::output::OutputMode;
+use crate::output::{focus_reading_unavailable, OutputMode};
 
 /// How a live utterance would reach the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +35,8 @@ pub struct LiveTypingCapability {
     /// Whether that switch can be operated right now.
     pub control_enabled: bool,
     /// The short reason a disabled switch shows. `None` when it is operable.
+    /// A machine that cannot read the focused window puts its reason here too,
+    /// alongside the settings that rule live typing out.
     pub reason: Option<&'static str>,
     /// What an active utterance does. Meaningful only when `active`.
     pub delivery: LiveDelivery,
@@ -69,11 +71,10 @@ impl LiveTypingCapability {
     /// pair that the settings file would have corrected cannot make it claim
     /// to be on while the recording path reads it as off.
     pub fn screen(&self) -> LiveTypingScreen {
-        let checked = self.active;
         LiveTypingScreen {
             visible: self.control_available,
             enabled: self.control_enabled,
-            switch_checked: checked,
+            switch_checked: self.active,
             reason: self.reason,
             description: match self.delivery {
                 LiveDelivery::Type => {
@@ -92,14 +93,37 @@ impl LiveTypingCapability {
 /// This is what the hotkey asks before it binds a window, and it is the same
 /// question the screen asks, so the two cannot disagree. A recorded mode with
 /// the toggle on is read as off, the same way a settings file that pairs them
-/// loads, so no caller has to remember to reconcile first.
+/// loads, so no caller has to remember to reconcile first. `active` says the
+/// settings allow live typing; `unavailable` says this machine cannot do it.
 pub fn live_typing_capability(settings: &Settings) -> LiveTypingCapability {
+    live_typing_capability_on(settings, focus_reading_unavailable())
+}
+
+/// The capability, given what this machine's platform said about reading the
+/// focused window.
+///
+/// Kept separate so the Linux answers can be checked on any build, including
+/// the Windows one the tests usually run on. A machine reason disables the
+/// switch the same way a display-only output does, because the same thing would
+/// happen: no text types. It says nothing about the stored setting, so the
+/// choice is intact if the machine can type again. Copy mode never reads a
+/// window, so it ignores the answer entirely.
+pub fn live_typing_capability_on(
+    settings: &Settings,
+    machine: Option<&'static str>,
+) -> LiveTypingCapability {
     let control_available = settings.whisper.mode == "api"
         && crate::whisper::WhisperManager::is_live_provider(&settings.whisper.api_provider);
     let delivery = delivery_for(OutputMode::from(settings.output.mode));
     let live = settings.deepgram.is_live() && settings.deepgram.live_typing;
 
-    let reason = if !control_available {
+    // The machine reason only applies to the delivery that reads a window.
+    let machine = match delivery {
+        Some(LiveDelivery::Type) => machine,
+        _ => None,
+    };
+
+    let mut reason = if !control_available {
         Some("Live typing is only available with Deepgram")
     } else if delivery.is_none() {
         Some("Display only mode keeps text inside QuillScribe")
@@ -112,12 +136,17 @@ pub fn live_typing_capability(settings: &Settings) -> LiveTypingCapability {
     } else {
         None
     };
+    if reason.is_none() {
+        reason = machine;
+    }
 
-    let active = reason.is_none() && live;
+    let enabled = reason.is_none() && control_available;
     LiveTypingCapability {
-        active,
+        // A disabled switch cannot act, whatever the stored setting says, so
+        // the recording path and the screen read the same answer.
+        active: enabled && live,
         control_available,
-        control_enabled: reason.is_none() && control_available,
+        control_enabled: enabled,
         reason,
         delivery: delivery.unwrap_or(LiveDelivery::CopyToClipboard),
     }
@@ -175,5 +204,70 @@ mod tests {
 
         let screen = live_typing_capability(&settings).screen();
         assert!(screen.description.contains("typed into the app you are in"));
+    }
+
+    /// Live typing ready to run, as a fresh install has it.
+    fn ready_settings() -> Settings {
+        let mut settings = Settings::default();
+        settings.whisper.api_provider = "deepgram".to_string();
+        settings.deepgram.api_key = "not-a-real-deepgram-key".to_string();
+        settings
+    }
+
+    #[test]
+    fn a_ready_machine_reports_no_machine_reason() {
+        let capability = live_typing_capability_on(&ready_settings(), None);
+
+        assert!(capability.active);
+        assert_eq!(capability.reason, None);
+        assert!(shows_checked_switch(capability.screen()));
+    }
+
+    #[test]
+    fn a_machine_that_cannot_read_focus_disables_the_switch_and_says_why() {
+        // Wayland and X11 without xdotool both land here: the recording path
+        // creates no delivery session, so no sentence arrives before stop.
+        let reason = "Wayland does not let an app read which window has focus";
+        let capability = live_typing_capability_on(&ready_settings(), Some(reason));
+
+        assert!(!capability.active, "a disabled switch cannot act");
+        assert_eq!(capability.reason, Some(reason));
+
+        // The screen draws the reason only under a disabled switch, so the
+        // switch has to be disabled for the reason to be visible at all.
+        let screen = capability.screen();
+        assert!(screen.visible);
+        assert!(!screen.enabled);
+        assert!(!screen.switch_checked);
+        assert_eq!(screen.reason, Some(reason));
+    }
+
+    #[test]
+    fn a_copy_only_utterance_still_runs_on_a_machine_that_cannot_read_focus() {
+        // Copy mode never binds a window, so a Wayland session still copies
+        // after every Final segment and has no reason to show.
+        let mut settings = ready_settings();
+        settings.output.mode = 0;
+
+        let capability = live_typing_capability_on(&settings, Some("Wayland"));
+
+        assert!(capability.active);
+        assert_eq!(capability.reason, None);
+        assert_eq!(capability.delivery, LiveDelivery::CopyToClipboard);
+        assert!(shows_checked_switch(capability.screen()));
+    }
+
+    #[test]
+    fn the_settings_reason_wins_over_the_machine_reason() {
+        // Recording mode already explains that live typing cannot run; a second
+        // reason under the same switch would only compete with it.
+        let mut settings = ready_settings();
+        settings.deepgram.set_mode("recorded");
+        let capability = live_typing_capability_on(&settings, Some("Wayland"));
+
+        assert_eq!(
+            capability.reason,
+            Some("Live typing needs the live Deepgram mode")
+        );
     }
 }
