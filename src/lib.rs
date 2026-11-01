@@ -514,7 +514,12 @@ fn start_live_session_if_needed(
             deepgram::Progress::Final(text) => {
                 if let Some(session) = &delivery_for_sink {
                     if let Ok(mut session) = session.lock() {
-                        session.deliver(&text);
+                        // A fragment the bound window will not take is not
+                        // lost: the session keeps it owed, in order, and the
+                        // stop path retries it there.
+                        if let Err(err) = session.deliver(&text) {
+                            log::debug!("Live typing held a fragment: {:?}", err);
+                        }
                     }
                 }
 
@@ -603,30 +608,31 @@ fn start_live_typing(
 ///
 /// The leftovers go through the same delivery session as the segments that
 /// arrived during the utterance, so the joining rule, the bound window and the
-/// retry all still apply. What it cannot write stays in the report, and the stop
-/// output sends that to the clipboard.
+/// focus check all still apply. Nothing already in the document is written
+/// again: `unwritten_words` is the transcript after the words that landed, and
+/// the session writes it only while the bound window is still the one in focus.
+/// What it cannot write stays in the report, and the stop output sends that to
+/// the clipboard with a status line.
 fn finish_live_delivery(
     delivery: Option<Arc<Mutex<delivery::DeliverySession>>>,
     result: &Result<String, anyhow::Error>,
 ) -> Option<delivery::DeliveryReport> {
     let delivery = delivery?;
-    let mut report = match delivery.lock() {
-        Ok(session) => session.report(),
+    let Ok(text) = result else {
+        // The transcription failed, so there is no transcript to reconcile
+        // against. Whatever already landed stays where it is.
+        return delivery.lock().ok().map(|session| session.report());
+    };
+
+    let mut session = match delivery.lock() {
+        Ok(session) => session,
         Err(_) => return Some(delivery::DeliveryReport::default()),
     };
 
-    let Ok(text) = result else {
-        return Some(report);
-    };
-
-    let unwritten = delivery::unwritten_words(text, &report);
-    if !unwritten.is_empty() {
-        if let Ok(mut session) = delivery.lock() {
-            log::debug!("Writing what live typing still owed: {}", unwritten);
-            session.deliver(&unwritten);
-            report = session.report();
-        }
-    }
+    let unwritten = delivery::unwritten_words(text, &session.report());
+    log::debug!("Writing what live typing still owed: {:?}", unwritten);
+    let report = session.finish(&unwritten);
+    drop(session);
 
     if report.undelivered_count() > 0 {
         log::warn!(
@@ -639,9 +645,45 @@ fn finish_live_delivery(
     Some(report)
 }
 
+/// What the stop path does with text the document never took.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StopRoute {
+    /// Everything reached the document, or there was nothing to write.
+    Nothing,
+    /// Put these words on the clipboard and say how many there are.
+    Clipboard { text: String, words: usize },
+    /// The output mode already leaves the whole transcript on the clipboard, so
+    /// the status line only reports how many words the document is missing.
+    Reported { words: usize },
+}
+
+impl StopRoute {
+    /// Decide from the report and the output mode.
+    ///
+    /// Copy & type writes the whole transcript to the clipboard below, so it
+    /// needs no separate copy of the leftover text; the count is still worth
+    /// reporting, because the document is missing words the user has to paste.
+    fn decide(text: &str, report: &delivery::DeliveryReport, mode: output::OutputMode) -> Self {
+        let unwritten = delivery::unwritten_words(text, report);
+        if unwritten.is_empty() {
+            return Self::Nothing;
+        }
+        let words = unwritten.split_whitespace().count();
+        if mode == output::OutputMode::CopyAndType {
+            Self::Reported { words }
+        } else {
+            Self::Clipboard {
+                text: unwritten,
+                words,
+            }
+        }
+    }
+}
+
 /// Deliver the transcript's leftovers when the user stops.
 ///
-/// Returns a status line when some text had to take the clipboard route.
+/// Returns a status line when some text had to take the clipboard route, so the
+/// user knows how much never reached the document.
 fn write_stop_output(
     shared: &Arc<SharedAppState>,
     text: &str,
@@ -657,25 +699,45 @@ fn write_stop_output(
         return None;
     };
 
-    let unwritten = delivery::unwritten_words(text, report);
-    let note = if unwritten.is_empty() {
-        log::debug!("Stop path: every word already reached the document");
-        None
-    } else {
-        let words = unwritten.split_whitespace().count();
-        log::warn!(
-            "Live typing left {} word(s) undelivered, so they went to the clipboard",
-            words
-        );
-        // Copy & type leaves the whole transcript below, which already holds
-        // these words.
-        if mode != output::OutputMode::CopyAndType {
-            let _ = output.copy_to_clipboard(&unwritten);
+    let note = match StopRoute::decide(text, report, mode) {
+        StopRoute::Nothing => {
+            log::debug!("Stop path: every word already reached the document");
+            None
         }
-        Some(format!(
-            "Transcription complete, {} word(s) not typed, copied to the clipboard",
-            words
-        ))
+        StopRoute::Clipboard {
+            text: unwritten,
+            words,
+        } => {
+            log::warn!(
+                "Live typing left {} word(s) undelivered, so they went to the clipboard",
+                words
+            );
+            // The status line must not promise a clipboard the app could not
+            // write: those words are the only copy the user has left.
+            Some(match output.copy_to_clipboard(&unwritten) {
+                Ok(()) => format!(
+                    "Transcription complete, {} word(s) not typed, copied to the clipboard",
+                    words
+                ),
+                Err(err) => {
+                    log::error!("Could not copy the undelivered text: {}", err);
+                    format!(
+                        "Transcription complete, {} word(s) not typed and could not be copied",
+                        words
+                    )
+                }
+            })
+        }
+        StopRoute::Reported { words } => {
+            log::warn!(
+                "Live typing left {} word(s) undelivered; the clipboard holds the transcript",
+                words
+            );
+            Some(format!(
+                "Transcription complete, {} word(s) not typed, whole transcript on the clipboard",
+                words
+            ))
+        }
     };
 
     // Copy & type promises the whole transcript on the clipboard, and writing
@@ -1998,4 +2060,78 @@ pub fn run() {
 
     // Clean up tray
     tray::cleanup_tray();
+}
+
+#[cfg(test)]
+mod stop_route_tests {
+    use super::*;
+    use crate::delivery::DeliveryReport;
+
+    fn report(delivered: &str, undelivered: &[&str]) -> DeliveryReport {
+        DeliveryReport {
+            delivered: delivered.to_string(),
+            undelivered: undelivered.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_clean_stop_puts_nothing_on_the_clipboard() {
+        let route = StopRoute::decide(
+            "one two",
+            &report("one two", &[]),
+            output::OutputMode::TypeToApp,
+        );
+
+        assert_eq!(route, StopRoute::Nothing);
+    }
+
+    #[test]
+    fn the_text_the_window_never_took_goes_to_the_clipboard_with_a_count() {
+        let route = StopRoute::decide(
+            "one two three",
+            &report("one", &[]),
+            output::OutputMode::TypeToApp,
+        );
+
+        assert_eq!(
+            route,
+            StopRoute::Clipboard {
+                text: "two three".to_string(),
+                words: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn a_refused_middle_fragment_is_what_the_clipboard_receives() {
+        let route = StopRoute::decide(
+            "one two three",
+            &report("one three", &["two"]),
+            output::OutputMode::TypeToApp,
+        );
+
+        assert_eq!(
+            route,
+            StopRoute::Clipboard {
+                text: "two".to_string(),
+                words: 1,
+            },
+            "text already in the document is never copied as if it were missing"
+        );
+    }
+
+    #[test]
+    fn copy_and_type_reports_the_count_without_a_second_copy() {
+        let route = StopRoute::decide(
+            "one two three",
+            &report("one", &[]),
+            output::OutputMode::CopyAndType,
+        );
+
+        assert_eq!(
+            route,
+            StopRoute::Reported { words: 2 },
+            "the whole transcript is already on the clipboard for this mode"
+        );
+    }
 }
