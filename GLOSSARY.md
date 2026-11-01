@@ -48,6 +48,10 @@ _Avoid_: confirmed, stable, locked
 A signal that the speaker paused, marking where one final group ends and the next begins. It is not a commit signal and must not be confused with one.
 _Avoid_: endpoint, utterance end
 
+**Live typing**:
+Delivering each Final segment into the application that held focus when the utterance began, while the user is still speaking. Only a Live session can produce it. Interim segments never reach another application.
+_Avoid_: streaming, realtime typing, live preview
+
 ## Chrome
 
 **Overlay**:

@@ -26,3 +26,6 @@ logs
 
 # Local fixture for the ignored live Gemini test
 /spike_speech.wav
+
+# Scratch working notes, session-local
+/.scratch/
