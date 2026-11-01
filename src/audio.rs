@@ -17,6 +17,25 @@ pub struct AudioDevice {
 
 // ── Shared audio state (accessed from both main thread and audio callback) ──
 
+/// One block of captured audio, tagged with the rate it was captured at.
+///
+/// The rate travels with the samples because it is only known once the device
+/// stream is actually running — which happens after recording has already
+/// begun. A live session needs to resample, so guessing the rate is not an
+/// option.
+#[derive(Debug, Clone)]
+pub struct AudioChunk {
+    pub samples: Vec<f32>,
+    pub sample_rate: u32,
+}
+
+/// A live copy of the audio being recorded.
+///
+/// Batch providers never need this: they receive the whole `record_buffer`
+/// once recording stops. A live session (Deepgram) needs the samples while the
+/// user is still speaking, so the capture callback tees them here.
+pub type AudioTap = tokio::sync::mpsc::UnboundedSender<AudioChunk>;
+
 struct AudioState {
     audio_level: f32,
     is_recording: bool,
@@ -27,6 +46,8 @@ struct AudioState {
     /// Whether monitoring was active before the current recording started.
     /// Used to decide whether to stop the stream when recording ends.
     was_monitoring_before_recording: bool,
+    /// Some when a live session wants a copy of the audio as it arrives.
+    tap: Option<AudioTap>,
 }
 
 impl AudioState {
@@ -38,6 +59,7 @@ impl AudioState {
             record_buffer: Vec::new(),
             device_sample_rate: 16_000, // default, updated when stream starts
             was_monitoring_before_recording: false,
+            tap: None,
         }
     }
 }
@@ -264,11 +286,16 @@ impl AudioManager {
         }
     }
 
+    /// Attach (or detach, with `None`) a live consumer of the audio being
+    /// recorded. Samples are only teed while recording is active.
+    pub fn set_tap(&mut self, tap: Option<AudioTap>) {
+        self.state.lock().unwrap().tap = tap;
+    }
+
     /// Get the current normalized audio level (0.0 - 1.0).
     pub fn get_audio_level(&self) -> f32 {
         self.state.lock().unwrap().audio_level
     }
-
     /// Test whether a microphone is working by briefly opening a stream and
     /// checking if any non-silent audio is captured.
     #[allow(dead_code)]
@@ -677,8 +704,28 @@ fn process_audio_data(data: &[f32], channels: u16, state: &Arc<Mutex<AudioState>
     // Smooth the level with exponential moving average (history weight 0.4).
     state.audio_level = state.audio_level * 0.4 + level * 0.6;
 
-    // If recording, append mono samples to the buffer.
-    if state.is_recording {
+    // If recording, append mono samples to the buffer and, if a live session is
+    // attached, hand it a copy as well. The tap send is non-blocking, so the
+    // audio callback never stalls on a slow consumer.
+    let tapped = if state.is_recording {
         state.record_buffer.extend_from_slice(&mono_samples);
+        let rate = state.device_sample_rate;
+        state.tap.clone().map(|tap| {
+            (
+                tap,
+                AudioChunk {
+                    samples: mono_samples,
+                    sample_rate: rate,
+                },
+            )
+        })
+    } else {
+        None
+    };
+
+    drop(state);
+
+    if let Some((tap, chunk)) = tapped {
+        let _ = tap.send(chunk);
     }
 }

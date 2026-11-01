@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Result};
+
+use crate::config::DeepgramConfig;
 use futures_util::StreamExt;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use reqwest::multipart;
@@ -41,6 +43,10 @@ pub struct WhisperManager {
     local_model: String,
     local_model_path: String,
     local_language: String,
+    /// Deepgram's own settings. It is the one provider with two execution
+    /// shapes (recorded upload or live session), so it carries a whole config
+    /// rather than a lone API key.
+    deepgram: DeepgramConfig,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +67,7 @@ impl WhisperManager {
             local_model: "base".to_string(),
             local_model_path: String::new(),
             local_language: "en".to_string(),
+            deepgram: DeepgramConfig::default(),
         }
     }
 
@@ -81,19 +88,29 @@ impl WhisperManager {
 
     pub fn set_api_provider(&mut self, provider: &str) -> Result<()> {
         match provider {
-            "openai" | "groq" | "gemini" => {
+            "openai" | "groq" | "gemini" | "deepgram" => {
                 self.api_provider = provider.to_string();
                 Ok(())
             }
             _ => Err(anyhow!(
-                "Invalid API provider '{}'. Must be 'openai', 'groq', or 'gemini'.",
+                "Invalid API provider '{}'. Must be 'openai', 'groq', 'gemini', or 'deepgram'.",
                 provider
             )),
         }
     }
 
+    /// True when this provider is driven by a live session rather than a batch
+    /// transcription. Deepgram is the only one.
+    pub fn is_live_provider(provider: &str) -> bool {
+        provider == "deepgram"
+    }
+
     pub fn set_api_key(&mut self, key: &str) {
         self.api_key = key.to_string();
+    }
+
+    pub fn set_deepgram(&mut self, config: DeepgramConfig) {
+        self.deepgram = config;
     }
 
     pub fn set_groq_api_key(&mut self, key: &str) {
@@ -120,13 +137,49 @@ impl WhisperManager {
     }
 
     pub fn set_api_language(&mut self, lang: &str) -> Result<()> {
-        let lang = Self::extract_language_code(lang);
-        if Self::is_valid_language(lang) {
-            self.api_language = lang.to_string();
-            Ok(())
-        } else {
-            Err(anyhow!("Unsupported language code '{}'.", lang))
+        match Self::match_language(&self.api_provider, lang) {
+            Some(code) => {
+                self.api_language = code;
+                Ok(())
+            }
+            None => Err(anyhow!("Unsupported language '{}'.", lang)),
         }
+    }
+
+    /// Resolve anything a settings file or the UI might hold — a language code,
+    /// a display label ("English"), or a legacy "code,Label" pair — onto a code
+    /// this provider accepts, falling back to the provider's default.
+    ///
+    /// This exists because the UI used to offer labels the manager could never
+    /// accept ("Auto-detect"), and the resulting error was discarded, so every
+    /// provider silently ran English. Resolve before setting instead.
+    pub fn resolve_language_or_default(provider: &str, raw: &str) -> String {
+        Self::match_language(provider, raw).unwrap_or_else(|| {
+            log::warn!(
+                "Language '{}' is not supported by '{}'; using its default.",
+                raw,
+                provider
+            );
+            Self::default_language_for(provider)
+        })
+    }
+
+    fn default_language_for(_provider: &str) -> String {
+        "en".to_string()
+    }
+
+    /// Match a code or a display label against the provider's own language list.
+    fn match_language(provider: &str, raw: &str) -> Option<String> {
+        let raw = Self::extract_language_code(raw);
+        let languages = Self::get_available_languages_for_provider(provider);
+
+        if let Some((code, _)) = languages.iter().find(|(code, _)| code == raw) {
+            return Some(code.clone());
+        }
+        languages
+            .iter()
+            .find(|(_, label)| label.eq_ignore_ascii_case(raw))
+            .map(|(code, _)| code.clone())
     }
 
     pub fn set_local_model(&mut self, model: &str) -> Result<()> {
@@ -187,6 +240,7 @@ impl WhisperManager {
         match provider {
             "gemini" => "Gemini",
             "groq" => "Groq",
+            "deepgram" => "Deepgram",
             _ => "OpenAI",
         }
     }
@@ -201,6 +255,14 @@ impl WhisperManager {
     async fn transcribe_api(&self, audio_data: Vec<f32>, sample_rate: u32) -> Result<String> {
         if self.api_provider == "gemini" {
             return self.transcribe_gemini(audio_data, sample_rate).await;
+        }
+
+        // Deepgram's recorded mode: upload the finished utterance. Its live
+        // mode never reaches here — it is driven by a session started at
+        // record-start instead.
+        if self.api_provider == "deepgram" {
+            return crate::deepgram::transcribe_recorded(&self.deepgram, audio_data, sample_rate)
+                .await;
         }
 
         let active_key = if self.api_provider == "groq" {
@@ -278,7 +340,7 @@ impl WhisperManager {
         "https://speechs3proto2-pa.googleapis.com/s3web/prod/streaming/channel";
 
     /// Shared HTTP client: one connection pool for all Gemini traffic.
-    fn http_client() -> &'static reqwest::Client {
+    pub(crate) fn http_client() -> &'static reqwest::Client {
         static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
         CLIENT.get_or_init(reqwest::Client::new)
     }
@@ -1176,7 +1238,7 @@ impl WhisperManager {
 
     // ── Audio utilities ──────────────────────────────────────────────────
 
-    fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
+    pub(crate) fn encode_wav(audio_data: &[f32], sample_rate: u32) -> Result<Vec<u8>> {
         let spec = WavSpec {
             channels: 1,
             sample_rate,
@@ -1199,7 +1261,11 @@ impl WhisperManager {
     }
 
     /// Simple linear resampling from `from_rate` to `to_rate`.
-    fn resample(data: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    ///
+    /// Shared with the live-session provider, which needs 16 kHz audio for
+    /// Deepgram. Keep this the single implementation — a second resampler would
+    /// drift.
+    pub(crate) fn resample(data: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
         if from_rate == to_rate || data.is_empty() {
             return data.to_vec();
         }
@@ -1245,10 +1311,22 @@ impl WhisperManager {
         ]
     }
 
+    pub fn get_available_deepgram_models() -> Vec<String> {
+        vec![
+            "nova-3".to_string(),
+            "nova-2".to_string(),
+            "nova-2-general".to_string(),
+            "nova-2-phonecall".to_string(),
+            "enhanced".to_string(),
+            "base".to_string(),
+        ]
+    }
+
     pub fn get_available_api_models_for_provider(provider: &str) -> Vec<String> {
         match provider {
             "gemini" => Self::get_available_gemini_models(),
             "groq" => Self::get_available_groq_models(),
+            "deepgram" => Self::get_available_deepgram_models(),
             _ => Self::get_available_api_models(),
         }
     }
@@ -1334,6 +1412,183 @@ impl WhisperManager {
             "whisper-large-v3" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),
             _ => ModelInfo::new("Unknown", "Unknown", "Unknown", "Unknown"),
         }
+    }
+
+    /// Languages Deepgram accepts on a live session. Deepgram has its own
+    /// catalogue, and `multi` is the closest thing it has to auto-detection
+    /// (55 languages with per-word code-switching on Nova-3).
+    /// Every language Deepgram publishes for Nova-3, taken from the official
+    /// Models & Languages table rather than picked by hand.
+    ///
+    /// `multi` first (55-language code-switching), then all monolingual codes
+    /// including regional variants, alphabetical by display name. Labels are
+    /// unique because the dropdown selects by label string.
+    ///
+    /// A code is only valid with a model that supports it — `enhanced` and
+    /// `base` support far fewer, and Deepgram rejects the connection if you
+    /// pick a combination it does not serve.
+    pub fn get_available_deepgram_languages() -> Vec<(String, String)> {
+        vec![
+            (
+                "multi".to_string(),
+                "Multilingual (code-switching)".to_string(),
+            ),
+            ("af".to_string(), "Afrikaans".to_string()),
+            ("af-ZA".to_string(), "Afrikaans (South Africa)".to_string()),
+            ("ar".to_string(), "Arabic".to_string()),
+            ("ar-DZ".to_string(), "Arabic (Algeria)".to_string()),
+            ("ar-TD".to_string(), "Arabic (Chad)".to_string()),
+            ("ar-EG".to_string(), "Arabic (Egypt)".to_string()),
+            ("ar-IR".to_string(), "Arabic (Iran)".to_string()),
+            ("ar-IQ".to_string(), "Arabic (Iraq)".to_string()),
+            ("ar-JO".to_string(), "Arabic (Jordan)".to_string()),
+            ("ar-KW".to_string(), "Arabic (Kuwait)".to_string()),
+            ("ar-LB".to_string(), "Arabic (Lebanon)".to_string()),
+            ("ar-MA".to_string(), "Arabic (Morocco)".to_string()),
+            ("ar-PS".to_string(), "Arabic (Palestine)".to_string()),
+            ("ar-QA".to_string(), "Arabic (Qatar)".to_string()),
+            ("ar-SA".to_string(), "Arabic (Saudi Arabia)".to_string()),
+            ("ar-SD".to_string(), "Arabic (Sudan)".to_string()),
+            ("ar-SY".to_string(), "Arabic (Syria)".to_string()),
+            ("ar-TN".to_string(), "Arabic (Tunisia)".to_string()),
+            ("ar-AE".to_string(), "Arabic (UAE)".to_string()),
+            ("hy".to_string(), "Armenian".to_string()),
+            ("as".to_string(), "Assamese".to_string()),
+            ("as-IN".to_string(), "Assamese (India)".to_string()),
+            ("be".to_string(), "Belarusian".to_string()),
+            ("bn".to_string(), "Bengali".to_string()),
+            ("bs".to_string(), "Bosnian".to_string()),
+            ("bg".to_string(), "Bulgarian".to_string()),
+            ("ca".to_string(), "Catalan".to_string()),
+            (
+                "zh-HK".to_string(),
+                "Chinese (Cantonese, Traditional)".to_string(),
+            ),
+            (
+                "zh".to_string(),
+                "Chinese (Mandarin, Simplified)".to_string(),
+            ),
+            (
+                "zh-CN".to_string(),
+                "Chinese (Mandarin, Simplified) — zh-CN".to_string(),
+            ),
+            (
+                "zh-Hans".to_string(),
+                "Chinese (Mandarin, Simplified) — zh-Hans".to_string(),
+            ),
+            (
+                "zh-Hant".to_string(),
+                "Chinese (Mandarin, Traditional)".to_string(),
+            ),
+            (
+                "zh-TW".to_string(),
+                "Chinese (Mandarin, Traditional) — zh-TW".to_string(),
+            ),
+            ("hr".to_string(), "Croatian".to_string()),
+            ("cs".to_string(), "Czech".to_string()),
+            ("cs-CZ".to_string(), "Czech (Czechia)".to_string()),
+            ("da".to_string(), "Danish".to_string()),
+            ("da-DK".to_string(), "Danish (Denmark)".to_string()),
+            ("nl".to_string(), "Dutch".to_string()),
+            ("nl-BE".to_string(), "Dutch (Belgium)".to_string()),
+            ("en".to_string(), "English".to_string()),
+            ("en-AU".to_string(), "English (Australia)".to_string()),
+            ("en-CA".to_string(), "English (Canada)".to_string()),
+            ("en-IN".to_string(), "English (India)".to_string()),
+            ("en-NZ".to_string(), "English (New Zealand)".to_string()),
+            ("en-GB".to_string(), "English (United Kingdom)".to_string()),
+            ("en-US".to_string(), "English (United States)".to_string()),
+            ("et".to_string(), "Estonian".to_string()),
+            ("fi".to_string(), "Finnish".to_string()),
+            ("fr".to_string(), "French".to_string()),
+            ("fr-CA".to_string(), "French (Canada)".to_string()),
+            ("gl".to_string(), "Galician".to_string()),
+            ("ka".to_string(), "Georgian".to_string()),
+            ("ka-GE".to_string(), "Georgian (Georgia)".to_string()),
+            ("de".to_string(), "German".to_string()),
+            ("de-CH".to_string(), "German (Switzerland)".to_string()),
+            ("el".to_string(), "Greek".to_string()),
+            ("gu".to_string(), "Gujarati".to_string()),
+            ("gu-IN".to_string(), "Gujarati (India)".to_string()),
+            ("he".to_string(), "Hebrew".to_string()),
+            ("hi".to_string(), "Hindi".to_string()),
+            ("hu".to_string(), "Hungarian".to_string()),
+            ("id".to_string(), "Indonesian".to_string()),
+            ("it".to_string(), "Italian".to_string()),
+            ("ja".to_string(), "Japanese".to_string()),
+            ("kn".to_string(), "Kannada".to_string()),
+            ("kk".to_string(), "Kazakh".to_string()),
+            ("kk-KZ".to_string(), "Kazakh (Kazakhstan)".to_string()),
+            ("ko".to_string(), "Korean".to_string()),
+            ("ko-KR".to_string(), "Korean (Korea)".to_string()),
+            ("lv".to_string(), "Latvian".to_string()),
+            ("lt".to_string(), "Lithuanian".to_string()),
+            ("mk".to_string(), "Macedonian".to_string()),
+            ("ms".to_string(), "Malay".to_string()),
+            ("mr".to_string(), "Marathi".to_string()),
+            ("mn".to_string(), "Mongolian".to_string()),
+            ("ne".to_string(), "Nepali".to_string()),
+            ("no".to_string(), "Norwegian".to_string()),
+            ("ps".to_string(), "Pashto".to_string()),
+            ("ps-AF".to_string(), "Pashto (Afghanistan)".to_string()),
+            ("fa".to_string(), "Persian".to_string()),
+            ("pl".to_string(), "Polish".to_string()),
+            ("pt".to_string(), "Portuguese".to_string()),
+            ("pt-BR".to_string(), "Portuguese (Brazil)".to_string()),
+            ("pt-PT".to_string(), "Portuguese (Portugal)".to_string()),
+            ("pa".to_string(), "Punjabi".to_string()),
+            ("pa-IN".to_string(), "Punjabi (India)".to_string()),
+            ("ro".to_string(), "Romanian".to_string()),
+            ("ru".to_string(), "Russian".to_string()),
+            ("sr".to_string(), "Serbian".to_string()),
+            ("sk".to_string(), "Slovak".to_string()),
+            ("sl".to_string(), "Slovenian".to_string()),
+            ("es".to_string(), "Spanish".to_string()),
+            ("es-419".to_string(), "Spanish (Latin America)".to_string()),
+            ("sv".to_string(), "Swedish".to_string()),
+            ("sv-SE".to_string(), "Swedish (Sweden)".to_string()),
+            ("tl".to_string(), "Tagalog".to_string()),
+            ("ta".to_string(), "Tamil".to_string()),
+            ("te".to_string(), "Telugu".to_string()),
+            ("th".to_string(), "Thai".to_string()),
+            ("th-TH".to_string(), "Thai (Thailand)".to_string()),
+            ("tr".to_string(), "Turkish".to_string()),
+            ("tr-TR".to_string(), "Turkish (TR)".to_string()),
+            ("uk".to_string(), "Ukrainian".to_string()),
+            ("ur".to_string(), "Urdu".to_string()),
+            ("vi".to_string(), "Vietnamese".to_string()),
+            ("xh".to_string(), "Xhosa".to_string()),
+            ("zu".to_string(), "Zulu".to_string()),
+        ]
+    }
+
+    /// The language catalogue for a provider. Deepgram does not share the
+    /// OpenAI/Whisper code list, so it needs its own.
+    pub fn get_available_languages_for_provider(provider: &str) -> Vec<(String, String)> {
+        if provider == "deepgram" {
+            Self::get_available_deepgram_languages()
+        } else {
+            Self::get_available_languages()
+        }
+    }
+
+    /// Display labels for the language dropdown, in list order.
+    pub fn language_labels_for_provider(provider: &str) -> Vec<String> {
+        Self::get_available_languages_for_provider(provider)
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect()
+    }
+
+    /// The display label for a stored language code, so the dropdown can show
+    /// the saved value after a restart.
+    pub fn language_label_for(provider: &str, code: &str) -> String {
+        let resolved = Self::resolve_language_or_default(provider, code);
+        Self::get_available_languages_for_provider(provider)
+            .into_iter()
+            .find(|(c, _)| *c == resolved)
+            .map(|(_, label)| label)
+            .unwrap_or_else(|| "English".to_string())
     }
 
     pub fn get_available_languages() -> Vec<(String, String)> {
@@ -1713,6 +1968,116 @@ mod tests {
         assert!(manager.set_api_provider("openai").is_ok());
         assert!(manager.set_api_provider("groq").is_ok());
         assert!(manager.set_api_provider("gemini").is_ok());
+        assert!(manager.set_api_provider("deepgram").is_ok());
+    }
+
+    #[test]
+    fn test_deepgram_is_the_only_live_provider() {
+        assert!(WhisperManager::is_live_provider("deepgram"));
+        assert!(!WhisperManager::is_live_provider("openai"));
+        assert!(!WhisperManager::is_live_provider("groq"));
+        assert!(!WhisperManager::is_live_provider("gemini"));
+    }
+
+    #[test]
+    fn test_get_available_api_models_for_provider_deepgram() {
+        let models = WhisperManager::get_available_api_models_for_provider("deepgram");
+        assert_eq!(models.first().map(String::as_str), Some("nova-3"));
+        assert!(models.contains(&"nova-2".to_string()));
+        assert!(!models.iter().any(|m| m.starts_with("whisper")));
+    }
+
+    #[test]
+    fn test_deepgram_accepts_the_multilingual_option() {
+        // `multi` is Deepgram-only; it is not in the shared OpenAI code list.
+        assert!(WhisperManager::get_available_languages()
+            .iter()
+            .all(|(code, _)| code != "multi"));
+
+        let mut manager = WhisperManager::new();
+        manager.set_api_provider("deepgram").unwrap();
+        assert!(manager.set_api_language("multi").is_ok());
+    }
+
+    #[test]
+    fn test_resolve_language_accepts_a_display_label() {
+        assert_eq!(
+            WhisperManager::resolve_language_or_default("openai", "Spanish"),
+            "es"
+        );
+        assert_eq!(
+            WhisperManager::resolve_language_or_default("deepgram", "English"),
+            "en"
+        );
+    }
+
+    #[test]
+    fn test_resolve_language_repairs_the_legacy_auto_detect_value() {
+        // settings.json used to hold the dropdown's label, which the manager
+        // rejected with an error that was then discarded. It must now resolve.
+        assert_eq!(
+            WhisperManager::resolve_language_or_default("openai", "Auto-detect"),
+            "en"
+        );
+        assert_eq!(
+            WhisperManager::resolve_language_or_default("deepgram", ""),
+            "en"
+        );
+    }
+
+    #[test]
+    fn test_language_label_for_round_trips_a_stored_code() {
+        let labels = WhisperManager::language_labels_for_provider("deepgram");
+        assert!(labels.contains(&"Multilingual (code-switching)".to_string()));
+        assert_eq!(
+            WhisperManager::language_label_for("deepgram", "multi"),
+            "Multilingual (code-switching)"
+        );
+        assert_eq!(
+            WhisperManager::language_label_for("deepgram", "fr"),
+            "French"
+        );
+    }
+
+    #[test]
+    fn test_deepgram_language_catalogue_is_comprehensive() {
+        let languages = WhisperManager::get_available_deepgram_languages();
+        assert!(
+            languages.len() >= 100,
+            "Deepgram publishes far more than {} languages",
+            languages.len()
+        );
+
+        // Codes that only appear in the Nova-3 multilingual list.
+        for code in ["multi", "xh", "zu", "gl", "en-CA"] {
+            assert!(
+                languages.iter().any(|(c, _)| c == code),
+                "missing Deepgram language '{}'",
+                code
+            );
+        }
+        // Regional variants, including the script-tagged Chinese ones.
+        for code in ["en-GB", "en-US", "zh-HK", "zh-Hans", "zh-Hant", "es-419"] {
+            assert!(
+                languages.iter().any(|(c, _)| c == code),
+                "missing Deepgram regional language '{}'",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_deepgram_language_labels_are_unique() {
+        // The dropdown selects by label string, so a duplicate label would make
+        // one of the two codes unreachable.
+        let mut labels: Vec<String> = WhisperManager::get_available_deepgram_languages()
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+        let total = labels.len();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(total, labels.len(), "duplicate language labels");
     }
 
     #[test]

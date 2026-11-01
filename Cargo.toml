@@ -90,6 +90,7 @@ rand = "0.8"
 # PNG decoding for tray icons
 png = "0.17"
 magnum-opus = "0.3.2"
+tokio-tungstenite = { version = "0.29.0", features = ["native-tls"] }
 
 # Optimize all dependencies in dev builds for faster startup.
 # Code stays at opt-level 0 for fast recompilation.

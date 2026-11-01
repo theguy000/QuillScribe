@@ -1,6 +1,7 @@
 mod audio;
 mod commands;
 mod config;
+mod deepgram;
 mod hotkey;
 mod output;
 mod sound;
@@ -413,6 +414,216 @@ fn flush_pending_max_history_entries(
     });
 }
 
+/// Sample rate to report when a live session is the only thing that heard
+/// anything, and the recorder's own buffer is empty.
+const SAMPLE_RATE_FALLBACK: u32 = 16_000;
+
+/// Open a Deepgram live session when the active provider needs one.
+///
+/// Batch providers skip this entirely: they still receive the whole recording
+/// from `stop_recording`, exactly as before.
+fn start_live_session_if_needed(
+    shared: &Arc<SharedAppState>,
+    rt: &tokio::runtime::Handle,
+    overlay: &slint::Weak<RecordingOverlay>,
+) {
+    let whisper_cfg = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_whisper()
+    };
+    if whisper_cfg.mode != "api"
+        || !whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider)
+    {
+        return;
+    }
+    if !shared.state.config.lock().unwrap().get_deepgram().is_live() {
+        // Recorded mode: the utterance is uploaded when the user stops.
+        return;
+    }
+
+    let cfg = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_deepgram()
+    };
+
+    if cfg.api_key.trim().is_empty() {
+        // Recording has already started by the time this runs, so undo it
+        // rather than leaving the microphone hot with nothing consuming it.
+        {
+            let mut audio = shared.state.audio.lock().unwrap();
+            audio.set_tap(None);
+            let _ = audio.stop_recording();
+        }
+        if let Some(overlay) = overlay.upgrade() {
+            hide_recording_overlay(&overlay);
+        }
+        shared.with_ui(|app| {
+            app.set_is_recording(false);
+            app.set_is_transcribing(false);
+            app.set_status_message("Add a Deepgram API key in Settings → Engine".into());
+        });
+        return;
+    }
+
+    let (tap_tx, tap_rx) = tokio::sync::mpsc::unbounded_channel();
+    {
+        let mut audio = shared.state.audio.lock().unwrap();
+        audio.set_tap(Some(tap_tx));
+    }
+
+    // Committed text, so the live view can show what has been said so far plus
+    // the segment still in progress.
+    let committed_cb = Arc::new(std::sync::Mutex::new(String::new()));
+    let weak_shared = Arc::downgrade(shared);
+
+    let on_progress: deepgram::ProgressSink = Arc::new(move |event: deepgram::Progress| {
+        let Some(shared) = weak_shared.upgrade() else {
+            return;
+        };
+
+        match event {
+            deepgram::Progress::Interim(text) => {
+                let prefix = committed_cb.lock().map(|c| c.clone()).unwrap_or_default();
+                let live = if prefix.is_empty() {
+                    text
+                } else {
+                    format!("{} {}", prefix, text)
+                };
+                let words = live.split_whitespace().count();
+                let live_for_ui = live.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    shared.with_ui(|app| {
+                        app.set_transcription_text(live_for_ui.into());
+                        app.set_status_message(format!("Recording… {} words", words).into());
+                    });
+                });
+            }
+            deepgram::Progress::Final(text) => {
+                let live = match committed_cb.lock() {
+                    Ok(mut committed) => {
+                        if !committed.is_empty() {
+                            committed.push(' ');
+                        }
+                        committed.push_str(&text);
+                        committed.clone()
+                    }
+                    Err(_) => text,
+                };
+                let live_for_ui = live.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    shared.with_ui(|app| {
+                        app.set_transcription_text(live_for_ui.into());
+                    });
+                });
+            }
+            deepgram::Progress::Status(message) => {
+                let _ = slint::invoke_from_event_loop(move || {
+                    shared.with_ui(|app| {
+                        app.set_status_message(message.into());
+                    });
+                });
+            }
+        }
+    });
+
+    let session = deepgram::LiveSession::start(rt.clone(), cfg, tap_rx, on_progress);
+    *shared.state.live.lock().unwrap() = Some(session);
+}
+
+/// Record one utterance's outcome — statistics, output, history, UI — the same
+/// way for batch and live providers.
+fn emit_transcription_result(
+    shared: &Arc<SharedAppState>,
+    result: Result<String, anyhow::Error>,
+    audio_duration: f64,
+    transcription_time: f64,
+) {
+    let whisper_mode = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_whisper_mode()
+    };
+
+    match result {
+        Ok(text) => {
+            shared.state.statistics.record_transcription_result(
+                true,
+                &whisper_mode,
+                audio_duration,
+                transcription_time,
+                &text,
+                1.0,
+            );
+
+            shared.state.sound.play_stop_sound();
+
+            // Process output
+            {
+                let config = shared.state.config.lock().unwrap();
+                let output_cfg = config.get_output();
+                let output = shared.state.output.lock().unwrap();
+                let _ =
+                    output.process_transcription(&text, output::OutputMode::from(output_cfg.mode));
+            }
+
+            // Update UI from the Slint event loop thread
+            let text_for_ui = text.clone();
+            let s_invoke = Arc::clone(shared);
+            let _ = slint::invoke_from_event_loop(move || {
+                s_invoke.with_ui(|app| {
+                    app.set_is_transcribing(false);
+                    app.set_transcription_text(text_for_ui.into());
+                    app.set_status_message("Transcription complete".into());
+                    refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
+
+                    // Trigger completion burst animation
+                    app.set_show_burst(true);
+                    let weak = app.as_weak();
+                    slint::Timer::single_shot(std::time::Duration::from_millis(800), move || {
+                        if let Some(app) = weak.upgrade() {
+                            app.set_show_burst(false);
+                        }
+                    });
+                });
+            });
+        }
+        Err(e) => {
+            shared.state.statistics.record_transcription_result(
+                false,
+                &whisper_mode,
+                audio_duration,
+                transcription_time,
+                "",
+                0.0,
+            );
+            let err_msg = format!("Error: {}", e);
+            let s_invoke = Arc::clone(shared);
+            let _ = slint::invoke_from_event_loop(move || {
+                s_invoke.with_ui(|app| {
+                    app.set_is_transcribing(false);
+                    app.set_status_message(err_msg.into());
+                    refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
+                });
+            });
+        }
+    }
+}
+
+/// Rebuild the language dropdown for `provider` and show `current` as selected.
+///
+/// The list has to come from Rust: the `.slint` default offered display labels
+/// the manager could never accept, and nothing ever pushed the real one, so the
+/// saved language was silently ignored.
+fn apply_language_options(app: &App, provider: &str, current: &str) {
+    let labels = whisper::WhisperManager::language_labels_for_provider(provider);
+    let label_strings: Vec<slint::SharedString> =
+        labels.iter().map(|l| l.as_str().into()).collect();
+    let label_rc = std::rc::Rc::new(slint::VecModel::from(label_strings));
+    app.set_settings_languages(slint::ModelRc::from(label_rc));
+    app.set_settings_api_language(
+        whisper::WhisperManager::language_label_for(provider, current).into(),
+    );
+}
+
 /// Helper: refresh the blocklist model and audio device list in the UI.
 /// Also checks if the currently configured device is still visible (not blocklisted)
 /// and falls back to default if it isn't.
@@ -576,8 +787,35 @@ pub fn run() {
     app.set_settings_groq_api_key(s.whisper.groq_api_key.clone().into());
     app.set_settings_gemini_api_key(s.whisper.gemini_api_key.clone().into());
     app.set_settings_api_model(s.whisper.api_model.clone().into());
-    app.set_settings_api_language(s.whisper.api_language.clone().into());
     app.set_settings_local_model(s.whisper.local_model.clone().into());
+
+    // The language dropdown is driven from Rust. Its .slint default offered
+    // display labels the manager could never accept, and the real list was
+    // never pushed, so every provider silently ran English. Resolve and, if
+    // needed, repair the stored value.
+    let resolved_language = whisper::WhisperManager::resolve_language_or_default(
+        &s.whisper.api_provider,
+        &s.whisper.api_language,
+    );
+    if resolved_language != s.whisper.api_language {
+        save_config_field(&shared, |settings| {
+            settings.whisper.api_language = resolved_language.clone();
+        });
+    }
+    apply_language_options(&app, &s.whisper.api_provider, &resolved_language);
+
+    // Deepgram live-session options
+    app.set_settings_deepgram_api_key(s.deepgram.api_key.clone().into());
+    app.set_settings_deepgram_mode(s.deepgram.mode.clone().into());
+    if s.whisper.api_provider == "deepgram" {
+        // The model dropdown is shared with the other providers; when Deepgram
+        // is active, show the model Deepgram will actually use.
+        app.set_settings_api_model(s.deepgram.model.clone().into());
+    }
+    app.set_settings_deepgram_smart_format(s.deepgram.smart_format);
+    app.set_settings_deepgram_punctuate(s.deepgram.punctuate);
+    app.set_settings_deepgram_dictation(s.deepgram.dictation);
+    app.set_settings_deepgram_interim_results(s.deepgram.interim_results);
 
     // Initialize local model categories and models
     let categories = whisper::WhisperManager::get_local_model_categories();
@@ -677,6 +915,8 @@ pub fn run() {
             if let Some(overlay) = overlay_toggle.upgrade() {
                 show_recording_overlay(&overlay, &s, 0);
             }
+
+            start_live_session_if_needed(&s, &rt_handle, &overlay_toggle);
         } else {
             // Stop recording — synchronous UI update on UI thread
             s.with_ui(|app| {
@@ -688,25 +928,38 @@ pub fn run() {
                 hide_recording_overlay(&overlay);
             }
 
-            let (audio_data, sample_rate) = {
+            // Detach the live session before the recorder stops, so no further
+            // audio is teed to a session that is about to be flushed.
+            let live_session = { s.state.live.lock().unwrap().take() };
+            {
                 let mut audio = s.state.audio.lock().unwrap();
-                match audio.stop_recording() {
-                    Ok(Some((data, sr))) => (data, sr),
-                    Ok(None) => {
-                        s.with_ui(|app| {
-                            app.set_is_transcribing(false);
-                            app.set_status_message("No speech detected".into());
-                        });
-                        return;
-                    }
-                    Err(e) => {
-                        log::error!("Failed to stop recording: {}", e);
-                        s.with_ui(|app| {
-                            app.set_is_transcribing(false);
-                            app.set_status_message(format!("Error: {}", e).into());
-                        });
-                        return;
-                    }
+                audio.set_tap(None);
+            }
+
+            let captured = {
+                let mut audio = s.state.audio.lock().unwrap();
+                audio.stop_recording()
+            };
+
+            let (audio_data, sample_rate) = match captured {
+                Ok(Some((data, sr))) => (data, sr),
+                // A live session may legitimately have heard nothing while the
+                // recorder's own buffer looks empty; let the service decide.
+                Ok(None) if live_session.is_some() => (Vec::new(), SAMPLE_RATE_FALLBACK),
+                Ok(None) => {
+                    s.with_ui(|app| {
+                        app.set_is_transcribing(false);
+                        app.set_status_message("No speech detected".into());
+                    });
+                    return;
+                }
+                Err(e) => {
+                    log::error!("Failed to stop recording: {}", e);
+                    s.with_ui(|app| {
+                        app.set_is_transcribing(false);
+                        app.set_status_message(format!("Error: {}", e).into());
+                    });
+                    return;
                 }
             };
 
@@ -714,6 +967,10 @@ pub fn run() {
             let whisper_cfg = {
                 let config = s.state.config.lock().unwrap();
                 config.get_whisper()
+            };
+            let deepgram_cfg = {
+                let config = s.state.config.lock().unwrap();
+                config.get_deepgram()
             };
 
             {
@@ -724,18 +981,36 @@ pub fn run() {
                 whisper.set_groq_api_key(&whisper_cfg.groq_api_key);
                 whisper.set_gemini_api_key(&whisper_cfg.gemini_api_key);
                 let _ = whisper.set_api_model(&whisper_cfg.api_model);
-                let _ = whisper.set_api_language(&whisper_cfg.api_language);
+                // The stored value may be a display label ("English") or a
+                // legacy one ("Auto-detect"); resolve it instead of discarding
+                // the error and silently keeping a stale language.
+                let language = whisper::WhisperManager::resolve_language_or_default(
+                    &whisper_cfg.api_provider,
+                    &whisper_cfg.api_language,
+                );
+                let _ = whisper.set_api_language(&language);
                 let _ = whisper.set_local_model(&whisper_cfg.local_model);
                 whisper.set_local_model_path(&whisper_cfg.local_model_path);
+                whisper.set_deepgram(deepgram_cfg.clone());
+            }
+
+            let audio_duration = audio_data.len() as f64 / sample_rate as f64;
+            let start_time = std::time::Instant::now();
+
+            if let Some(session) = live_session {
+                let s_async = Arc::clone(&s);
+                rt_handle.spawn(async move {
+                    let result = session.finish().await;
+                    let transcription_time = start_time.elapsed().as_secs_f64();
+                    emit_transcription_result(&s_async, result, audio_duration, transcription_time);
+                });
+                return;
             }
 
             let whisper_clone = {
                 let whisper = s.state.whisper.lock().unwrap();
                 whisper.clone()
             };
-
-            let audio_duration = audio_data.len() as f64 / sample_rate as f64;
-            let start_time = std::time::Instant::now();
 
             // Spawn async transcription on Tokio runtime
             let s_async = Arc::clone(&s);
@@ -744,79 +1019,7 @@ pub fn run() {
                     .transcribe_audio(audio_data, sample_rate)
                     .await;
                 let transcription_time = start_time.elapsed().as_secs_f64();
-                let whisper_mode = {
-                    let config = s_async.state.config.lock().unwrap();
-                    config.get_whisper_mode()
-                };
-
-                match result {
-                    Ok(text) => {
-                        s_async.state.statistics.record_transcription_result(
-                            true,
-                            &whisper_mode,
-                            audio_duration,
-                            transcription_time,
-                            &text,
-                            1.0,
-                        );
-
-                        s_async.state.sound.play_stop_sound();
-
-                        // Process output
-                        {
-                            let config = s_async.state.config.lock().unwrap();
-                            let output_cfg = config.get_output();
-                            let output = s_async.state.output.lock().unwrap();
-                            let _ = output.process_transcription(
-                                &text,
-                                output::OutputMode::from(output_cfg.mode),
-                            );
-                        }
-
-                        // Update UI from the Slint event loop thread
-                        let text_for_ui = text.clone();
-                        let s_invoke = Arc::clone(&s_async);
-                        let _ = slint::invoke_from_event_loop(move || {
-                            s_invoke.with_ui(|app| {
-                                app.set_is_transcribing(false);
-                                app.set_transcription_text(text_for_ui.into());
-                                app.set_status_message("Transcription complete".into());
-                                refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
-
-                                // Trigger completion burst animation
-                                app.set_show_burst(true);
-                                let weak = app.as_weak();
-                                slint::Timer::single_shot(
-                                    std::time::Duration::from_millis(800),
-                                    move || {
-                                        if let Some(app) = weak.upgrade() {
-                                            app.set_show_burst(false);
-                                        }
-                                    },
-                                );
-                            });
-                        });
-                    }
-                    Err(e) => {
-                        s_async.state.statistics.record_transcription_result(
-                            false,
-                            &whisper_mode,
-                            audio_duration,
-                            transcription_time,
-                            "",
-                            0.0,
-                        );
-                        let err_msg = format!("Error: {}", e);
-                        let s_invoke = Arc::clone(&s_async);
-                        let _ = slint::invoke_from_event_loop(move || {
-                            s_invoke.with_ui(|app| {
-                                app.set_is_transcribing(false);
-                                app.set_status_message(err_msg.into());
-                                refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
-                            });
-                        });
-                    }
-                }
+                emit_transcription_result(&s_async, result, audio_duration, transcription_time);
             });
         }
     });
@@ -1121,14 +1324,28 @@ pub fn run() {
             .map(|m| slint::SharedString::from(m.as_str()))
             .collect();
         let model_rc = std::rc::Rc::new(slint::VecModel::from(model_strings));
-        let first_model = models.first().cloned().unwrap_or_default();
+
+        // Deepgram keeps its own model setting; prefer it when it is still in
+        // the catalogue.
+        let stored_deepgram_model = {
+            let config = shared_cb.state.config.lock().unwrap();
+            config.get_deepgram().model
+        };
+        let chosen_model = if provider_str == "deepgram" && models.contains(&stored_deepgram_model)
+        {
+            stored_deepgram_model
+        } else {
+            models.first().cloned().unwrap_or_default()
+        };
+
         shared_cb.with_ui(|app| {
             app.set_settings_api_models(slint::ModelRc::from(model_rc));
-            app.set_settings_api_model(first_model.clone().into());
+            app.set_settings_api_model(chosen_model.clone().into());
+            apply_language_options(&app, &provider_str, "");
         });
         save_config_field(&shared_cb, |s| {
             s.whisper.api_provider = provider_str;
-            s.whisper.api_model = first_model;
+            s.whisper.api_model = chosen_model;
         });
     });
 
@@ -1159,17 +1376,68 @@ pub fn run() {
     let shared_cb = Arc::clone(&shared);
     app.on_settings_api_model_changed(move |model: slint::SharedString| {
         let model_str = model.to_string();
+        let provider = {
+            let config = shared_cb.state.config.lock().unwrap();
+            config.get_whisper().api_provider
+        };
         save_config_field(&shared_cb, |s| {
-            s.whisper.api_model = model_str;
+            s.whisper.api_model = model_str.clone();
+            if provider == "deepgram" {
+                s.deepgram.model = model_str.clone();
+            }
         });
     });
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_language_changed(move |lang: slint::SharedString| {
-        let lang_str = lang.to_string();
+        let provider = {
+            let config = shared_cb.state.config.lock().unwrap();
+            config.get_whisper().api_provider
+        };
+        // Store the code, not the label, so the manager never has to guess.
+        let code = whisper::WhisperManager::resolve_language_or_default(&provider, &lang);
         save_config_field(&shared_cb, |s| {
-            s.whisper.api_language = lang_str;
+            s.whisper.api_language = code.clone();
+            if provider == "deepgram" {
+                s.deepgram.language = code.clone();
+            }
         });
+    });
+
+    // ── Deepgram live-session options ────────────────────────────────────
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_api_key_changed(move |key: slint::SharedString| {
+        let key_str = key.to_string();
+        save_config_field(&shared_cb, |s| {
+            s.deepgram.api_key = key_str;
+        });
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_mode_changed(move |mode: slint::SharedString| {
+        let mode_str = mode.to_string();
+        save_config_field(&shared_cb, |s| s.deepgram.mode = mode_str);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_smart_format_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.smart_format = enabled);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_punctuate_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.punctuate = enabled);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_dictation_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.dictation = enabled);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_interim_results_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.interim_results = enabled);
     });
 
     let shared_cb = Arc::clone(&shared);

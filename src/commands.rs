@@ -15,6 +15,9 @@ pub struct AppState {
     pub output: Mutex<OutputManager>,
     pub sound: SoundManager,
     pub statistics: StatisticsManager,
+    /// The in-flight Deepgram live session, if the active provider uses one.
+    /// Batch providers never populate this.
+    pub live: Mutex<Option<crate::deepgram::LiveSession>>,
 }
 
 impl AppState {
@@ -26,6 +29,7 @@ impl AppState {
             output: Mutex::new(OutputManager::new()),
             sound: SoundManager::new(),
             statistics: StatisticsManager::new(),
+            live: Mutex::new(None),
         }
     }
 }

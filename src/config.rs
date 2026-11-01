@@ -75,6 +75,105 @@ impl Default for WhisperConfig {
     }
 }
 
+/// Settings for the Deepgram live-session provider.
+///
+/// Deepgram is the only provider that streams while the user speaks, so its
+/// knobs do not belong on `WhisperConfig`: `endpointing_ms` and
+/// `utterance_end_ms` only exist for a live session, and the three formatter
+/// flags are Deepgram's own vocabulary (see GLOSSARY.md — "Spoken punctuation"
+/// is `dictation`, not the app's act of dictating).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeepgramConfig {
+    #[serde(default)]
+    pub api_key: String,
+    /// How Deepgram is used: `"recorded"` (default) uploads the finished
+    /// utterance to the prerecorded endpoint; `"live"` streams while the user
+    /// speaks. Recorded is the default because the app only delivers text when
+    /// recording stops, so streaming buys nothing until live typing exists.
+    #[serde(default = "default_deepgram_mode")]
+    pub mode: String,
+    #[serde(default = "default_deepgram_model")]
+    pub model: String,
+    #[serde(default = "default_deepgram_language")]
+    pub language: String,
+    /// Dates, times, currency, emails, URLs — and punctuation.
+    #[serde(default = "default_true")]
+    pub smart_format: bool,
+    /// Required by `dictation`; harmless on its own.
+    #[serde(default = "default_true")]
+    pub punctuate: bool,
+    /// Turns spoken "comma"/"new paragraph" into marks. English only.
+    ///
+    /// **Off by default, and it overrides `punctuate`/`smart_format` rather than
+    /// adding to them.** Measured against the live service: with `dictation=true`
+    /// the same clip comes back as `"the quick brown fox …"` — no capitals, no
+    /// punctuation — while with it off the identical request returns
+    /// `"The quick brown fox … dog."`. Think of it as the alternative to
+    /// automatic punctuation, not an extra: you either let Deepgram punctuate or
+    /// you dictate the punctuation yourself.
+    #[serde(default)]
+    pub dictation: bool,
+    /// Drives the live word count; also required by `utterance_end_ms`.
+    #[serde(default = "default_true")]
+    pub interim_results: bool,
+    /// Silence, in milliseconds, before Deepgram finalises a phrase.
+    #[serde(default = "default_endpointing_ms")]
+    pub endpointing_ms: u32,
+    /// Silence, in milliseconds, before a turn boundary is reported.
+    /// Deepgram accepts 1000..=5000.
+    #[serde(default = "default_utterance_end_ms")]
+    pub utterance_end_ms: u32,
+}
+
+fn default_deepgram_mode() -> String {
+    "recorded".to_string()
+}
+
+fn default_deepgram_model() -> String {
+    "nova-3".to_string()
+}
+
+fn default_deepgram_language() -> String {
+    "en".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_endpointing_ms() -> u32 {
+    300
+}
+
+fn default_utterance_end_ms() -> u32 {
+    1_000
+}
+
+impl DeepgramConfig {
+    /// True when the user asked for the live-session path rather than the
+    /// default recorded upload.
+    pub fn is_live(&self) -> bool {
+        self.mode == "live"
+    }
+}
+
+impl Default for DeepgramConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            mode: default_deepgram_mode(),
+            model: default_deepgram_model(),
+            language: default_deepgram_language(),
+            smart_format: true,
+            punctuate: true,
+            dictation: false,
+            interim_results: true,
+            endpointing_ms: default_endpointing_ms(),
+            utterance_end_ms: default_utterance_end_ms(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
     /// 0 = Copy to Clipboard, 1 = Type to Active Window, 2 = Copy & Type, 3 = Display Only
@@ -154,6 +253,8 @@ impl Default for AdvancedConfig {
 pub struct Settings {
     pub audio: AudioConfig,
     pub whisper: WhisperConfig,
+    #[serde(default)]
+    pub deepgram: DeepgramConfig,
     pub output: OutputConfig,
     pub ui: UiConfig,
     pub shortcuts: ShortcutsConfig,
@@ -271,6 +372,12 @@ impl ConfigManager {
         self.settings.lock().unwrap().whisper.mode.clone()
     }
 
+    // ── Deepgram getters ─────────────────────────────────────────────────
+
+    pub fn get_deepgram(&self) -> DeepgramConfig {
+        self.settings.lock().unwrap().deepgram.clone()
+    }
+
     // ── Output getters ───────────────────────────────────────────────────
 
     pub fn get_output(&self) -> OutputConfig {
@@ -377,6 +484,62 @@ mod tests {
 
         assert_eq!(parsed.api_provider, "gemini");
         assert_eq!(parsed.gemini_api_key, "AIzaSyCustomKey");
+    }
+
+    #[test]
+    fn deepgram_config_defaults_enable_the_normal_things() {
+        let cfg = DeepgramConfig::default();
+        assert_eq!(cfg.mode, "recorded", "recorded must be the default mode");
+        assert!(!cfg.is_live());
+        assert_eq!(cfg.model, "nova-3");
+        assert_eq!(cfg.language, "en");
+        assert!(cfg.smart_format, "smart_format should default on");
+        assert!(cfg.punctuate, "punctuate should default on");
+        assert!(
+            !cfg.dictation,
+            "dictation must default off: it replaces automatic punctuation instead of adding to it"
+        );
+        assert!(cfg.interim_results, "interim results drive the word count");
+        assert_eq!(cfg.endpointing_ms, 300);
+        assert_eq!(cfg.utterance_end_ms, 1_000);
+        assert!(cfg.api_key.is_empty());
+    }
+
+    #[test]
+    fn settings_without_a_deepgram_block_still_load() {
+        // A settings.json written before Deepgram existed must keep loading.
+        let legacy = r#"{
+            "audio": {"device_id": null, "sample_rate": 16000, "channels": 1,
+                      "sounds_enabled": true, "blocklist": []},
+            "whisper": {"mode": "api", "api_provider": "gemini", "api_key": "",
+                        "api_model": "gemini-2.0-flash", "local_model": "base",
+                        "local_model_path": "", "api_language": "en"},
+            "output": {"mode": 2},
+            "ui": {"theme": "white", "always_on_top": false,
+                   "custom_titlebar": true, "overlay_mode": "minimal"},
+            "shortcuts": {"record_toggle": "Meta+Shift+`"},
+            "advanced": {"buffer_size": 1024, "noise_threshold": 0.01,
+                         "silence_timeout": 2.0, "max_history_entries": 100}
+        }"#;
+
+        let parsed: Settings = serde_json::from_str(legacy).expect("legacy settings must load");
+        assert_eq!(parsed.whisper.api_provider, "gemini");
+        assert_eq!(parsed.deepgram, DeepgramConfig::default());
+    }
+
+    #[test]
+    fn deepgram_config_serde_roundtrip() {
+        let mut cfg = DeepgramConfig::default();
+        cfg.api_key = "not-a-real-deepgram-key".to_string();
+        cfg.model = "nova-2".to_string();
+        cfg.language = "multi".to_string();
+        cfg.dictation = false;
+
+        let json = serde_json::to_string(&cfg).expect("serialize DeepgramConfig");
+        let parsed: DeepgramConfig =
+            serde_json::from_str(&json).expect("deserialize DeepgramConfig");
+
+        assert_eq!(parsed, cfg);
     }
 
     #[test]

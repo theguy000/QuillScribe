@@ -53,6 +53,13 @@ export component App inherits Window {
     in-out property <string> settings-api-key;
     in-out property <string> settings-groq-api-key;
     in-out property <string> settings-gemini-api-key;
+    // ── Settings: Deepgram (live session) ────────────────────────────────
+    in-out property <string> settings-deepgram-api-key;
+    in-out property <string> settings-deepgram-mode: "recorded";
+    in-out property <bool> settings-deepgram-smart-format: true;
+    in-out property <bool> settings-deepgram-punctuate: true;
+    in-out property <bool> settings-deepgram-dictation: false;
+    in-out property <bool> settings-deepgram-interim-results: true;
     in-out property <string> settings-api-model: "gpt-4o-transcribe";
     in-out property <string> settings-api-language: "en";
     in-out property <bool> settings-show-api-key: false;
@@ -67,7 +74,7 @@ export component App inherits Window {
     in property <string> settings-model-memory;
     in property <string> settings-model-speed;
     in property <string> settings-model-quality;
-    in property <[string]> settings-api-providers: ["OpenAI", "Groq", "Gemini"];
+    in property <[string]> settings-api-providers: ["OpenAI", "Groq", "Gemini", "Deepgram"];
     in property <[string]> settings-api-models: ["gpt-4o-transcribe", "gpt-4o-mini-transcribe"];
     in property <[string]> settings-local-model-categories: ["General", "Tiny", "Base", "Small", "Medium", "Large"];
     in property <[string]> settings-local-models: ["tiny", "base", "small", "medium", "large"];
@@ -129,6 +136,12 @@ export component App inherits Window {
     callback settings-api-key-changed(string);
     callback settings-groq-api-key-changed(string);
     callback settings-gemini-api-key-changed(string);
+    callback settings-deepgram-api-key-changed(string);
+    callback settings-deepgram-mode-changed(string);
+    callback settings-deepgram-smart-format-changed(bool);
+    callback settings-deepgram-punctuate-changed(bool);
+    callback settings-deepgram-dictation-changed(bool);
+    callback settings-deepgram-interim-results-changed(bool);
     callback settings-api-model-changed(string);
     callback settings-language-changed(string);
     callback settings-local-model-changed(string);
@@ -243,6 +256,12 @@ export component App inherits Window {
                         api-key <=> settings-api-key;
                         groq-api-key <=> settings-groq-api-key;
                         gemini-api-key <=> settings-gemini-api-key;
+                        deepgram-api-key <=> settings-deepgram-api-key;
+                        deepgram-mode <=> settings-deepgram-mode;
+                        deepgram-smart-format <=> settings-deepgram-smart-format;
+                        deepgram-punctuate <=> settings-deepgram-punctuate;
+                        deepgram-dictation <=> settings-deepgram-dictation;
+                        deepgram-interim-results <=> settings-deepgram-interim-results;
                         api-model <=> settings-api-model;
                         api-language <=> settings-api-language;
                         show-api-key <=> settings-show-api-key;
@@ -267,6 +286,12 @@ export component App inherits Window {
                         api-key-changed(val) => { settings-api-key-changed(val); }
                         groq-api-key-changed(val) => { settings-groq-api-key-changed(val); }
                         gemini-api-key-changed(val) => { settings-gemini-api-key-changed(val); }
+                        deepgram-api-key-changed(val) => { settings-deepgram-api-key-changed(val); }
+                        deepgram-mode-changed(val) => { settings-deepgram-mode-changed(val); }
+                        deepgram-smart-format-changed(val) => { settings-deepgram-smart-format-changed(val); }
+                        deepgram-punctuate-changed(val) => { settings-deepgram-punctuate-changed(val); }
+                        deepgram-dictation-changed(val) => { settings-deepgram-dictation-changed(val); }
+                        deepgram-interim-results-changed(val) => { settings-deepgram-interim-results-changed(val); }
                         api-model-changed(val) => { settings-api-model-changed(val); }
                         language-changed(val) => { settings-language-changed(val); }
                         local-model-changed(val) => { settings-local-model-changed(val); }
