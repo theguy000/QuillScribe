@@ -2,7 +2,9 @@
 //!
 //! An utterance binds to the window that held focus when the recording started.
 //! Every Final segment is pasted into that window as soon as the provider
-//! commits it. Interim segments never come through here; they keep updating
+//! commits it, except while that window is unfocused: then the fragment is held
+//! for as long as the utterance lasts, and written if the window comes back
+//! before it ends. Interim segments never come through here; they keep updating
 //! QuillScribe's own panel.
 //!
 //! The app never reads the target document, so the only memory it has of what
@@ -114,8 +116,13 @@ pub struct DeliverySession {
     window: WindowId,
     surface: Box<dyn DeliverySurface>,
     ledger: Arc<Mutex<DeliveryLedger>>,
+    /// Fragments that arrived while the bound window was unfocused, oldest
+    /// first, including the one a refused paste came from. They are written
+    /// when the window comes back, and they are what the stop path writes when
+    /// it does not. They stay out of `delivered` until then, so no fragment can
+    /// be counted as landed and still owed at the same time.
+    held: Vec<String>,
     delivered: String,
-    undelivered: Vec<String>,
 }
 
 impl DeliverySession {
@@ -128,17 +135,19 @@ impl DeliverySession {
             window,
             surface: Box::new(surface),
             ledger,
+            held: Vec::new(),
             delivered: String::new(),
-            undelivered: Vec::new(),
         }
     }
 
     /// Write one committed segment into the bound window.
     ///
     /// Nothing is written while the bound window is unfocused: the fragment is
-    /// held for the stop path rather than typed into whatever the user is
-    /// looking at now. A paste that fails is retried once, then the fragment is
-    /// counted as undelivered.
+    /// held rather than typed into whatever the user is looking at now. When
+    /// the window comes back during the same utterance the held fragments are
+    /// written first, in the order they arrived. Whatever is still held at stop
+    /// belongs to the stop path. A paste that fails is retried once, then the
+    /// fragment waits with the held ones and is owed at stop if it never lands.
     pub fn deliver(&mut self, text: &str) {
         let text = text.trim();
         if text.is_empty() {
@@ -146,39 +155,82 @@ impl DeliverySession {
             return;
         }
 
-        let previous = self
-            .ledger
-            .lock()
-            .ok()
-            .and_then(|ledger| ledger.ends_with_whitespace(&self.window));
-        let fragment = fragment(previous, text);
-
-        if self.surface.focused_window().as_ref() != Some(&self.window) {
+        if !self.bound_window_focused() {
             debug!("Bound window is not focused; holding the fragment for stop");
-            self.hold(text);
+            self.held.push(text.to_string());
             return;
         }
 
+        // `resume_held` takes this segment too, so the words land in the order
+        // they were spoken.
+        self.held.push(text.to_string());
+        self.resume_held();
+    }
+
+    /// Write every fragment held while the bound window was away, oldest first.
+    ///
+    /// The caller has already checked that the window holds focus. The waiting
+    /// fragments go in one paste, because a paste that lands only some of them
+    /// would put the words out of order. If that paste is refused they stay
+    /// held, so a later segment can still deliver them; only the stop path
+    /// gives up on them.
+    fn resume_held(&mut self) {
+        if self.held.is_empty() {
+            return;
+        }
+
+        let mut fragment = fragment(self.ledger_whitespace(), &self.held[0]);
+        for text in &self.held[1..] {
+            fragment.push(' ');
+            fragment.push_str(text);
+        }
+
         if !self.paste_with_one_retry(&fragment) {
-            self.hold(text);
+            warn!(
+                "Holding {} fragment(s) for a later attempt",
+                self.held.len()
+            );
             return;
         }
 
         if let Ok(mut ledger) = self.ledger.lock() {
             ledger.record(&self.window, &fragment);
         }
-        if !self.delivered.is_empty() {
-            self.delivered.push(' ');
+        let held = std::mem::take(&mut self.held);
+        debug!("Bound window is back; delivered {} fragment(s)", held.len());
+        for text in held {
+            if !self.delivered.is_empty() {
+                self.delivered.push(' ');
+            }
+            self.delivered.push_str(&text);
         }
-        self.delivered.push_str(text);
+    }
+
+    /// Whether the bound window holds focus. An answer the platform cannot give
+    /// counts as unfocused, so the app never types blind.
+    fn bound_window_focused(&self) -> bool {
+        self.surface.focused_window().as_ref() == Some(&self.window)
+    }
+
+    fn ledger_whitespace(&self) -> Option<bool> {
+        self.ledger
+            .lock()
+            .ok()
+            .and_then(|ledger| ledger.ends_with_whitespace(&self.window))
     }
 
     /// Text this utterance put into the document. The leading space of a later
     /// utterance is not part of it, because the transcript does not have one.
+    ///
+    /// Fragments still held when the utterance ends are owed like any other
+    /// fragment that never arrived, so the stop path writes them. The count is
+    /// what tells the stop path they exist: `unwritten_words` compares the
+    /// delivered words with the transcript by position, and held words sit in
+    /// the middle of that comparison rather than after it.
     pub fn report(&self) -> DeliveryReport {
         DeliveryReport {
             delivered: self.delivered.clone(),
-            undelivered: self.undelivered.clone(),
+            undelivered: self.held.clone(),
         }
     }
 
@@ -191,17 +243,13 @@ impl DeliverySession {
                 }
                 Err(err) => {
                     warn!(
-                        "Live typing paste failed twice, holding the fragment: {}",
+                        "Live typing paste failed twice, leaving the fragment owed: {}",
                         err
                     );
                 }
             }
         }
         false
-    }
-
-    fn hold(&mut self, text: &str) {
-        self.undelivered.push(text.to_string());
     }
 }
 
@@ -231,27 +279,43 @@ fn fragment(previous: Option<bool>, text: &str) -> String {
 /// disagree would duplicate sentences the user already has, so only the held
 /// fragments come back in that case.
 pub fn unwritten_words(transcript: &str, report: &DeliveryReport) -> String {
-    match tail_after_prefix(transcript, &report.delivered) {
-        Some(tail) if !tail.is_empty() => tail,
-        Some(_) => report.undelivered.join(" "),
-        None => {
-            warn!("Live typing and the transcript disagree; stop writes what was held");
-            report.undelivered.join(" ")
-        }
+    let spoken: Vec<&str> = transcript.split_whitespace().collect();
+    let typed: Vec<&str> = report.delivered.split_whitespace().collect();
+
+    // A fragment that never arrived leaves a gap, so what is typed is no longer
+    // a prefix of what was said. Lift those words out and compare the rest: a
+    // prefix that covers the rest means the tail after it is still owed.
+    let Some(rest) = without_words(&spoken, &report.undelivered) else {
+        warn!("Live typing and the transcript disagree; stop writes what was held");
+        return report.undelivered.join(" ");
+    };
+    if rest.len() < typed.len() || rest[..typed.len()] != typed[..] {
+        warn!("Live typing and the transcript disagree; stop writes what was held");
+        return report.undelivered.join(" ");
     }
+
+    let mut owed = report.undelivered.join(" ");
+    let tail = rest[typed.len()..].join(" ");
+    if !tail.is_empty() {
+        if !owed.is_empty() {
+            owed.push(' ');
+        }
+        owed.push_str(&tail);
+    }
+    owed
 }
 
-/// The words of `transcript` after `delivered`, or `None` when `delivered` is
-/// not a word-for-word prefix of it.
-fn tail_after_prefix(transcript: &str, delivered: &str) -> Option<String> {
-    let spoken: Vec<&str> = transcript.split_whitespace().collect();
-    let typed: Vec<&str> = delivered.split_whitespace().collect();
-
-    if spoken.len() < typed.len() || spoken[..typed.len()] != typed[..] {
-        return None;
+/// `words` as it reads once each held fragment is taken out, in order. `None`
+/// when a held fragment does not appear where the utterance said it.
+fn without_words<'a>(words: &[&'a str], held: &[String]) -> Option<Vec<&'a str>> {
+    let mut rest = words.to_vec();
+    for fragment in held {
+        let fragment: Vec<&str> = fragment.split_whitespace().collect();
+        let start = (0..=rest.len().saturating_sub(fragment.len()))
+            .find(|start| rest[*start..*start + fragment.len()] == fragment[..])?;
+        rest.drain(start..start + fragment.len());
     }
-
-    Some(spoken[typed.len()..].join(" "))
+    Some(rest)
 }
 
 /// Which window holds focus, as far as the platform can tell.
@@ -351,6 +415,16 @@ mod tests {
 
         fn focus_unknown() -> Self {
             Self::default()
+        }
+
+        /// The user clicks another window, or back onto this one.
+        fn focus_on(&self, window: &str) {
+            *self.focus.lock().unwrap() = Some(WindowId::new(window));
+        }
+
+        /// The target refuses the next `times` pastes, without changing focus.
+        fn fail_next(&self, times: usize) {
+            *self.failures.lock().unwrap() = times;
         }
 
         fn failing(mut self, times: usize) -> Self {
@@ -527,8 +601,163 @@ mod tests {
 
         session.deliver("Hello there.");
 
-        assert!(surface.pasted().is_empty());
-        assert_eq!(session.report().undelivered, ["Hello there."]);
+        assert!(
+            surface.pasted().is_empty(),
+            "nothing reaches whichever window the user is in now"
+        );
+    }
+
+    #[test]
+    fn returning_to_the_bound_window_delivers_the_held_fragment() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(OTHER);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        session.deliver("Hello there.");
+        surface.focus_on(BOUND);
+        session.deliver("How are you?");
+
+        assert_eq!(
+            surface.pasted(),
+            ["Hello there. How are you?"],
+            "the held words land when the window comes back, in the order they were spoken"
+        );
+        assert_eq!(session.report().delivered, "Hello there. How are you?");
+        assert_eq!(session.report().undelivered_count(), 0);
+    }
+
+    #[test]
+    fn held_fragments_arrive_in_the_order_they_were_spoken() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(OTHER);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        session.deliver("one");
+        session.deliver("two");
+        surface.focus_on(BOUND);
+        session.deliver("three");
+
+        assert_eq!(surface.pasted(), ["one two three"]);
+        assert_eq!(session.report().delivered, "one two three");
+    }
+
+    #[test]
+    fn a_window_that_was_never_bound_never_receives_text() {
+        let ledger = DeliveryLedger::shared();
+        let bound = FakeSurface::focused_on(BOUND);
+        let mut session = session(&ledger, &bound, BOUND);
+
+        session.deliver("one");
+        bound.focus_on(OTHER);
+        session.deliver("two");
+        session.deliver("three");
+        bound.focus_on(BOUND);
+        session.deliver("four");
+
+        assert_eq!(
+            bound.pasted(),
+            ["one", " two three four"],
+            "the words said elsewhere arrive late, in order, never there"
+        );
+        assert_eq!(session.report().delivered, "one two three four");
+    }
+
+    #[test]
+    fn words_held_at_stop_are_owed_to_the_stop_path() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(OTHER);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        session.deliver("one");
+        session.deliver("two");
+
+        let report = session.report();
+        assert_eq!(
+            unwritten_words("one two", &report),
+            "one two",
+            "the stop path writes what never landed"
+        );
+        assert_eq!(
+            report.undelivered_count(),
+            2,
+            "the stop path only knows to write them because the count says so"
+        );
+    }
+
+    #[test]
+    fn a_held_fragment_in_the_middle_is_not_typed_twice_at_stop() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        session.deliver("one");
+        surface.focus_on(OTHER);
+        session.deliver("two");
+        surface.focus_on(BOUND);
+        // The user stops before another segment gives the held words a chance.
+        let report = session.report();
+
+        assert_eq!(
+            unwritten_words("one two three", &report),
+            "two three",
+            "the held words and the tail come back, and nothing already in the document does"
+        );
+    }
+
+    #[test]
+    fn stop_in_the_middle_of_a_sentence_owes_only_the_tail() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(BOUND);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        session.deliver("one");
+
+        assert_eq!(
+            unwritten_words("one two three", &session.report()),
+            "two three"
+        );
+    }
+
+    #[test]
+    fn a_paste_refused_on_resume_does_not_lose_the_held_words() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(OTHER);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        session.deliver("one");
+        surface.focus_on(BOUND);
+        surface.fail_next(2);
+        session.deliver("two");
+
+        assert!(
+            surface.pasted().is_empty(),
+            "a refused resume writes nothing at all"
+        );
+        assert_eq!(
+            session.report().undelivered,
+            ["one", "two"],
+            "the words stay owed rather than arriving out of order"
+        );
+    }
+
+    #[test]
+    fn a_paste_refused_on_resume_can_still_land_later() {
+        let ledger = DeliveryLedger::shared();
+        let surface = FakeSurface::focused_on(OTHER);
+        let mut session = session(&ledger, &surface, BOUND);
+
+        session.deliver("one");
+        surface.focus_on(BOUND);
+        surface.fail_next(2);
+        session.deliver("two");
+        session.deliver("three");
+
+        assert_eq!(
+            surface.pasted(),
+            ["one two three"],
+            "the retry at the next segment writes all three in order"
+        );
+        assert_eq!(session.report().undelivered_count(), 0);
     }
 
     #[test]
@@ -539,7 +768,10 @@ mod tests {
 
         session.deliver("Hello there.");
 
-        assert!(surface.pasted().is_empty());
+        assert!(
+            surface.pasted().is_empty(),
+            "the app never types blind on a focus answer it cannot read"
+        );
         assert_eq!(session.report().undelivered, ["Hello there."]);
     }
 
