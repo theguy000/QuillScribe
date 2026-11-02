@@ -35,62 +35,81 @@ impl WhisperManager {
         audio_data: Vec<f32>,
         sample_rate: u32,
     ) -> Result<String> {
-        if self.api_provider == "gemini" {
-            return self.transcribe_gemini(audio_data, sample_rate).await;
+        if let Some(answer) = self
+            .transcribe_elsewhere(audio_data.clone(), sample_rate)
+            .await
+        {
+            return answer;
         }
+        let key = self.active_api_key()?;
+        let form = self.upload_form(&audio_data, sample_rate)?;
+        let response = Self::http_client()
+            .post(Self::api_url(&self.api_provider))
+            .bearer_auth(&key)
+            .multipart(form)
+            .send()
+            .await?;
+        Self::checked_transcript(response, Self::provider_label(&self.api_provider)).await
+    }
 
-        // Deepgram's recorded mode: upload the finished utterance. Its live
-        // mode never reaches here — it is driven by a session started at
-        // record-start instead.
-        if self.api_provider == "deepgram" {
-            return crate::deepgram::transcribe_recorded(&self.deepgram, audio_data, sample_rate)
-                .await;
-        }
+    /// The providers that do not upload to the generic endpoint, or `None` when
+    /// this one does. Each is its own protocol: Gemini's WebChannel, and
+    /// Deepgram's prerecorded upload, which is answered by `deepgram.rs`.
+    async fn transcribe_elsewhere(
+        &self,
+        audio_data: Vec<f32>,
+        sample_rate: u32,
+    ) -> Option<Result<String>> {
+        let result = match self.api_provider.as_str() {
+            "gemini" => self.transcribe_gemini(audio_data, sample_rate).await,
+            "deepgram" => {
+                crate::deepgram::transcribe_recorded(&self.deepgram, audio_data, sample_rate).await
+            }
+            _ => return None,
+        };
+        Some(result)
+    }
 
-        let active_key = if self.api_provider == "groq" {
+    /// The key the chosen provider authenticates with, or the error that says
+    /// which provider is missing one.
+    fn active_api_key(&self) -> Result<String> {
+        let key = if self.api_provider == "groq" {
             &self.groq_api_key
         } else {
             &self.api_key
         };
-
-        if active_key.is_empty() {
+        if key.is_empty() {
             return Err(anyhow!(
                 "API key is not set for {}.",
                 Self::provider_label(&self.api_provider),
             ));
         }
+        Ok(key.clone())
+    }
 
-        let wav_bytes = Self::encode_wav(&audio_data, sample_rate)?;
-
-        let file_part = multipart::Part::bytes(wav_bytes)
+    /// The upload: the WAV, the model, and the flags Groq needs on top.
+    fn upload_form(&self, audio_data: &[f32], sample_rate: u32) -> Result<multipart::Form> {
+        let file_part = multipart::Part::bytes(Self::encode_wav(audio_data, sample_rate)?)
             .file_name("audio.wav")
             .mime_str("audio/wav")?;
-
         let mut form = multipart::Form::new()
             .part("file", file_part)
             .text("model", self.api_model.clone());
-
         if !self.api_language.is_empty() {
             form = form.text("language", self.api_language.clone());
         }
-
-        // Groq API uses additional parameters
         if self.api_provider == "groq" {
-            form = form.text("temperature", "0".to_string());
-            form = form.text("response_format", "json".to_string());
+            form = form.text("temperature", "0");
+            form = form.text("response_format", "json");
         }
+        Ok(form)
+    }
 
-        let api_url = Self::api_url(&self.api_provider);
-        let provider_label = Self::provider_label(&self.api_provider);
-
-        let client = reqwest::Client::new();
-        let response = client
-            .post(api_url)
-            .bearer_auth(active_key)
-            .multipart(form)
-            .send()
-            .await?;
-
+    /// The transcript, or the provider's own words for why there is none.
+    async fn checked_transcript(
+        response: reqwest::Response,
+        provider_label: &str,
+    ) -> Result<String> {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
@@ -101,7 +120,6 @@ impl WhisperManager {
                 body
             ));
         }
-
         let transcription: TranscriptionResponse = response.json().await?;
         Ok(transcription.text)
     }

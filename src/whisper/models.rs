@@ -93,24 +93,14 @@ impl WhisperManager {
     {
         let url = Self::model_download_url(model_name);
         let dest = Self::get_model_path(model_name);
+        ensure_models_dir()?;
 
-        // Ensure models directory exists.
-        let dir = Self::models_dir();
-        fs::create_dir_all(&dir).map_err(|e| {
-            anyhow!(
-                "Failed to create models directory '{}': {}",
-                dir.display(),
-                e
-            )
-        })?;
-
-        // Download with streaming and progress.
+        // The redirect policy matters: Hugging Face answers with one, and the
+        // default client would follow it without a limit.
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()?;
-
         let response = client.get(&url).send().await?;
-
         if !response.status().is_success() {
             return Err(anyhow!(
                 "Failed to download model '{}': HTTP {}",
@@ -120,28 +110,13 @@ impl WhisperManager {
         }
 
         let total_size = response.content_length().unwrap_or(0);
-        let mut downloaded = 0u64;
-
-        let mut file = File::create(&dest.with_extension("bin.tmp"))
-            .await
-            .map_err(|e| anyhow!("Failed to create file: {}", e))?;
-
-        let mut stream = response.bytes_stream();
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(|e| anyhow!("Download error: {}", e))?;
-            file.write_all(&chunk)
-                .await
-                .map_err(|e| anyhow!("Write error: {}", e))?;
-            downloaded += chunk.len() as u64;
-            progress_callback(downloaded, total_size);
-        }
-
-        // Rename to final path.
         let tmp_path = dest.with_extension("bin.tmp");
+        stream_to_file(response, &tmp_path, total_size, &mut progress_callback).await?;
+        // Only a complete file gets the real name, so an interrupted download
+        // can never be mistaken for a model.
         tokio::fs::rename(&tmp_path, &dest)
             .await
             .map_err(|e| anyhow!("Failed to rename model file: {}", e))?;
-
         Ok(dest.to_string_lossy().to_string())
     }
 
@@ -162,4 +137,42 @@ impl WhisperManager {
             model_name
         )
     }
+}
+
+/// Create the models directory, reporting the path when the disk refuses.
+fn ensure_models_dir() -> Result<()> {
+    let dir = WhisperManager::models_dir();
+    fs::create_dir_all(&dir).map_err(|e| {
+        anyhow!(
+            "Failed to create models directory '{}': {}",
+            dir.display(),
+            e
+        )
+    })
+}
+
+/// Write the response body to `path` as it arrives, reporting progress.
+async fn stream_to_file<F>(
+    response: reqwest::Response,
+    path: &std::path::Path,
+    total_size: u64,
+    progress_callback: &mut F,
+) -> Result<()>
+where
+    F: FnMut(u64, u64),
+{
+    let mut file = File::create(path)
+        .await
+        .map_err(|e| anyhow!("Failed to create file: {}", e))?;
+    let mut stream = response.bytes_stream();
+    let mut downloaded = 0u64;
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| anyhow!("Download error: {}", e))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| anyhow!("Write error: {}", e))?;
+        downloaded += chunk.len() as u64;
+        progress_callback(downloaded, total_size);
+    }
+    Ok(())
 }

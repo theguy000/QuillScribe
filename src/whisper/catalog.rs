@@ -83,54 +83,99 @@ impl WhisperManager {
     }
 
     pub fn get_local_models_for_category(category: &str) -> Vec<String> {
-        let all_models = Self::get_available_local_models();
-        match category {
-            "General" => all_models,
-            "Tiny" => all_models
-                .into_iter()
-                .filter(|m| m.starts_with("tiny"))
-                .collect(),
-            "Base" => all_models
-                .into_iter()
-                .filter(|m| m.starts_with("base"))
-                .collect(),
-            "Small" => all_models
-                .into_iter()
-                .filter(|m| m.starts_with("small"))
-                .collect(),
-            "Medium" => all_models
-                .into_iter()
-                .filter(|m| m.starts_with("medium") || m.starts_with("distil-medium"))
-                .collect(),
-            "Large" => all_models
-                .into_iter()
-                .filter(|m| m.starts_with("large") || m == "turbo" || m.starts_with("distil-large"))
-                .collect(),
-            _ => all_models,
+        /// The prefixes a category covers, and the one exact name it adds.
+        fn matches(category: &str, model: &str) -> bool {
+            match category {
+                "General" => true,
+                "Tiny" => model.starts_with("tiny"),
+                "Base" => model.starts_with("base"),
+                "Small" => model.starts_with("small"),
+                "Medium" => model.starts_with("medium") || model.starts_with("distil-medium"),
+                "Large" => {
+                    model.starts_with("large")
+                        || model == "turbo"
+                        || model.starts_with("distil-large")
+                }
+                _ => true,
+            }
         }
+
+        Self::get_available_local_models()
+            .into_iter()
+            .filter(|model| matches(category, model))
+            .collect()
     }
 
     pub fn get_model_info(model_name: &str) -> ModelInfo {
-        match model_name {
-            "tiny" | "tiny.en" => ModelInfo::new("75 MB", "~390 MB", "~10x", "Low"),
-            "base" | "base.en" => ModelInfo::new("142 MB", "~500 MB", "~7x", "Low-Medium"),
-            "small" | "small.en" => ModelInfo::new("466 MB", "~1 GB", "~4x", "Medium"),
-            "medium" | "medium.en" => ModelInfo::new("1.5 GB", "~2.6 GB", "~2x", "Medium-High"),
-            "large-v1" | "large-v2" | "large-v3" => {
-                ModelInfo::new("2.9 GB", "~4.7 GB", "~1x", "High")
-            }
-            "turbo" => ModelInfo::new("1.5 GB", "~2.6 GB", "~8x", "High"),
-            "distil-large-v2" | "distil-large-v3" => {
-                ModelInfo::new("756 MB", "~1.5 GB", "~6x", "Medium-High")
-            }
-            "distil-medium.en" => ModelInfo::new("789 MB", "~1.5 GB", "~5x", "Medium"),
-            "distil-small.en" => ModelInfo::new("332 MB", "~800 MB", "~6x", "Low-Medium"),
-            "gpt-4o-transcribe" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),
-            "gpt-4o-mini-transcribe" => ModelInfo::new("Cloud", "N/A", "Very Fast", "High"),
-            "whisper-large-v3-turbo" => ModelInfo::new("Cloud", "N/A", "Very Fast", "High"),
-            "whisper-large-v3" => ModelInfo::new("Cloud", "N/A", "Fast", "Very High"),
-            _ => ModelInfo::new("Unknown", "Unknown", "Unknown", "Unknown"),
+        /// One row of the catalogue: the names it covers, and what it costs.
+        struct Row {
+            names: &'static [&'static str],
+            size: &'static str,
+            memory: &'static str,
+            speed: &'static str,
+            quality: &'static str,
         }
+
+        const ROWS: &[Row] = &[
+            row(&["tiny", "tiny.en"], ("75 MB", "~390 MB", "~10x", "Low")),
+            row(
+                &["base", "base.en"],
+                ("142 MB", "~500 MB", "~7x", "Low-Medium"),
+            ),
+            row(&["small", "small.en"], ("466 MB", "~1 GB", "~4x", "Medium")),
+            row(
+                &["medium", "medium.en"],
+                ("1.5 GB", "~2.6 GB", "~2x", "Medium-High"),
+            ),
+            row(
+                &["large-v1", "large-v2", "large-v3"],
+                ("2.9 GB", "~4.7 GB", "~1x", "High"),
+            ),
+            row(&["turbo"], ("1.5 GB", "~2.6 GB", "~8x", "High")),
+            row(
+                &["distil-large-v2", "distil-large-v3"],
+                ("756 MB", "~1.5 GB", "~6x", "Medium-High"),
+            ),
+            row(
+                &["distil-medium.en"],
+                ("789 MB", "~1.5 GB", "~5x", "Medium"),
+            ),
+            row(
+                &["distil-small.en"],
+                ("332 MB", "~800 MB", "~6x", "Low-Medium"),
+            ),
+            row(
+                &["gpt-4o-transcribe"],
+                ("Cloud", "N/A", "Fast", "Very High"),
+            ),
+            row(
+                &["gpt-4o-mini-transcribe"],
+                ("Cloud", "N/A", "Very Fast", "High"),
+            ),
+            row(
+                &["whisper-large-v3-turbo"],
+                ("Cloud", "N/A", "Very Fast", "High"),
+            ),
+            row(&["whisper-large-v3"], ("Cloud", "N/A", "Fast", "Very High")),
+        ];
+
+        const fn row(
+            names: &'static [&'static str],
+            info: (&'static str, &'static str, &'static str, &'static str),
+        ) -> Row {
+            Row {
+                names,
+                size: info.0,
+                memory: info.1,
+                speed: info.2,
+                quality: info.3,
+            }
+        }
+
+        ROWS.iter()
+            .find(|row| row.names.contains(&model_name))
+            .map(|row| ModelInfo::new(row.size, row.memory, row.speed, row.quality))
+            .unwrap_or_else(|| ModelInfo::new("Unknown", "Unknown", "Unknown", "Unknown"))
     }
 
     /// Languages Deepgram accepts on a live session. Deepgram has its own
