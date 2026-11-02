@@ -1,12 +1,6 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
-; Inno Setup wants four numeric parts. A pre-release suffix such as -rc1 keeps the
-; full name for the file, while the numeric core goes into the version resource.
-#ifndef NumericVersion
-  #define NumericVersion AppVersion
-#endif
-
 #ifndef SourceExe
   #define SourceExe "..\target\release\quillscribe.exe"
 #endif
@@ -41,9 +35,9 @@ OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBaseFilename}
 CloseApplications=yes
 RestartApplications=no
-VersionInfoVersion={#NumericVersion}
+VersionInfoVersion={#AppVersion}
 VersionInfoProductName=QuillScribe
-VersionInfoProductVersion={#NumericVersion}
+VersionInfoProductVersion={#AppVersion}
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
