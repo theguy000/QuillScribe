@@ -5,10 +5,11 @@
 
 /// One fragment as it reaches the document.
 ///
-/// `previous` is the ledger's answer for this window: `None` when the app has
-/// never typed into it, `Some(false)` when the last character it typed was not
-/// whitespace. The caller has already trimmed `text` and rejected an empty one,
-/// so the result never carries whitespace at either end.
+/// `previous` is the ledger's answer for this window: `None` when the answer is
+/// unknown. The caller has already trimmed `text` and rejected an empty one, so
+/// the result never carries whitespace at the end. A space goes in front only
+/// when the document's last character is known to be a non-whitespace one, so an
+/// unknown document never gains a second space.
 pub(super) fn fragment(previous: Option<bool>, text: &str) -> String {
     let mut fragment = String::with_capacity(text.len() + 1);
     if previous == Some(false) {

@@ -63,6 +63,84 @@ fn windows_keep_separate_records() {
     );
 }
 
+/// The bug this pair of tests pins down: a pause makes the provider commit a
+/// fragment on its own, and the app adds a space to it while the ledger keeps
+/// saying the document ends on a letter. Every fragment then carries one more
+/// space and the text drifts one character right per sentence.
+#[test]
+fn a_pause_between_two_utterances_adds_one_space() {
+    let ledger = DeliveryLedger::shared();
+
+    let first = FakeSurface::focused_on(BOUND);
+    let _ = session(&ledger, &first, BOUND).deliver("Hello");
+
+    // The user pauses, so the next sentence lands in a new utterance.
+    let second = FakeSurface::focused_on(BOUND);
+    let _ = session(&ledger, &second, BOUND).deliver("there");
+
+    assert_eq!(first.pasted(), ["Hello"]);
+    assert_eq!(
+        second.pasted(),
+        [" there"],
+        "the document ended on a letter, so exactly one space belongs here"
+    );
+}
+
+#[test]
+fn an_unknown_document_gets_a_leading_space() {
+    let ledger = DeliveryLedger::shared();
+    let surface = FakeSurface::focused_on(BOUND);
+    let mut session = session(&ledger, &surface, BOUND);
+
+    // No record for this window yet, so the app has no proof the document
+    // ends on a letter and pastes without a separator of its own.
+    let _ = session.deliver("Hello");
+
+    assert_eq!(
+        surface.pasted(),
+        ["Hello"],
+        "an unknown document adds no separator of its own"
+    );
+}
+
+#[test]
+fn a_paste_that_is_refused_does_not_leave_a_space_in_the_ledger() {
+    let ledger = DeliveryLedger::shared();
+    let surface = FakeSurface::focused_on(BOUND).failing(1);
+    let mut first = session(&ledger, &surface, BOUND);
+
+    // The first attempt is refused and retried, so the ledger records the
+    // space once and not twice.
+    let _ = first.deliver("Hello");
+
+    let mut second = session(&ledger, &surface, BOUND);
+    let _ = second.deliver("there");
+
+    assert_eq!(surface.pasted(), ["Hello", " there"]);
+}
+
+#[test]
+fn a_fragment_after_a_pasted_separator_gets_no_second_space() {
+    let ledger = DeliveryLedger::shared();
+    let surface = FakeSurface::focused_on(BOUND);
+    let mut first = session(&ledger, &surface, BOUND);
+
+    // Two utterances in a row: the second one is pasted with a space in front.
+    let _ = first.deliver("Hello");
+    let _ = first.deliver("there");
+
+    // The document now ends on a letter again, after the space and the word.
+    let mut next = session(&ledger, &surface, BOUND);
+    let _ = next.deliver("again");
+
+    assert_eq!(
+        surface.pasted(),
+        ["Hello", " there", " again"],
+        "each separator is recorded, so one space separates each pair"
+    );
+    assert_eq!(next.report().delivered, "again");
+}
+
 #[test]
 fn a_restart_forgets_what_was_typed_before() {
     let before = DeliveryLedger::shared();

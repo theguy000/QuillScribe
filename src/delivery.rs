@@ -379,10 +379,7 @@ impl DeliverySession {
     fn transcript_with(&self, more: &[String]) -> String {
         let mut full = self.delivered.clone();
         for text in more {
-            if !full.is_empty() {
-                full.push(' ');
-            }
-            full.push_str(text);
+            join_into(&mut full, text);
         }
         full
     }
@@ -413,14 +410,14 @@ impl DeliverySession {
             return Err(DeliverError::Held);
         }
 
+        if self.pastes_a_separator() {
+            self.record_separator();
+        }
         self.record_written(&fragment);
         let held = std::mem::take(&mut self.held);
         debug!("Bound window is back; delivered {} fragment(s)", held.len());
         for text in held {
-            if !self.delivered.is_empty() {
-                self.delivered.push(' ');
-            }
-            self.delivered.push_str(&text);
+            join_into(&mut self.delivered, &text);
         }
         Ok(())
     }
@@ -445,6 +442,14 @@ impl DeliverySession {
             .and_then(|ledger| ledger.ends_with_whitespace(id))
     }
 
+    /// Whether the document's last character is known not to be whitespace.
+    ///
+    /// Read before the paste, because the paste changes the answer. Only then
+    /// does `joining` put a space in front of the fragment.
+    fn pastes_a_separator(&self) -> bool {
+        self.ledger_whitespace() == Some(false)
+    }
+
     /// Hand `text` to the target: a paste into the window, or the clipboard
     /// rewritten in copy mode.
     fn write(&mut self, text: &str) -> Result<()> {
@@ -459,6 +464,19 @@ impl DeliverySession {
         if let Target::Window { id, .. } = &self.target {
             if let Ok(mut ledger) = self.ledger.lock() {
                 ledger.record(id, text);
+            }
+        }
+    }
+
+    /// Remember that a paste put a separating space in front of the words.
+    ///
+    /// The ledger only sees what the document holds if it is told about the
+    /// space too. Recording the words alone would say the document ends on a
+    /// letter, and the next fragment would add a second space.
+    fn record_separator(&mut self) {
+        if let Target::Window { id, .. } = &self.target {
+            if let Ok(mut ledger) = self.ledger.lock() {
+                ledger.record(id, " ");
             }
         }
     }
@@ -585,11 +603,11 @@ impl DeliverySession {
             return;
         }
         self.record_written(fragment);
+        if queue.len() > 1 {
+            self.record_separator();
+        }
         for text in queue {
-            if !self.delivered.is_empty() {
-                self.delivered.push(' ');
-            }
-            self.delivered.push_str(&text);
+            join_into(&mut self.delivered, &text);
         }
         debug!("Stop wrote what live typing still owed");
     }
@@ -666,6 +684,19 @@ pub fn unwritten_words(transcript: &str, report: &DeliveryReport) -> String {
 
 /// `words` as it reads once each held fragment is taken out, in order. `None`
 /// when a held fragment does not appear where the utterance said it.
+/// Append `text` to the delivered words with the separator the target needs.
+///
+/// The delivered words stand in for the document so the stop path can compare
+/// them with the transcript by word, so the separator here is one space even
+/// when the paste needed none: `delivered` is a list of words, not the exact
+/// characters at the caret.
+fn join_into(delivered: &mut String, text: &str) {
+    if !delivered.is_empty() {
+        delivered.push(' ');
+    }
+    delivered.push_str(text);
+}
+
 fn without_words<'a>(words: &[&'a str], held: &[String]) -> Option<Vec<&'a str>> {
     let mut rest = words.to_vec();
     for fragment in held {
