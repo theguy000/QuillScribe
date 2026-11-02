@@ -273,8 +273,12 @@ jobs:
             throw "Inno Setup compiler was not found at $iscc"
           }
 
+          # Pre-release tags carry a suffix Inno Setup rejects in a version resource.
+          $numericVersion = ($env:VERSION -split '-')[0]
+
           & $iscc `
             "/DAppVersion=$env:VERSION" `
+            "/DNumericVersion=$numericVersion" `
             "/DSourceExe=$env:GITHUB_WORKSPACE\target\release\quillscribe.exe" `
             "/DOutputDir=$env:GITHUB_WORKSPACE" `
             "/DOutputBaseFilename=QuillScribe-$env:VERSION-windows-x86_64-setup" `
