@@ -146,19 +146,21 @@ fn channel_sid(payload: serde_json::Value) -> Option<String> {
     (tag == "c").then(|| sid.to_string())
 }
 
+/// The short codes the recognizer understands, with the locale each means.
+const RECOGNIZER_LOCALES: [(&str, &str); 7] = [
+    ("en", "en-US"),
+    ("es", "es-ES"),
+    ("fr", "fr-FR"),
+    ("de", "de-DE"),
+    ("it", "it-IT"),
+    ("ja", "ja-JP"),
+    ("zh", "zh-CN"),
+];
+
 /// The full locale a short code means, since the recognizer wants one.
 fn recognizer_language(lang: &str) -> &str {
-    match lang {
-        "" => "en-US",
-        "en" => "en-US",
-        "es" => "es-ES",
-        "fr" => "fr-FR",
-        "de" => "de-DE",
-        "it" => "it-IT",
-        "ja" => "ja-JP",
-        "zh" => "zh-CN",
-        _ => "en-US",
-    }
+    let known = RECOGNIZER_LOCALES.iter().find(|(code, _)| *code == lang);
+    known.map(|(_, locale)| *locale).unwrap_or("en-US")
 }
 
 /// Whether a decoded field is transcript text rather than an envelope name.
