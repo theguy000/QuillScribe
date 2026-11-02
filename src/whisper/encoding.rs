@@ -35,53 +35,16 @@ impl WhisperManager {
 
     #[allow(dead_code)]
     pub fn parse_webchannel_sid(body: &str) -> Result<String> {
-        for line in body.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("[[") && trimmed.ends_with("]]") {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                    if let Some(arr) = v.as_array() {
-                        for item in arr {
-                            if let Some(pair) = item.as_array() {
-                                if pair.len() >= 2 {
-                                    if let Some(c_arr) = pair[1].as_array() {
-                                        if c_arr.len() >= 2 && c_arr[0].as_str() == Some("c") {
-                                            if let Some(sid) = c_arr[1].as_str() {
-                                                return Ok(sid.to_string());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Err(anyhow!(
-            "Failed to find WebChannel SID in response body: {}",
-            body
-        ))
+        body.lines()
+            .filter_map(webchannel_frames)
+            .flatten()
+            .find_map(channel_sid)
+            .ok_or_else(|| anyhow!("Failed to find WebChannel SID in response body: {}", body))
     }
 
     #[allow(dead_code)]
     pub fn build_recognizer_init_payload(lang: &str) -> Vec<u8> {
-        let lang_code = if lang.is_empty() {
-            "en-US"
-        } else if lang.len() == 2 {
-            match lang {
-                "en" => "en-US",
-                "es" => "es-ES",
-                "fr" => "fr-FR",
-                "de" => "de-DE",
-                "it" => "it-IT",
-                "ja" => "ja-JP",
-                "zh" => "zh-CN",
-                _ => "en-US",
-            }
-        } else {
-            lang
-        };
-
+        let lang_code = recognizer_language(lang);
         let mut buf = Vec::new();
         buf.extend_from_slice(b"\n\x15beyond-a2a-recognizer\x10\x00\xc2\x88\x8f\x01\t\x12");
         buf.push(lang_code.len() as u8 + 2);
@@ -99,97 +62,207 @@ impl WhisperManager {
 
     #[allow(dead_code)]
     pub fn parse_webchannel_transcript_chunk(chunk: &str) -> Option<String> {
-        let mut latest_text = None;
-        for line in chunk.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("[[") && trimmed.ends_with("]]") {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                    if let Some(arr) = v.as_array() {
-                        for item in arr {
-                            if let Some(pair) = item.as_array() {
-                                if pair.len() >= 2 {
-                                    if let Some(payload_arr) = pair[1].as_array() {
-                                        for payload_val in payload_arr {
-                                            if let Some(b64) = payload_val.as_str() {
-                                                if let Ok(bytes) = Self::base64_decode(b64) {
-                                                    if let Some(text) =
-                                                        Self::extract_text_from_proto(&bytes)
-                                                    {
-                                                        if !text.trim().is_empty() {
-                                                            latest_text = Some(text);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        let mut latest = None;
+        for payload in chunk.lines().filter_map(webchannel_frames).flatten() {
+            if let Some(text) = Self::transcript_of(&payload) {
+                latest = Some(text);
             }
         }
-        latest_text
+        latest
+    }
+
+    /// The transcript one frame payload carries, if it carries one.
+    #[allow(dead_code)]
+    fn transcript_of(payload: &serde_json::Value) -> Option<String> {
+        let bytes = Self::base64_decode(payload.as_str()?).ok()?;
+        let text = Self::extract_text_from_proto(&bytes)?;
+        (!text.trim().is_empty()).then_some(text)
     }
 
     #[allow(dead_code)]
     fn extract_text_from_proto(bytes: &[u8]) -> Option<String> {
-        let mut i = 0;
         let mut candidate = None;
-        while i < bytes.len() {
-            let byte = bytes[i];
-            i += 1;
-            let wire_type = byte & 0x07;
-            if wire_type == 2 {
-                let mut len = 0usize;
-                let mut shift = 0;
-                while i < bytes.len() {
-                    let b = bytes[i];
-                    i += 1;
-                    len |= ((b & 0x7F) as usize) << shift;
-                    if b & 0x80 == 0 {
-                        break;
-                    }
-                    shift += 7;
-                    if shift > 35 {
-                        break;
-                    }
-                }
-                if len > 0 && i + len <= bytes.len() {
-                    let slice = &bytes[i..i + len];
-                    if let Ok(s) = std::str::from_utf8(slice) {
-                        if s.chars().all(|c| !c.is_control() || c == ' ' || c == '\n')
-                            && s.chars().any(|c| c.is_alphabetic())
-                            && !s.contains("recognizer")
-                            && !s.contains("frontend")
-                            && s != "Web"
-                            && s != "en-US"
-                        {
-                            candidate = Some(s.to_string());
-                        }
-                    }
-                    if let Some(sub) = Self::extract_text_from_proto(slice) {
-                        candidate = Some(sub);
-                    }
-                    i += len;
-                }
-            } else if wire_type == 0 {
-                while i < bytes.len() && (bytes[i] & 0x80 != 0) {
-                    i += 1;
-                }
-                if i < bytes.len() {
-                    i += 1;
-                }
-            } else if wire_type == 1 {
-                i += 8;
-            } else if wire_type == 5 {
-                i += 4;
-            } else {
-                i += 1;
+        for field in ProtoFields::new(bytes) {
+            if let Some(text) = proto_text(field) {
+                candidate = Some(text);
+            }
+            if let Some(nested) = Self::extract_text_from_proto(field) {
+                candidate = Some(nested);
             }
         }
         candidate
+    }
+}
+
+/// The strings one `[[...]]` line lists, or `None` when it is not a frame.
+///
+/// A frame is `[n, payload]`. `n` is the frame's own length in characters, so
+/// it says nothing about the payload. The handshake's payload names a channel
+/// and holds numbers beside its strings; a transcript frame lists base64
+/// messages and nothing else.
+fn webchannel_frames(line: &str) -> Option<Vec<serde_json::Value>> {
+    let trimmed = line.trim();
+    if !(trimmed.starts_with("[[") && trimmed.ends_with("]]")) {
+        return None;
+    }
+    let parsed: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    frames_of(&parsed)
+}
+
+/// The payloads a parsed frame list holds.
+fn frames_of(parsed: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
+    let frames = parsed.as_array()?;
+    let mut out = Vec::new();
+    for frame in frames.iter() {
+        let pair = frame.as_array()?;
+        let payload = pair.get(1)?.as_array()?;
+        out.extend(frame_payloads(payload)?);
+    }
+    Some(out)
+}
+
+/// The payloads one frame carries.
+///
+/// A frame of base64 messages carries each message on its own. A frame that
+/// names a channel carries the list itself, numbers and all.
+fn frame_payloads(payload: &[serde_json::Value]) -> Option<Vec<serde_json::Value>> {
+    let all_strings = payload.iter().all(|value| value.is_string());
+    let messages: Vec<serde_json::Value> = payload
+        .iter()
+        .filter_map(|value| value.as_str())
+        .map(|text| serde_json::Value::String(text.to_string()))
+        .collect();
+    match all_strings && !messages.is_empty() {
+        true => Some(messages),
+        false => Some(vec![serde_json::Value::Array(payload.to_vec())]),
+    }
+}
+
+/// The `"c"` channel id inside a frame, when this value is one.
+fn channel_sid(payload: serde_json::Value) -> Option<String> {
+    let values = payload.as_array()?;
+    let (tag, sid) = (values.first()?.as_str()?, values.get(1)?.as_str()?);
+    (tag == "c").then(|| sid.to_string())
+}
+
+/// The full locale a short code means, since the recognizer wants one.
+fn recognizer_language(lang: &str) -> &str {
+    match lang {
+        "" => "en-US",
+        "en" => "en-US",
+        "es" => "es-ES",
+        "fr" => "fr-FR",
+        "de" => "de-DE",
+        "it" => "it-IT",
+        "ja" => "ja-JP",
+        "zh" => "zh-CN",
+        _ => "en-US",
+    }
+}
+
+/// Whether a decoded field is transcript text rather than an envelope name.
+fn proto_text(slice: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(slice).ok()?;
+    let printable = text
+        .chars()
+        .all(|c| !c.is_control() || c == ' ' || c == '\n');
+    let words = text.chars().any(char::is_alphabetic);
+    let envelope = text.contains("recognizer")
+        || text.contains("frontend")
+        || text == "Web"
+        || text == "en-US";
+    (printable && words && !envelope).then(|| text.to_string())
+}
+
+/// A protobuf blob walked one field at a time.
+///
+/// A step yields the bytes of a length-delimited field, which is where the
+/// transcript lives. Varints and fixed-width values are stepped over.
+struct ProtoFields<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+
+impl<'a> ProtoFields<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, at: 0 }
+    }
+
+    /// The value of the base-128 varint at `self.at`, advancing past it.
+    fn varint(&mut self) -> Option<usize> {
+        let mut value = 0usize;
+        let mut shift = 0u32;
+        while let Some(&byte) = self.bytes.get(self.at) {
+            self.at += 1;
+            value |= usize::from(byte & 0x7F) << shift;
+            if byte & 0x80 == 0 {
+                return Some(value);
+            }
+            shift += 7;
+            if shift > 35 {
+                return None;
+            }
+        }
+        None
+    }
+
+    /// The tag byte just consumed, or `None` at the end of the blob.
+    fn tag(&mut self) -> Option<u8> {
+        let tag = *self.bytes.get(self.at)?;
+        self.at += 1;
+        Some(tag)
+    }
+
+    /// The bytes of the length-delimited field whose length follows.
+    ///
+    /// A field whose declared length runs past the end of the blob is not
+    /// part of this message: responses are cut off mid-message, and the
+    /// numbers at the cut belong to the outer envelope. Such a field is
+    /// skipped, leaving the walk to read the rest of the blob in place.
+    fn length_delimited(&mut self) -> Option<&'a [u8]> {
+        let len = self.varint()?;
+        let end = self.at.saturating_add(len);
+        if end > self.bytes.len() {
+            return None;
+        }
+        let slice = &self.bytes[self.at..end];
+        self.at = end;
+        (!slice.is_empty()).then_some(slice)
+    }
+
+    /// Advance past a varint value, however many bytes it takes.
+    fn skip_varint(&mut self) {
+        while self.bytes.get(self.at).is_some_and(|b| b & 0x80 != 0) {
+            self.at += 1;
+        }
+        self.at = self.at.saturating_add(1);
+    }
+
+    /// Advance past a fixed-width value of `width` bytes.
+    fn skip_fixed(&mut self, width: usize) {
+        self.at = self.at.saturating_add(width);
+    }
+}
+
+impl<'a> Iterator for ProtoFields<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<&'a [u8]> {
+        loop {
+            match self.tag()? & 0x07 {
+                // A field that does not fit inside the blob is skipped, and
+                // the walk carries on from the bytes it left behind.
+                2 => {
+                    if let Some(field) = self.length_delimited() {
+                        return Some(field);
+                    }
+                }
+                0 => self.skip_varint(),
+                1 => self.skip_fixed(8),
+                5 => self.skip_fixed(4),
+                _ => self.skip_fixed(1),
+            }
+        }
     }
 }
 
