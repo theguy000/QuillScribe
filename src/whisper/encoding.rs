@@ -126,16 +126,17 @@ fn frames_of(parsed: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
 /// A frame of base64 messages carries each message on its own. A frame that
 /// names a channel carries the list itself, numbers and all.
 fn frame_payloads(payload: &[serde_json::Value]) -> Option<Vec<serde_json::Value>> {
-    let all_strings = payload.iter().all(|value| value.is_string());
-    let messages: Vec<serde_json::Value> = payload
-        .iter()
-        .filter_map(|value| value.as_str())
-        .map(|text| serde_json::Value::String(text.to_string()))
-        .collect();
-    match all_strings && !messages.is_empty() {
-        true => Some(messages),
+    let messages: Vec<&str> = payload.iter().filter_map(|value| value.as_str()).collect();
+    let all_messages = messages.len() == payload.len() && !messages.is_empty();
+    match all_messages {
+        true => Some(messages.into_iter().map(text_value).collect()),
         false => Some(vec![serde_json::Value::Array(payload.to_vec())]),
     }
+}
+
+/// A payload string as the value the decoder reads.
+fn text_value(text: &str) -> serde_json::Value {
+    serde_json::Value::String(text.to_string())
 }
 
 /// The `"c"` channel id inside a frame, when this value is one.
@@ -163,15 +164,24 @@ fn recognizer_language(lang: &str) -> &str {
 /// Whether a decoded field is transcript text rather than an envelope name.
 fn proto_text(slice: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(slice).ok()?;
-    let printable = text
-        .chars()
-        .all(|c| !c.is_control() || c == ' ' || c == '\n');
-    let words = text.chars().any(char::is_alphabetic);
-    let envelope = text.contains("recognizer")
-        || text.contains("frontend")
-        || text == "Web"
-        || text == "en-US";
-    (printable && words && !envelope).then(|| text.to_string())
+    text_is_transcript(text).then(|| text.to_string())
+}
+
+/// The test itself: readable letters, and not one of the envelope names.
+fn text_is_transcript(text: &str) -> bool {
+    readable(text) && text.chars().any(char::is_alphabetic) && !envelope_name(text)
+}
+
+/// A string with no control characters other than a newline or a space.
+fn readable(text: &str) -> bool {
+    text.chars()
+        .all(|c| !c.is_control() || c == ' ' || c == '\n')
+}
+
+/// The fixed names the recognizer envelope carries, in any order.
+fn envelope_name(text: &str) -> bool {
+    const NAMES: [&str; 4] = ["recognizer", "frontend", "Web", "en-US"];
+    NAMES.iter().any(|name| text.contains(name))
 }
 
 /// A protobuf blob walked one field at a time.
