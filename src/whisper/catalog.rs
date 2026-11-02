@@ -7,6 +7,73 @@ use super::WhisperManager;
 
 use super::{deepgram_languages, ModelInfo};
 
+/// One row of the model catalogue: the names it covers, and what it costs.
+struct ModelRow {
+    names: &'static [&'static str],
+    size: &'static str,
+    memory: &'static str,
+    speed: &'static str,
+    quality: &'static str,
+}
+
+/// Build a row from its four cost fields, so the table stays aligned.
+const fn row(
+    names: &'static [&'static str],
+    info: (&'static str, &'static str, &'static str, &'static str),
+) -> ModelRow {
+    ModelRow {
+        names,
+        size: info.0,
+        memory: info.1,
+        speed: info.2,
+        quality: info.3,
+    }
+}
+
+/// The model catalogue: every name the dropdown offers and what it costs.
+const MODEL_ROWS: &[ModelRow] = &[
+    row(&["tiny", "tiny.en"], ("75 MB", "~390 MB", "~10x", "Low")),
+    row(
+        &["base", "base.en"],
+        ("142 MB", "~500 MB", "~7x", "Low-Medium"),
+    ),
+    row(&["small", "small.en"], ("466 MB", "~1 GB", "~4x", "Medium")),
+    row(
+        &["medium", "medium.en"],
+        ("1.5 GB", "~2.6 GB", "~2x", "Medium-High"),
+    ),
+    row(
+        &["large-v1", "large-v2", "large-v3"],
+        ("2.9 GB", "~4.7 GB", "~1x", "High"),
+    ),
+    row(&["turbo"], ("1.5 GB", "~2.6 GB", "~8x", "High")),
+    row(
+        &["distil-large-v2", "distil-large-v3"],
+        ("756 MB", "~1.5 GB", "~6x", "Medium-High"),
+    ),
+    row(
+        &["distil-medium.en"],
+        ("789 MB", "~1.5 GB", "~5x", "Medium"),
+    ),
+    row(
+        &["distil-small.en"],
+        ("332 MB", "~800 MB", "~6x", "Low-Medium"),
+    ),
+    row(
+        &["gpt-4o-transcribe"],
+        ("Cloud", "N/A", "Fast", "Very High"),
+    ),
+    row(
+        &["gpt-4o-mini-transcribe"],
+        ("Cloud", "N/A", "Very Fast", "High"),
+    ),
+    row(
+        &["whisper-large-v3-turbo"],
+        ("Cloud", "N/A", "Very Fast", "High"),
+    ),
+    row(&["whisper-large-v3"], ("Cloud", "N/A", "Fast", "Very High")),
+];
+
 impl WhisperManager {
     pub fn get_available_api_models() -> Vec<String> {
         vec![
@@ -83,96 +150,15 @@ impl WhisperManager {
     }
 
     pub fn get_local_models_for_category(category: &str) -> Vec<String> {
-        /// The prefixes a category covers, and the one exact name it adds.
-        fn matches(category: &str, model: &str) -> bool {
-            match category {
-                "General" => true,
-                "Tiny" => model.starts_with("tiny"),
-                "Base" => model.starts_with("base"),
-                "Small" => model.starts_with("small"),
-                "Medium" => model.starts_with("medium") || model.starts_with("distil-medium"),
-                "Large" => {
-                    model.starts_with("large")
-                        || model == "turbo"
-                        || model.starts_with("distil-large")
-                }
-                _ => true,
-            }
-        }
-
         Self::get_available_local_models()
             .into_iter()
-            .filter(|model| matches(category, model))
+            .filter(|model| matches_category(category, model))
             .collect()
     }
 
     pub fn get_model_info(model_name: &str) -> ModelInfo {
-        /// One row of the catalogue: the names it covers, and what it costs.
-        struct Row {
-            names: &'static [&'static str],
-            size: &'static str,
-            memory: &'static str,
-            speed: &'static str,
-            quality: &'static str,
-        }
-
-        const ROWS: &[Row] = &[
-            row(&["tiny", "tiny.en"], ("75 MB", "~390 MB", "~10x", "Low")),
-            row(
-                &["base", "base.en"],
-                ("142 MB", "~500 MB", "~7x", "Low-Medium"),
-            ),
-            row(&["small", "small.en"], ("466 MB", "~1 GB", "~4x", "Medium")),
-            row(
-                &["medium", "medium.en"],
-                ("1.5 GB", "~2.6 GB", "~2x", "Medium-High"),
-            ),
-            row(
-                &["large-v1", "large-v2", "large-v3"],
-                ("2.9 GB", "~4.7 GB", "~1x", "High"),
-            ),
-            row(&["turbo"], ("1.5 GB", "~2.6 GB", "~8x", "High")),
-            row(
-                &["distil-large-v2", "distil-large-v3"],
-                ("756 MB", "~1.5 GB", "~6x", "Medium-High"),
-            ),
-            row(
-                &["distil-medium.en"],
-                ("789 MB", "~1.5 GB", "~5x", "Medium"),
-            ),
-            row(
-                &["distil-small.en"],
-                ("332 MB", "~800 MB", "~6x", "Low-Medium"),
-            ),
-            row(
-                &["gpt-4o-transcribe"],
-                ("Cloud", "N/A", "Fast", "Very High"),
-            ),
-            row(
-                &["gpt-4o-mini-transcribe"],
-                ("Cloud", "N/A", "Very Fast", "High"),
-            ),
-            row(
-                &["whisper-large-v3-turbo"],
-                ("Cloud", "N/A", "Very Fast", "High"),
-            ),
-            row(&["whisper-large-v3"], ("Cloud", "N/A", "Fast", "Very High")),
-        ];
-
-        const fn row(
-            names: &'static [&'static str],
-            info: (&'static str, &'static str, &'static str, &'static str),
-        ) -> Row {
-            Row {
-                names,
-                size: info.0,
-                memory: info.1,
-                speed: info.2,
-                quality: info.3,
-            }
-        }
-
-        ROWS.iter()
+        MODEL_ROWS
+            .iter()
             .find(|row| row.names.contains(&model_name))
             .map(|row| ModelInfo::new(row.size, row.memory, row.speed, row.quality))
             .unwrap_or_else(|| ModelInfo::new("Unknown", "Unknown", "Unknown", "Unknown"))
@@ -219,111 +205,140 @@ impl WhisperManager {
             .unwrap_or_else(|| "English".to_string())
     }
 
+    /// The Whisper/OpenAI language list, as the dropdown shows it.
+    const LANGUAGES: &[(&str, &str)] = &[
+        ("af", "Afrikaans"),
+        ("am", "Amharic"),
+        ("ar", "Arabic"),
+        ("as", "Assamese"),
+        ("az", "Azerbaijani"),
+        ("ba", "Bashkir"),
+        ("be", "Belarusian"),
+        ("bg", "Bulgarian"),
+        ("bn", "Bengali"),
+        ("bo", "Tibetan"),
+        ("br", "Breton"),
+        ("bs", "Bosnian"),
+        ("ca", "Catalan"),
+        ("cs", "Czech"),
+        ("cy", "Welsh"),
+        ("da", "Danish"),
+        ("de", "German"),
+        ("el", "Greek"),
+        ("en", "English"),
+        ("es", "Spanish"),
+        ("et", "Estonian"),
+        ("eu", "Basque"),
+        ("fa", "Persian"),
+        ("fi", "Finnish"),
+        ("fo", "Faroese"),
+        ("fr", "French"),
+        ("gl", "Galician"),
+        ("gu", "Gujarati"),
+        ("ha", "Hausa"),
+        ("haw", "Hawaiian"),
+        ("he", "Hebrew"),
+        ("hi", "Hindi"),
+        ("hr", "Croatian"),
+        ("ht", "Haitian Creole"),
+        ("hu", "Hungarian"),
+        ("hy", "Armenian"),
+        ("id", "Indonesian"),
+        ("is", "Icelandic"),
+        ("it", "Italian"),
+        ("ja", "Japanese"),
+        ("jw", "Javanese"),
+        ("ka", "Georgian"),
+        ("kk", "Kazakh"),
+        ("km", "Khmer"),
+        ("kn", "Kannada"),
+        ("ko", "Korean"),
+        ("la", "Latin"),
+        ("lb", "Luxembourgish"),
+        ("ln", "Lingala"),
+        ("lo", "Lao"),
+        ("lt", "Lithuanian"),
+        ("lv", "Latvian"),
+        ("mg", "Malagasy"),
+        ("mi", "Maori"),
+        ("mk", "Macedonian"),
+        ("ml", "Malayalam"),
+        ("mn", "Mongolian"),
+        ("mr", "Marathi"),
+        ("ms", "Malay"),
+        ("mt", "Maltese"),
+        ("my", "Myanmar"),
+        ("ne", "Nepali"),
+        ("nl", "Dutch"),
+        ("nn", "Nynorsk"),
+        ("no", "Norwegian"),
+        ("oc", "Occitan"),
+        ("pa", "Panjabi"),
+        ("pl", "Polish"),
+        ("ps", "Pashto"),
+        ("pt", "Portuguese"),
+        ("ro", "Romanian"),
+        ("ru", "Russian"),
+        ("sa", "Sanskrit"),
+        ("sd", "Sindhi"),
+        ("si", "Sinhala"),
+        ("sk", "Slovak"),
+        ("sl", "Slovenian"),
+        ("sn", "Shona"),
+        ("so", "Somali"),
+        ("sq", "Albanian"),
+        ("sr", "Serbian"),
+        ("su", "Sundanese"),
+        ("sv", "Swedish"),
+        ("sw", "Swahili"),
+        ("ta", "Tamil"),
+        ("te", "Telugu"),
+        ("tg", "Tajik"),
+        ("th", "Thai"),
+        ("tk", "Turkmen"),
+        ("tl", "Tagalog"),
+        ("tr", "Turkish"),
+        ("tt", "Tatar"),
+        ("uk", "Ukrainian"),
+        ("ur", "Urdu"),
+        ("uz", "Uzbek"),
+        ("vi", "Vietnamese"),
+        ("yi", "Yiddish"),
+        ("yo", "Yoruba"),
+        ("yue", "Cantonese"),
+        ("zh", "Chinese"),
+    ];
+
     pub fn get_available_languages() -> Vec<(String, String)> {
-        vec![
-            ("af", "Afrikaans"),
-            ("am", "Amharic"),
-            ("ar", "Arabic"),
-            ("as", "Assamese"),
-            ("az", "Azerbaijani"),
-            ("ba", "Bashkir"),
-            ("be", "Belarusian"),
-            ("bg", "Bulgarian"),
-            ("bn", "Bengali"),
-            ("bo", "Tibetan"),
-            ("br", "Breton"),
-            ("bs", "Bosnian"),
-            ("ca", "Catalan"),
-            ("cs", "Czech"),
-            ("cy", "Welsh"),
-            ("da", "Danish"),
-            ("de", "German"),
-            ("el", "Greek"),
-            ("en", "English"),
-            ("es", "Spanish"),
-            ("et", "Estonian"),
-            ("eu", "Basque"),
-            ("fa", "Persian"),
-            ("fi", "Finnish"),
-            ("fo", "Faroese"),
-            ("fr", "French"),
-            ("gl", "Galician"),
-            ("gu", "Gujarati"),
-            ("ha", "Hausa"),
-            ("haw", "Hawaiian"),
-            ("he", "Hebrew"),
-            ("hi", "Hindi"),
-            ("hr", "Croatian"),
-            ("ht", "Haitian Creole"),
-            ("hu", "Hungarian"),
-            ("hy", "Armenian"),
-            ("id", "Indonesian"),
-            ("is", "Icelandic"),
-            ("it", "Italian"),
-            ("ja", "Japanese"),
-            ("jw", "Javanese"),
-            ("ka", "Georgian"),
-            ("kk", "Kazakh"),
-            ("km", "Khmer"),
-            ("kn", "Kannada"),
-            ("ko", "Korean"),
-            ("la", "Latin"),
-            ("lb", "Luxembourgish"),
-            ("ln", "Lingala"),
-            ("lo", "Lao"),
-            ("lt", "Lithuanian"),
-            ("lv", "Latvian"),
-            ("mg", "Malagasy"),
-            ("mi", "Maori"),
-            ("mk", "Macedonian"),
-            ("ml", "Malayalam"),
-            ("mn", "Mongolian"),
-            ("mr", "Marathi"),
-            ("ms", "Malay"),
-            ("mt", "Maltese"),
-            ("my", "Myanmar"),
-            ("ne", "Nepali"),
-            ("nl", "Dutch"),
-            ("nn", "Nynorsk"),
-            ("no", "Norwegian"),
-            ("oc", "Occitan"),
-            ("pa", "Panjabi"),
-            ("pl", "Polish"),
-            ("ps", "Pashto"),
-            ("pt", "Portuguese"),
-            ("ro", "Romanian"),
-            ("ru", "Russian"),
-            ("sa", "Sanskrit"),
-            ("sd", "Sindhi"),
-            ("si", "Sinhala"),
-            ("sk", "Slovak"),
-            ("sl", "Slovenian"),
-            ("sn", "Shona"),
-            ("so", "Somali"),
-            ("sq", "Albanian"),
-            ("sr", "Serbian"),
-            ("su", "Sundanese"),
-            ("sv", "Swedish"),
-            ("sw", "Swahili"),
-            ("ta", "Tamil"),
-            ("te", "Telugu"),
-            ("tg", "Tajik"),
-            ("th", "Thai"),
-            ("tk", "Turkmen"),
-            ("tl", "Tagalog"),
-            ("tr", "Turkish"),
-            ("tt", "Tatar"),
-            ("uk", "Ukrainian"),
-            ("ur", "Urdu"),
-            ("uz", "Uzbek"),
-            ("vi", "Vietnamese"),
-            ("yi", "Yiddish"),
-            ("yo", "Yoruba"),
-            ("yue", "Cantonese"),
-            ("zh", "Chinese"),
-        ]
-        .into_iter()
-        .map(|(code, name)| (code.to_string(), name.to_string()))
-        .collect()
+        Self::LANGUAGES
+            .iter()
+            .map(|(code, name)| (code.to_string(), name.to_string()))
+            .collect()
+    }
+}
+
+/// Whether a model belongs to a dropdown category.
+///
+/// `General` is everything; the others are prefixes, with `turbo` standing alone
+/// under Large because it is a large model without the name.
+fn matches_category(category: &str, model: &str) -> bool {
+    const PREFIXES: &[(&str, &[&str])] = &[
+        ("Tiny", &["tiny"]),
+        ("Base", &["base"]),
+        ("Small", &["small"]),
+        ("Medium", &["medium", "distil-medium"]),
+        ("Large", &["large", "distil-large"]),
+    ];
+    if category == "Large" && model == "turbo" {
+        return true;
+    }
+    if category == "General" {
+        return true;
+    }
+    // An unknown category is treated like General, so a stale setting cannot
+    // hide every model from the dropdown.
+    match PREFIXES.iter().find(|(name, _)| *name == category) {
+        Some((_, prefixes)) => prefixes.iter().any(|p| model.starts_with(p)),
+        None => true,
     }
 }

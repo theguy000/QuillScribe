@@ -240,5 +240,7 @@ mod local;
 mod models;
 
 #[cfg(test)]
-#[path = "whisper/tests.rs"]
-mod tests;
+mod tests {
+    mod live;
+    mod wire;
+}

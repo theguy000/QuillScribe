@@ -9,12 +9,11 @@ use anyhow::{anyhow, Result};
 
 impl WhisperManager {
     pub fn url_encode(input: &str) -> String {
-        let mut encoded = String::new();
-        for b in input.bytes() {
-            if b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.' || b == b'~' {
-                encoded.push(b as char);
-            } else {
-                encoded.push_str(&format!("%{:02X}", b));
+        let mut encoded = String::with_capacity(input.len());
+        for byte in input.bytes() {
+            match unescaped_url_char(byte) {
+                Some(c) => encoded.push(c),
+                None => encoded.push_str(&format!("%{:02X}", byte)),
             }
         }
         encoded
@@ -192,4 +191,11 @@ impl WhisperManager {
         }
         candidate
     }
+}
+
+/// The characters RFC 3986 leaves alone in a query value, as themselves.
+fn unescaped_url_char(byte: u8) -> Option<char> {
+    const ALWAYS_SAFE: &[u8] = b"-_.~";
+    let safe = byte.is_ascii_alphanumeric() || ALWAYS_SAFE.contains(&byte);
+    safe.then_some(byte as char)
 }

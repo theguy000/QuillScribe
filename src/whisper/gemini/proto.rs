@@ -39,28 +39,10 @@ impl WhisperManager {
                 break;
             };
             i = next;
-            match field_kind(tag) {
-                Field::Bytes => {
-                    let Some((len, next)) = read_varint(bytes, i) else {
-                        break;
-                    };
-                    let Some(end) = next.checked_add(len as usize).filter(|e| *e <= bytes.len())
-                    else {
-                        break;
-                    };
-                    push_or_descend(&bytes[next..end], &mut out);
-                    i = end;
-                }
-                Field::Varint => {
-                    let Some((_, next)) = read_varint(bytes, i) else {
-                        break;
-                    };
-                    i = next;
-                }
-                Field::Fixed64 => i += 8,
-                Field::Fixed32 => i += 4,
-                Field::Unknown => break,
-            }
+            let Some(after) = field_end(bytes, field_kind(tag), i, &mut out) else {
+                break;
+            };
+            i = after;
         }
         out
     }
@@ -128,4 +110,26 @@ fn is_transcript_text(text: &str) -> bool {
         && !text.contains("frontend")
         && text != "Web"
         && text != "en-US"
+}
+
+/// Where the field whose tag ended at `i` ends, or `None` when the remaining
+/// bytes cannot be a whole field.
+///
+/// Length-delimited fields are handed to `push_or_descend` on the way: a slice
+/// that is text is the transcript, and one that is not is a nested message.
+fn field_end(bytes: &[u8], kind: Field, i: usize, out: &mut Vec<String>) -> Option<usize> {
+    match kind {
+        Field::Bytes => {
+            let (len, next) = read_varint(bytes, i)?;
+            let end = next
+                .checked_add(len as usize)
+                .filter(|end| *end <= bytes.len())?;
+            push_or_descend(&bytes[next..end], out);
+            Some(end)
+        }
+        Field::Varint => read_varint(bytes, i).map(|(_, next)| next),
+        Field::Fixed64 => (i + 8 <= bytes.len()).then_some(i + 8),
+        Field::Fixed32 => (i + 4 <= bytes.len()).then_some(i + 4),
+        Field::Unknown => None,
+    }
 }
