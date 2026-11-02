@@ -3,7 +3,7 @@ use arboard::Clipboard;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
 use std::sync::{Mutex, OnceLock};
@@ -195,6 +195,33 @@ pub fn check_paste_tool() -> &'static PasteToolStatus {
     })
 }
 
+/// Why this machine cannot read which window holds focus, in one line, or
+/// `None` when it can.
+///
+/// Linux only. Every other platform reads the focused window directly. Two
+/// cases answer nothing:
+///
+/// - Wayland, where no shared protocol names the focused window. Ydotool can
+///   still paste there, which is why the paste tool check is not the test.
+/// - X11 without xdotool, the one tool that reads the active window here. A
+///   ydotool install alone can paste but cannot read focus.
+#[cfg(target_os = "linux")]
+pub fn focus_reading_unavailable() -> Option<&'static str> {
+    if crate::window::is_wayland_session() {
+        return Some("Wayland does not let an app read which window has focus");
+    }
+    if !check_paste_tool().xdotool_found {
+        return Some("xdotool is missing, and it is the only way to read the focused window");
+    }
+    None
+}
+
+/// Not a Linux question: every other platform reads the focused window.
+#[cfg(not(target_os = "linux"))]
+pub fn focus_reading_unavailable() -> Option<&'static str> {
+    None
+}
+
 /// On non-Linux platforms, return a dummy status (not applicable).
 #[cfg(not(target_os = "linux"))]
 pub fn check_paste_tool() -> PasteToolStatus {
@@ -292,6 +319,131 @@ fn with_clipboard<T>(operation: impl FnOnce(&mut Clipboard) -> Result<T>) -> Res
     operation(&mut clipboard)
 }
 
+// ── Clipboard-preserving delivery ────────────────────────────────────────────
+
+/// How long a pasted text is given to land before the clipboard goes back.
+const PASTE_SETTLE_DELAY: Duration = Duration::from_millis(150);
+
+/// How a segment reaches the caret once the clipboard holds it.
+#[derive(Debug, Clone, Copy)]
+enum Insert {
+    /// Ctrl+V, the insertion every live-typed segment goes through, so the
+    /// target application cannot rewrite the characters on the way in.
+    Paste,
+    /// The platform's typing path, where one exists. Only the stop-time output
+    /// uses it, so Type to app still reaches an application that refuses a paste.
+    Keystrokes,
+}
+
+/// Everything one delivery needs from the machine around it: the clipboard, the
+/// synthetic input, and the wait that lets the target read the clipboard before
+/// it is handed back.
+///
+/// The real host talks to the operating system. The tests use a fake, so the
+/// sequence can be checked without a window and without a clipboard.
+trait ClipboardHost {
+    fn read_clipboard(&mut self) -> Result<String>;
+    fn write_clipboard(&mut self, text: &str) -> Result<()>;
+    fn clear_clipboard(&mut self) -> Result<()>;
+    fn insert(&mut self, text: &str, how: Insert) -> Result<()>;
+    fn settle(&mut self);
+}
+
+/// Put `text` at the caret, then give the user their clipboard back.
+///
+/// The clipboard is saved and restored around this one delivery, never held for
+/// a whole utterance. A snapshot taken once and restored at the end would throw
+/// away whatever the user copied while dictating.
+///
+/// The write and the synthetic input stay adjacent on purpose. On X11 the
+/// clipboard belongs to a process rather than to the server, and the target
+/// reads it while the synthetic input runs, so ownership has to be asserted
+/// again for every delivery rather than once at the start.
+///
+/// Anything the user copies in the few hundred milliseconds between the paste
+/// and the restore is replaced by the restore. That is the cost of not holding
+/// the clipboard for the length of the dictation.
+fn insert_preserving_clipboard(
+    host: &mut impl ClipboardHost,
+    text: &str,
+    how: Insert,
+) -> Result<()> {
+    let original = host.read_clipboard().ok();
+    let inserted = host
+        .write_clipboard(text)
+        .and_then(|()| host.insert(text, how));
+
+    if inserted.is_ok() {
+        host.settle();
+    }
+
+    match original {
+        Some(original) => {
+            if let Err(err) = host.write_clipboard(&original) {
+                warn!("Failed to restore the original clipboard contents: {}", err);
+            }
+        }
+        None => {
+            if let Err(err) = host.clear_clipboard() {
+                warn!("Failed to clear the clipboard after pasting: {}", err);
+            }
+        }
+    }
+
+    inserted
+}
+
+/// The stop-time rule: type the words, and if they never arrive, leave them on
+/// the clipboard.
+///
+/// The clipboard keeps the text on a failed delivery because it is then the only
+/// copy the user has left, which is what the stop-time output has always done.
+/// Live typing does not do this. A fragment the target refused mid-utterance is
+/// the stop path's business, and leaving it on the clipboard would put our words
+/// over whatever the user copies next.
+fn type_preserving_stop_delivery(host: &mut impl ClipboardHost, text: &str) -> Result<()> {
+    let result = insert_preserving_clipboard(host, text, Insert::Keystrokes);
+    if result.is_err() {
+        if let Err(err) = host.write_clipboard(text) {
+            warn!(
+                "Failed to leave the undelivered text on the clipboard: {}",
+                err
+            );
+        }
+    }
+    result
+}
+
+/// The real host: the system clipboard plus the platform's synthetic input.
+struct SystemHost<'a> {
+    output: &'a OutputManager,
+}
+
+impl ClipboardHost for SystemHost<'_> {
+    fn read_clipboard(&mut self) -> Result<String> {
+        self.output.get_clipboard_content()
+    }
+
+    fn write_clipboard(&mut self, text: &str) -> Result<()> {
+        self.output.copy_to_clipboard(text)
+    }
+
+    fn clear_clipboard(&mut self) -> Result<()> {
+        self.output.clear_clipboard()
+    }
+
+    fn insert(&mut self, text: &str, how: Insert) -> Result<()> {
+        match how {
+            Insert::Paste => self.output.simulate_paste(),
+            Insert::Keystrokes => self.output.type_text_to_active_window(text),
+        }
+    }
+
+    fn settle(&mut self) {
+        sleep(PASTE_SETTLE_DELAY);
+    }
+}
+
 // ── OutputManager ────────────────────────────────────────────────────────────
 
 pub struct OutputManager;
@@ -316,25 +468,7 @@ impl OutputManager {
             }
             OutputMode::TypeToApp => {
                 // Type text into the active window without polluting the clipboard.
-                // Save current clipboard for paste-based fallback tools.
-                let original_clipboard = self.get_clipboard_content().ok();
-                self.copy_to_clipboard(text)?;
-                self.type_text_to_active_window(text)?;
-                // Wait for the paste to complete before restoring the clipboard.
-                sleep(Duration::from_millis(150));
-                // Restore the original clipboard contents.
-                match original_clipboard {
-                    Some(ref original) => {
-                        if let Err(e) = self.copy_to_clipboard(original) {
-                            warn!("Failed to restore original clipboard contents: {}", e);
-                        }
-                    }
-                    None => {
-                        if let Err(e) = self.clear_clipboard() {
-                            warn!("Failed to clear clipboard after paste: {}", e);
-                        }
-                    }
-                }
+                self.type_preserving_clipboard(text)?;
                 "Text typed to active window".to_string()
             }
             OutputMode::CopyAndType => {
@@ -357,6 +491,37 @@ impl OutputManager {
         Self::copy_text_to_clipboard(text)
     }
 
+    /// Paste `text` into the window that holds focus, then put the user's
+    /// clipboard back.
+    ///
+    /// This is the live typing transport, called once per Final segment. The
+    /// clipboard is borrowed for the length of one paste and written again
+    /// immediately before every Ctrl+V, because the target application's
+    /// autocorrect and completion never get to rewrite a pasted character.
+    pub fn paste_preserving_clipboard(&self, text: &str) -> Result<()> {
+        let started = Instant::now();
+        let result =
+            insert_preserving_clipboard(&mut SystemHost { output: self }, text, Insert::Paste);
+        // Per-segment cost, which is what accumulates over an utterance.
+        debug!(
+            "Pasted {} characters in {:?}",
+            text.chars().count(),
+            started.elapsed()
+        );
+        result
+    }
+
+    /// Type `text` into the window that holds focus, then put the user's
+    /// clipboard back.
+    ///
+    /// This is the stop-time path. On Linux with xdotool it types the words, so
+    /// Type to app still reaches an application that refuses a paste, and
+    /// everywhere else typing means a paste. Live typing uses
+    /// [`Self::paste_preserving_clipboard`] instead.
+    pub fn type_preserving_clipboard(&self, text: &str) -> Result<()> {
+        type_preserving_stop_delivery(&mut SystemHost { output: self }, text)
+    }
+
     pub fn copy_text_to_clipboard(text: &str) -> Result<()> {
         with_clipboard(|clipboard| {
             clipboard
@@ -371,7 +536,6 @@ impl OutputManager {
     /// Simulate a Ctrl+V paste into the currently active application.
     /// - Windows: uses the Win32 SendInput API.
     /// - Linux: uses xdotool (X11) or ydotool (Wayland/X11), whichever was detected.
-    #[allow(dead_code)]
     pub fn simulate_paste(&self) -> Result<()> {
         #[cfg(windows)]
         {
@@ -677,6 +841,212 @@ mod tests {
         assert_eq!(
             output.get_clipboard_content().expect("read clipboard"),
             text
+        );
+    }
+}
+
+/// The save, paste, wait and restore sequence, checked without a window and
+/// without a real clipboard.
+#[cfg(test)]
+mod clipboard_sequence_tests {
+    use super::*;
+
+    /// One thing the sequence asked the machine to do, in the order it asked.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Op {
+        Read,
+        Write(String),
+        Clear,
+        Paste,
+        Type(String),
+        Settle,
+    }
+
+    /// Stands in for the system clipboard and the synthetic input. A paste
+    /// records what the clipboard held at that moment, which is what the target
+    /// application would have read.
+    #[derive(Default)]
+    struct FakeHost {
+        clipboard: Option<String>,
+        ops: Vec<Op>,
+        delivered: Vec<String>,
+        fail_inserts: usize,
+    }
+
+    impl FakeHost {
+        fn holding(text: &str) -> Self {
+            Self {
+                clipboard: Some(text.to_string()),
+                ..Self::default()
+            }
+        }
+
+        fn failing_once() -> Self {
+            Self {
+                fail_inserts: 1,
+                ..Self::holding(USER_CLIPBOARD)
+            }
+        }
+    }
+
+    impl ClipboardHost for FakeHost {
+        fn read_clipboard(&mut self) -> Result<String> {
+            self.ops.push(Op::Read);
+            self.clipboard
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("the clipboard holds no text"))
+        }
+
+        fn write_clipboard(&mut self, text: &str) -> Result<()> {
+            self.ops.push(Op::Write(text.to_string()));
+            self.clipboard = Some(text.to_string());
+            Ok(())
+        }
+
+        fn clear_clipboard(&mut self) -> Result<()> {
+            self.ops.push(Op::Clear);
+            self.clipboard = None;
+            Ok(())
+        }
+
+        fn insert(&mut self, text: &str, how: Insert) -> Result<()> {
+            let at_the_caret = match how {
+                Insert::Paste => {
+                    self.ops.push(Op::Paste);
+                    self.clipboard.clone().unwrap_or_default()
+                }
+                Insert::Keystrokes => {
+                    self.ops.push(Op::Type(text.to_string()));
+                    text.to_string()
+                }
+            };
+            if self.fail_inserts > 0 {
+                self.fail_inserts -= 1;
+                anyhow::bail!("the target refused the paste");
+            }
+            self.delivered.push(at_the_caret);
+            Ok(())
+        }
+
+        fn settle(&mut self) {
+            self.ops.push(Op::Settle);
+        }
+    }
+
+    const USER_CLIPBOARD: &str = "the user's own text";
+
+    fn clipboard_write(text: &str) -> Op {
+        Op::Write(text.to_string())
+    }
+
+    #[test]
+    fn every_segment_saves_and_restores_the_clipboard() {
+        let mut host = FakeHost::holding(USER_CLIPBOARD);
+
+        insert_preserving_clipboard(&mut host, "Hello there.", Insert::Paste).unwrap();
+        insert_preserving_clipboard(&mut host, "How are you?", Insert::Paste).unwrap();
+
+        assert_eq!(host.delivered, ["Hello there.", "How are you?"]);
+        assert_eq!(
+            host.ops,
+            [
+                Op::Read,
+                clipboard_write("Hello there."),
+                Op::Paste,
+                Op::Settle,
+                clipboard_write(USER_CLIPBOARD),
+                Op::Read,
+                clipboard_write("How are you?"),
+                Op::Paste,
+                Op::Settle,
+                clipboard_write(USER_CLIPBOARD),
+            ]
+        );
+        assert_eq!(host.clipboard.as_deref(), Some(USER_CLIPBOARD));
+    }
+
+    #[test]
+    fn each_paste_reads_the_clipboard_written_for_it() {
+        let mut host = FakeHost::holding(USER_CLIPBOARD);
+
+        insert_preserving_clipboard(&mut host, "one", Insert::Paste).unwrap();
+        insert_preserving_clipboard(&mut host, "two", Insert::Paste).unwrap();
+
+        assert_eq!(
+            host.delivered,
+            ["one", "two"],
+            "a later segment never pastes an earlier segment's text"
+        );
+    }
+
+    #[test]
+    fn what_the_user_copies_between_segments_is_what_comes_back() {
+        let mut host = FakeHost::holding(USER_CLIPBOARD);
+
+        insert_preserving_clipboard(&mut host, "one", Insert::Paste).unwrap();
+        host.clipboard = Some("copied while dictating".to_string());
+        insert_preserving_clipboard(&mut host, "two", Insert::Paste).unwrap();
+
+        assert_eq!(
+            host.clipboard.as_deref(),
+            Some("copied while dictating"),
+            "a snapshot taken once per utterance would have restored the older text"
+        );
+    }
+
+    #[test]
+    fn a_failed_paste_still_gives_the_clipboard_back() {
+        let mut host = FakeHost::failing_once();
+
+        let result = insert_preserving_clipboard(&mut host, "Hello there.", Insert::Paste);
+
+        assert!(result.is_err(), "the caller retries a failed paste");
+        assert_eq!(host.clipboard.as_deref(), Some(USER_CLIPBOARD));
+        assert!(
+            !host.ops.contains(&Op::Settle),
+            "nothing landed, so nothing is waited for"
+        );
+    }
+
+    #[test]
+    fn a_clipboard_with_no_text_on_it_is_left_empty() {
+        let mut host = FakeHost::default();
+
+        insert_preserving_clipboard(&mut host, "Hello there.", Insert::Paste).unwrap();
+
+        assert_eq!(host.ops.last(), Some(&Op::Clear));
+        assert_eq!(host.clipboard, None);
+    }
+
+    #[test]
+    fn the_stop_time_path_types_instead_of_pasting() {
+        let mut host = FakeHost::holding(USER_CLIPBOARD);
+
+        type_preserving_stop_delivery(&mut host, "Hello there.").unwrap();
+
+        assert_eq!(
+            host.ops,
+            [
+                Op::Read,
+                clipboard_write("Hello there."),
+                Op::Type("Hello there.".to_string()),
+                Op::Settle,
+                clipboard_write(USER_CLIPBOARD),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_failed_stop_time_delivery_leaves_the_words_on_the_clipboard() {
+        let mut host = FakeHost::failing_once();
+
+        let result = type_preserving_stop_delivery(&mut host, "Hello there.");
+
+        assert!(result.is_err());
+        assert_eq!(
+            host.clipboard.as_deref(),
+            Some("Hello there."),
+            "the transcript never reached the window, so the clipboard is the copy left to the user"
         );
     }
 }

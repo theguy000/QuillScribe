@@ -1,5 +1,5 @@
 import { ThemeColors } from "../../themes/theme-definitions.slint";
-import { SettingsField, SettingsHint, SettingsSelect, SettingsInput, SettingsRadioOption, SettingsButton, IconButton } from "shared.slint";
+import { SettingsField, SettingsHint, SettingsSelect, SettingsInput, SettingsRadioOption, SettingsButton, SettingsCheckbox, IconButton } from "shared.slint";
 
 export component WhisperTab inherits VerticalLayout {
     in property <ThemeColors> theme-colors;
@@ -15,6 +15,23 @@ export component WhisperTab inherits VerticalLayout {
     in-out property <string> api-model;
     in-out property <string> api-language;
     in-out property <bool> show-api-key;
+
+    // Deepgram live-session options
+    in-out property <string> deepgram-api-key;
+    in-out property <string> deepgram-mode: "recorded";
+    in-out property <bool> deepgram-smart-format: true;
+    in-out property <bool> deepgram-punctuate: true;
+    in-out property <bool> deepgram-dictation: false;
+    in-out property <bool> deepgram-interim-results: true;
+    // Live typing, as the derived capability describes it. The control shows
+    // `live-typing` (whether live typing runs) and is disabled with
+    // `live-typing-reason` when the capability says it cannot act, whether the
+    // settings or the machine rule it out.
+    in-out property <bool> live-typing: true;
+    in property <bool> live-typing-available: true;
+    in property <bool> live-typing-enabled: true;
+    in property <string> live-typing-reason;
+    in property <string> live-typing-description;
 
     // Local model settings
     in-out property <string> local-model;
@@ -43,6 +60,13 @@ export component WhisperTab inherits VerticalLayout {
     callback api-key-changed(string);
     callback groq-api-key-changed(string);
     callback gemini-api-key-changed(string);
+    callback deepgram-api-key-changed(string);
+    callback deepgram-mode-changed(string);
+    callback deepgram-smart-format-changed(bool);
+    callback deepgram-punctuate-changed(bool);
+    callback deepgram-dictation-changed(bool);
+    callback deepgram-interim-results-changed(bool);
+    callback live-typing-changed(bool);
     callback api-model-changed(string);
     callback language-changed(string);
     callback local-model-changed(string);
@@ -91,12 +115,15 @@ export component WhisperTab inherits VerticalLayout {
             SettingsSelect {
                 theme-colors: theme-colors;
                 options: api-providers;
-                // `api-providers` holds display labels ("OpenAI", "Groq", "Gemini") while
-                // `api-provider` holds the stable id ("openai", "groq", "gemini") that the
-                // rest of the app compares against. Map between them here.
-                current-value: api-provider == "gemini" ? "Gemini" : (api-provider == "groq" ? "Groq" : "OpenAI");
+                // `api-providers` holds display labels ("OpenAI", "Groq", "Gemini",
+                // "Deepgram") while `api-provider` holds the stable id ("openai",
+                // "groq", "gemini", "deepgram") that the rest of the app compares
+                // against. Map between them here.
+                current-value: api-provider == "deepgram" ? "Deepgram"
+                    : (api-provider == "gemini" ? "Gemini" : (api-provider == "groq" ? "Groq" : "OpenAI"));
                 value-changed(label) => {
-                    api-provider = label == "Gemini" ? "gemini" : (label == "Groq" ? "groq" : "openai");
+                    api-provider = label == "Deepgram" ? "deepgram"
+                        : (label == "Gemini" ? "gemini" : (label == "Groq" ? "groq" : "openai"));
                     provider-changed(api-provider);
                 }
             }
@@ -114,10 +141,13 @@ export component WhisperTab inherits VerticalLayout {
                 SettingsInput {
                     theme-colors: theme-colors;
                     input-type: show-api-key ? InputType.text : InputType.password;
-                    text: api-provider == "gemini" ? gemini-api-key : (api-provider == "groq" ? groq-api-key : api-key);
-                    placeholder-text: api-provider == "gemini" ? "AIzaSy..." : (api-provider == "groq" ? "gsk_..." : "sk-...");
+                    text: api-provider == "deepgram" ? deepgram-api-key : (api-provider == "gemini" ? gemini-api-key : (api-provider == "groq" ? groq-api-key : api-key));
+                    placeholder-text: api-provider == "deepgram" ? "40-character key" : (api-provider == "gemini" ? "AIzaSy..." : (api-provider == "groq" ? "gsk_..." : "sk-..."));
                     edited(val) => {
-                        if api-provider == "gemini" {
+                        if api-provider == "deepgram" {
+                            deepgram-api-key = val;
+                            deepgram-api-key-changed(val);
+                        } else if api-provider == "gemini" {
                             gemini-api-key = val;
                             gemini-api-key-changed(val);
                         } else if api-provider == "groq" {
@@ -142,11 +172,133 @@ export component WhisperTab inherits VerticalLayout {
 
         SettingsHint {
             theme-colors: theme-colors;
-            text: api-provider == "gemini"
-                ? "Get your free Gemini API key at aistudio.google.com/apikey"
-                : (api-provider == "groq"
-                    ? "Get your API key at console.groq.com/keys"
-                    : "Get your API key at platform.openai.com/api-keys");
+            text: api-provider == "deepgram"
+                ? "Get your free key at console.deepgram.com — $200 of credit, no card"
+                : (api-provider == "gemini"
+                    ? "Get your free Gemini API key at aistudio.google.com/apikey"
+                    : (api-provider == "groq"
+                        ? "Get your API key at console.groq.com/keys"
+                        : "Get your API key at platform.openai.com/api-keys"));
+        }
+
+        // ── Deepgram mode ────────────────────────────────────────────────
+        if api-provider == "deepgram": SettingsField {
+            label: "DEEPGRAM MODE";
+            theme-colors: theme-colors;
+
+            VerticalLayout {
+                spacing: 4px;
+
+                SettingsRadioOption {
+                    theme-colors: theme-colors;
+                    label: "Recorded";
+                    description: "Upload the finished recording when you stop";
+                    selected: deepgram-mode == "recorded";
+                    selected-changed => {
+                        if deepgram-mode != "recorded" {
+                            deepgram-mode = "recorded";
+                            deepgram-mode-changed("recorded");
+                        }
+                    }
+                }
+
+                SettingsRadioOption {
+                    theme-colors: theme-colors;
+                    label: "Live";
+                    description: "Send audio while you speak, so text can arrive as you talk";
+                    selected: deepgram-mode == "live";
+                    selected-changed => {
+                        if deepgram-mode != "live" {
+                            deepgram-mode = "live";
+                            deepgram-mode-changed("live");
+                        }
+                    }
+                }
+
+                // Live typing. It lives here, beside the mode it depends on,
+                // because turning it on is what moves the mode to live.
+                if live-typing-available: VerticalLayout {
+                    spacing: 2px;
+                    padding-top: 8px;
+
+                    SettingsCheckbox {
+                        theme-colors: theme-colors;
+                        label: "Type as I speak";
+                        enabled: live-typing-enabled;
+                        checked: live-typing;
+                        toggled() => { live-typing-changed(live-typing); }
+                    }
+
+                    if !live-typing-enabled && live-typing-reason != "": Text {
+                        text: live-typing-reason;
+                        color: theme-colors.text_muted;
+                        font-size: 11px;
+                        wrap: word-wrap;
+                    }
+
+                    if live-typing-enabled: Text {
+                        text: live-typing-description;
+                        color: theme-colors.text_muted;
+                        font-size: 11px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        // ── Deepgram transcription options ───────────────────────────────
+        if api-provider == "deepgram": SettingsField {
+            label: "TRANSCRIPTION OPTIONS";
+            theme-colors: theme-colors;
+
+            VerticalLayout {
+                spacing: 8px;
+
+                SettingsCheckbox {
+                    theme-colors: theme-colors;
+                    label: "Smart format";
+                    checked <=> deepgram-smart-format;
+                    toggled() => { deepgram-smart-format-changed(deepgram-smart-format); }
+                }
+
+                SettingsCheckbox {
+                    theme-colors: theme-colors;
+                    label: "Punctuate automatically";
+                    checked <=> deepgram-punctuate;
+                    toggled() => { deepgram-punctuate-changed(deepgram-punctuate); }
+                }
+
+                SettingsCheckbox {
+                    theme-colors: theme-colors;
+                    label: "Dictation mode — you say \"comma\", \"new paragraph\"";
+                    checked <=> deepgram-dictation;
+                    toggled() => { deepgram-dictation-changed(deepgram-dictation); }
+                }
+
+                if deepgram-dictation: Text {
+                    text: "Dictation mode replaces automatic punctuation: full stops and capitals are turned off and you have to speak them. Leave this off for normal sentences.";
+                    color: theme-colors.warning;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+
+                if deepgram-mode == "live": SettingsCheckbox {
+                    theme-colors: theme-colors;
+                    label: "Show text while you speak";
+                    checked <=> deepgram-interim-results;
+                    toggled() => { deepgram-interim-results-changed(deepgram-interim-results); }
+                }
+            }
+        }
+
+        if api-provider == "deepgram" && deepgram-mode == "live": SettingsHint {
+            theme-colors: theme-colors;
+            text: "Audio is sent while you speak. With type as I speak on, text arrives about a second after each pause.";
+        }
+
+        if api-provider == "deepgram" && deepgram-mode == "recorded": SettingsHint {
+            theme-colors: theme-colors;
+            text: "The recording is uploaded when you stop, then transcribed.";
         }
 
         // API Model

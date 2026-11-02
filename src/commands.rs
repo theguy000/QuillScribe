@@ -1,7 +1,8 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::audio::{AudioDevice, AudioManager};
 use crate::config::{ConfigManager, Settings};
+use crate::delivery::{DeliveryLedger, DeliverySession};
 use crate::output::{OutputManager, OutputMode, PasteToolStatus};
 use crate::sound::SoundManager;
 use crate::statistics::{HistoryEntry, StatisticsManager};
@@ -15,6 +16,15 @@ pub struct AppState {
     pub output: Mutex<OutputManager>,
     pub sound: SoundManager,
     pub statistics: StatisticsManager,
+    /// The in-flight Deepgram live session, if the active provider uses one.
+    /// Batch providers never populate this.
+    pub live: Mutex<Option<crate::deepgram::LiveSession>>,
+    /// What the app has typed into which window. Kept for the life of the
+    /// process, because the joining rule spans utterances and window identity
+    /// does not survive a restart.
+    pub delivery_ledger: Arc<Mutex<DeliveryLedger>>,
+    /// Live typing for the in-flight utterance, when it could be set up.
+    pub delivery: Mutex<Option<Arc<Mutex<DeliverySession>>>>,
 }
 
 impl AppState {
@@ -26,6 +36,9 @@ impl AppState {
             output: Mutex::new(OutputManager::new()),
             sound: SoundManager::new(),
             statistics: StatisticsManager::new(),
+            live: Mutex::new(None),
+            delivery_ledger: DeliveryLedger::shared(),
+            delivery: Mutex::new(None),
         }
     }
 }

@@ -68,6 +68,17 @@ export component SettingsDialog inherits Rectangle {
     in-out property <string> api-key;
     in-out property <string> groq-api-key;
     in-out property <string> gemini-api-key;
+    in-out property <string> deepgram-api-key;
+    in-out property <string> deepgram-mode: "recorded";
+    in-out property <bool> deepgram-smart-format: true;
+    in-out property <bool> deepgram-punctuate: true;
+    in-out property <bool> deepgram-dictation: false;
+    in-out property <bool> deepgram-interim-results: true;
+    in-out property <bool> live-typing: true;
+    in property <bool> live-typing-available: true;
+    in property <bool> live-typing-enabled: true;
+    in property <string> live-typing-reason: "";
+    in property <string> live-typing-description: "";
     in-out property <string> api-model: "gpt-4o-transcribe";
     in-out property <string> api-language: "en";
     in-out property <bool> show-api-key: false;
@@ -82,7 +93,7 @@ export component SettingsDialog inherits Rectangle {
     in property <string> model-memory;
     in property <string> model-speed;
     in property <string> model-quality;
-    in property <[string]> api-providers: ["OpenAI", "Groq", "Gemini"];
+    in property <[string]> api-providers: ["OpenAI", "Groq", "Gemini", "Deepgram"];
     in property <[string]> api-models: ["gpt-4o-transcribe", "whisper-1"];
     in property <[string]> local-model-categories: ["General", "Tiny", "Base", "Small", "Medium", "Large"];
     in property <[string]> local-models: ["tiny", "base", "small", "medium", "large"];
@@ -132,6 +143,13 @@ export component SettingsDialog inherits Rectangle {
     callback api-key-changed(string);
     callback groq-api-key-changed(string);
     callback gemini-api-key-changed(string);
+    callback deepgram-api-key-changed(string);
+    callback deepgram-mode-changed(string);
+    callback deepgram-smart-format-changed(bool);
+    callback deepgram-punctuate-changed(bool);
+    callback deepgram-dictation-changed(bool);
+    callback deepgram-interim-results-changed(bool);
+    callback live-typing-changed(bool);
     callback api-model-changed(string);
     callback language-changed(string);
     callback local-model-changed(string);
@@ -277,6 +295,17 @@ export component SettingsDialog inherits Rectangle {
                                 api-key <=> api-key;
                                 groq-api-key <=> groq-api-key;
                                 gemini-api-key <=> gemini-api-key;
+                                deepgram-api-key <=> deepgram-api-key;
+                                deepgram-mode <=> deepgram-mode;
+                                deepgram-smart-format <=> deepgram-smart-format;
+                                deepgram-punctuate <=> deepgram-punctuate;
+                                deepgram-dictation <=> deepgram-dictation;
+                                deepgram-interim-results <=> deepgram-interim-results;
+                                live-typing <=> live-typing;
+                                live-typing-available: live-typing-available;
+                                live-typing-enabled: live-typing-enabled;
+                                live-typing-reason: live-typing-reason;
+                                live-typing-description: live-typing-description;
                                 api-model <=> api-model;
                                 api-language <=> api-language;
                                 show-api-key <=> show-api-key;
@@ -301,6 +330,13 @@ export component SettingsDialog inherits Rectangle {
                                 api-key-changed(val) => { api-key-changed(val); }
                                 groq-api-key-changed(val) => { groq-api-key-changed(val); }
                                 gemini-api-key-changed(val) => { gemini-api-key-changed(val); }
+                                deepgram-api-key-changed(val) => { deepgram-api-key-changed(val); }
+                                deepgram-mode-changed(val) => { deepgram-mode-changed(val); }
+                                deepgram-smart-format-changed(val) => { deepgram-smart-format-changed(val); }
+                                deepgram-punctuate-changed(val) => { deepgram-punctuate-changed(val); }
+                                deepgram-dictation-changed(val) => { deepgram-dictation-changed(val); }
+                                deepgram-interim-results-changed(val) => { deepgram-interim-results-changed(val); }
+                                live-typing-changed(val) => { live-typing-changed(val); }
                                 api-model-changed(val) => { api-model-changed(val); }
                                 language-changed(val) => { language-changed(val); }
                                 local-model-changed(val) => { local-model-changed(val); }

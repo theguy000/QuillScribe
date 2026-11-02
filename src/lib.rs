@@ -1,12 +1,16 @@
 mod audio;
 mod commands;
 mod config;
+mod deepgram;
+mod delivery;
 mod hotkey;
+mod live_typing;
 mod output;
 mod sound;
 mod statistics;
 mod tray;
 mod updater;
+mod verdict;
 mod whisper;
 mod window;
 
@@ -413,6 +417,601 @@ fn flush_pending_max_history_entries(
     });
 }
 
+/// Sample rate to report when a live session is the only thing that heard
+/// anything, and the recorder's own buffer is empty.
+const SAMPLE_RATE_FALLBACK: u32 = 16_000;
+
+/// The Deepgram settings when this utterance would run over a live socket.
+///
+/// Batch providers and recorded mode both return `None`: their audio reaches the
+/// provider from `stop_recording`, exactly as before, so no socket opens and the
+/// microphone tap stays off.
+fn live_provider(shared: &SharedAppState) -> Option<config::DeepgramConfig> {
+    let config = shared.state.config.lock().unwrap();
+    let whisper_cfg = config.get_whisper();
+    let deepgram_available = whisper_cfg.mode == "api"
+        && whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider);
+    let cfg = config.get_deepgram();
+    (deepgram_available && cfg.is_live()).then_some(cfg)
+}
+
+/// The Deepgram settings when the key is present, or `None` after undoing the
+/// recording when it is missing.
+///
+/// Recording has already started by the time this runs, so a missing key undoes
+/// it rather than leaving the microphone hot with nothing consuming it. `None`
+/// means the utterance ended here.
+fn start_live_deepgram_with_key(
+    shared: &Arc<SharedAppState>,
+    overlay: &slint::Weak<RecordingOverlay>,
+) -> Option<config::DeepgramConfig> {
+    let cfg = live_provider(shared)?;
+    if !cfg.api_key.trim().is_empty() {
+        return Some(cfg);
+    }
+
+    {
+        let mut audio = shared.state.audio.lock().unwrap();
+        audio.set_tap(None);
+        let _ = audio.stop_recording();
+    }
+    if let Some(overlay) = overlay.upgrade() {
+        hide_recording_overlay(&overlay);
+    }
+    shared.with_ui(|app| {
+        app.set_is_recording(false);
+        app.set_is_transcribing(false);
+        app.set_status_message("Add a Deepgram API key in Settings → Engine".into());
+    });
+    None
+}
+
+/// One utterance that starts recording before the live session can be opened.
+///
+/// The key and the target are read together, so the recording start and the
+/// session start cannot disagree about whether this utterance is going live.
+struct LiveUtterance {
+    cfg: config::DeepgramConfig,
+    bound_window: Option<delivery::WindowId>,
+    target: verdict::TargetWindow,
+}
+
+/// One utterance, from the hotkey press to the socket it opens.
+impl LiveUtterance {
+    /// The utterance a hotkey starts, or `None` when it is not a live one.
+    ///
+    /// A batch provider and recorded mode both deliver at stop, so they never
+    /// read the key, the window, or the target.
+    fn begin(
+        shared: &Arc<SharedAppState>,
+        overlay: &slint::Weak<RecordingOverlay>,
+        window: Option<delivery::WindowId>,
+        target: verdict::TargetWindow,
+    ) -> Option<Self> {
+        live_provider(shared)?;
+        Some(Self {
+            cfg: start_live_deepgram_with_key(shared, overlay)?,
+            bound_window: window,
+            target,
+        })
+    }
+}
+
+/// What a live utterance shows in QuillScribe's own panel while the user speaks.
+///
+/// The panel shows the committed text so far plus the segment still in
+/// progress, and each Final also reaches live typing, which writes it into the
+/// bound window.
+struct LiveProgress {
+    shared: std::sync::Weak<SharedAppState>,
+    committed: Arc<std::sync::Mutex<String>>,
+    delivery: Option<Arc<Mutex<delivery::DeliverySession>>>,
+}
+
+impl LiveProgress {
+    fn new(
+        shared: &Arc<SharedAppState>,
+        delivery: Option<Arc<Mutex<delivery::DeliverySession>>>,
+    ) -> Self {
+        Self {
+            shared: Arc::downgrade(shared),
+            // Committed text, so the live view can show what has been said so
+            // far plus the segment still in progress.
+            committed: Arc::new(std::sync::Mutex::new(String::new())),
+            delivery,
+        }
+    }
+
+    /// The committed text so far with the segment in progress after it.
+    fn live_text(&self, text: &str) -> String {
+        let prefix = self.committed.lock().map(|c| c.clone()).unwrap_or_default();
+        if prefix.is_empty() {
+            text.to_string()
+        } else {
+            format!("{} {}", prefix, text)
+        }
+    }
+
+    /// Commit `text` for the live view and hand it to live typing.
+    ///
+    /// A fragment the bound window will not take is not lost: the session keeps
+    /// it owed, in order, and the stop path retries it there.
+    fn commit(&self, text: &str) {
+        if let Some(session) = &self.delivery {
+            if let Ok(mut session) = session.lock() {
+                if let Err(err) = session.deliver(text) {
+                    log::debug!("Live typing held a fragment: {:?}", err);
+                }
+            }
+        }
+
+        let live = match self.committed.lock() {
+            Ok(mut committed) => {
+                if !committed.is_empty() {
+                    committed.push(' ');
+                }
+                committed.push_str(text);
+                committed.clone()
+            }
+            Err(_) => text.to_string(),
+        };
+        let words = live.split_whitespace().count();
+        // Fallback utterances already carry the reason live typing is off; a
+        // per-word status would overwrite it.
+        let types_as_you_speak = self.delivery.is_some();
+        self.show(move |app| {
+            app.set_transcription_text(live.clone().into());
+            if types_as_you_speak {
+                app.set_status_message(format!("Recording… {} words", words).into());
+            }
+        });
+    }
+
+    fn show(&self, show: impl Fn(&App) + Send + 'static) {
+        let Some(shared) = self.shared.upgrade() else {
+            return;
+        };
+        let _ = slint::invoke_from_event_loop(move || {
+            shared.with_ui(|app| show(&app));
+        });
+    }
+}
+
+impl LiveUtterance {
+    /// Tap the recorder, start live typing, and hand the socket its progress.
+    ///
+    /// The bound window owns the whole utterance, and the target describes what
+    /// the platform said about it at hotkey time, which decides whether it may
+    /// receive text at all.
+    fn open(
+        self,
+        shared: &Arc<SharedAppState>,
+        rt: &tokio::runtime::Handle,
+    ) -> Option<deepgram::LiveSession> {
+        let (tap_tx, tap_rx) = tokio::sync::mpsc::unbounded_channel();
+        {
+            let mut audio = shared.state.audio.lock().unwrap();
+            audio.set_tap(Some(tap_tx));
+        }
+
+        // Live typing: every committed segment is written into the bound window
+        // as it arrives. Interim segments never leave our own panel.
+        let delivery = start_live_typing(shared, self.bound_window, self.target);
+        let progress = Arc::new(LiveProgress::new(shared, delivery));
+
+        let on_progress: deepgram::ProgressSink = {
+            let progress = Arc::clone(&progress);
+            Arc::new(move |event| match event {
+                deepgram::Progress::Interim(text) => {
+                    let live = progress.live_text(&text);
+                    progress.show(move |app| app.set_transcription_text(live.clone().into()));
+                }
+                deepgram::Progress::Final(text) => progress.commit(&text),
+                deepgram::Progress::Status(message) => {
+                    progress.show(move |app| app.set_status_message(message.clone().into()));
+                }
+            })
+        };
+
+        Some(deepgram::LiveSession::start(
+            rt.clone(),
+            self.cfg,
+            tap_rx,
+            on_progress,
+        ))
+    }
+}
+
+/// Whether live typing can apply to an utterance at all, before any window is
+/// known.
+///
+/// The answer comes from the same derived capability the settings screen reads,
+/// so a switch that looks on is a switch that acts. A batch provider, Deepgram
+/// in recorded mode, the toggle turned off, and display only all keep the
+/// stop-time behaviour, so none of them may read the focused window or start a
+/// session.
+fn live_typing_applies(shared: &SharedAppState) -> bool {
+    let settings = shared.state.config.lock().unwrap().get_settings();
+    live_typing::live_typing_applies(&settings)
+}
+
+/// Set up live typing for one utterance, when it can run at all.
+///
+/// Returns `None` when live typing does not apply or when no focused window
+/// could be read. The utterance then behaves exactly as it does today: text
+/// arrives when the user stops. On success the session is also installed on the
+/// app state, where the stop path picks it up.
+fn start_live_typing(
+    shared: &Arc<SharedAppState>,
+    bound_window: Option<delivery::WindowId>,
+    target: verdict::TargetWindow,
+) -> Option<Arc<Mutex<delivery::DeliverySession>>> {
+    let settings = shared.state.config.lock().unwrap().get_settings();
+    let capability = live_typing::live_typing_capability(&settings);
+    if !capability.active {
+        return None;
+    }
+
+    // Copy mode has no window to bind and no paste to make: the clipboard
+    // carries the transcript so far, and the surface only ever rewrites it.
+    // Nothing about reading a window applies, so it runs on any machine.
+    if capability.delivery == live_typing::LiveDelivery::CopyToClipboard {
+        let session = Arc::new(Mutex::new(delivery::DeliverySession::copy_to_clipboard(
+            delivery::PlatformSurface::default(),
+        )));
+        *shared.state.delivery.lock().unwrap() = Some(Arc::clone(&session));
+        return Some(session);
+    }
+
+    // Typing needs a window the app could read at hotkey time. When there is
+    // none, no session is created: the utterance records, the panel keeps
+    // showing the interim text, and stop delivers the whole transcript as it
+    // did before live typing. The status line says why rather than leaving the
+    // failure silent.
+    let Some(window) = bound_window else {
+        log::warn!("Live typing is unavailable: no focused window could be read");
+        let note = match capability.reason {
+            Some(reason) => format!("Live typing is unavailable: {reason}"),
+            None => "Live typing is unavailable: no focused window could be read".to_string(),
+        };
+        shared.with_ui(|app| {
+            app.set_status_message(note.into());
+        });
+        return None;
+    };
+
+    // The target is described now, while the recording starts, and never again
+    // during the utterance: the caret's role belongs to the window the user
+    // bound, and re-reading it later would let a fragment follow focus.
+    let session = Arc::new(Mutex::new(delivery::DeliverySession::new(
+        window,
+        target,
+        delivery::PlatformSurface::default(),
+        Arc::clone(&shared.state.delivery_ledger),
+    )));
+    *shared.state.delivery.lock().unwrap() = Some(Arc::clone(&session));
+    Some(session)
+}
+
+/// Deliver whatever the utterance still owes once the provider has finished.
+///
+/// The leftovers go through the same delivery session as the segments that
+/// arrived during the utterance, so the joining rule, the bound window and the
+/// focus check all still apply. Nothing already in the document is written
+/// again: `unwritten_words` is the transcript after the words that landed, and
+/// the session writes it only while the bound window is still the one in focus.
+/// What it cannot write stays in the report, and the stop output sends that to
+/// the clipboard with a status line.
+fn finish_live_delivery(
+    delivery: Option<Arc<Mutex<delivery::DeliverySession>>>,
+    result: &Result<String, anyhow::Error>,
+) -> Option<delivery::DeliveryReport> {
+    let delivery = delivery?;
+    let Ok(text) = result else {
+        // The transcription failed, so there is no transcript to reconcile
+        // against. Whatever already landed stays where it is.
+        return delivery.lock().ok().map(|session| session.report());
+    };
+
+    let mut session = match delivery.lock() {
+        Ok(session) => session,
+        Err(_) => return Some(delivery::DeliveryReport::default()),
+    };
+
+    let unwritten = delivery::unwritten_words(text, &session.report());
+    log::debug!("Writing what live typing still owed: {:?}", unwritten);
+    let report = session.finish(&unwritten);
+    drop(session);
+
+    if report.undelivered_count() > 0 {
+        log::warn!(
+            "Live typing did not deliver {} fragment(s): {:?}",
+            report.undelivered_count(),
+            report.undelivered
+        );
+    }
+
+    Some(report)
+}
+
+/// What the stop path does with text the document never took.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StopRoute {
+    /// Everything reached the document, or there was nothing to write.
+    Nothing,
+    /// Put these words on the clipboard and say how many there are.
+    Clipboard { text: String, words: usize },
+    /// The output mode already leaves the whole transcript on the clipboard, so
+    /// the status line only reports how many words the document is missing.
+    Reported { words: usize },
+}
+
+impl StopRoute {
+    /// Decide from the report and the output mode.
+    ///
+    /// Copy & type writes the whole transcript to the clipboard below, so it
+    /// needs no separate copy of the leftover text; the count is still worth
+    /// reporting, because the document is missing words the user has to paste.
+    /// Copy-only live typing does the same for the same reason: each Final
+    /// segment already rewrote the clipboard with the transcript so far.
+    fn decide(text: &str, report: &delivery::DeliveryReport, mode: output::OutputMode) -> Self {
+        let unwritten = delivery::unwritten_words(text, report);
+        if unwritten.is_empty() {
+            return Self::Nothing;
+        }
+        let words = unwritten.split_whitespace().count();
+        if mode == output::OutputMode::CopyAndType || report.copies_instead_of_typing {
+            Self::Reported { words }
+        } else {
+            Self::Clipboard {
+                text: unwritten,
+                words,
+            }
+        }
+    }
+}
+
+/// Deliver the transcript's leftovers when the user stops.
+///
+/// Returns a status line when some text had to take the clipboard route, so the
+/// user knows how much never reached the document.
+fn write_stop_output(
+    shared: &Arc<SharedAppState>,
+    text: &str,
+    live_delivery: Option<&delivery::DeliveryReport>,
+) -> Option<String> {
+    let config = shared.state.config.lock().unwrap();
+    let mode = output::OutputMode::from(config.get_output().mode);
+    let output = shared.state.output.lock().unwrap();
+
+    let Some(report) = live_delivery else {
+        // No live typing ran, so this is the one delivery the utterance gets.
+        let _ = output.process_transcription(text, mode);
+        return None;
+    };
+
+    let note = report_stop_route(&output, text, report, mode);
+    copy_whole_transcript(&output, text, report, mode);
+    note
+}
+
+/// Say what the stop path did with the words the document never took, and put
+/// them on the clipboard when they went that way.
+fn report_stop_route(
+    output: &crate::output::OutputManager,
+    text: &str,
+    report: &delivery::DeliveryReport,
+    mode: output::OutputMode,
+) -> Option<String> {
+    // A refusal is worth saying out loud: the words did not fail to arrive, the
+    // app chose not to send them into the field the user had focused.
+    let because = match report.refused {
+        Some(refusal) => format!(", and {}", refusal.user_message()),
+        None => String::new(),
+    };
+
+    match StopRoute::decide(text, report, mode) {
+        StopRoute::Nothing => {
+            log::debug!("Stop path: every word already reached the document");
+            None
+        }
+        StopRoute::Clipboard {
+            text: unwritten,
+            words,
+        } => Some(copy_leftovers(output, &unwritten, words, &because)),
+        StopRoute::Reported { words } => {
+            log::warn!(
+                "Live typing left {} word(s) undelivered{}; the clipboard holds the transcript",
+                words,
+                because
+            );
+            Some(format!(
+                "Transcription complete, {} word(s) not delivered{}, whole transcript on the clipboard",
+                words, because
+            ))
+        }
+    }
+}
+
+/// The clipboard line after the leftovers went there, or the honest line when
+/// the clipboard refused them.
+///
+/// The status line must not promise a clipboard the app could not write: those
+/// words are the only copy the user has left.
+fn copy_leftovers(
+    output: &crate::output::OutputManager,
+    unwritten: &str,
+    words: usize,
+    because: &str,
+) -> String {
+    log::warn!(
+        "Live typing left {} word(s) undelivered{}, so they went to the clipboard",
+        words,
+        because
+    );
+    match output.copy_to_clipboard(unwritten) {
+        Ok(()) => format!(
+            "Transcription complete, {} word(s) not typed{}, copied to the clipboard",
+            words, because
+        ),
+        Err(err) => {
+            log::error!("Could not copy the undelivered text: {}", err);
+            format!(
+                "Transcription complete, {} word(s) not typed{} and could not be copied",
+                words, because
+            )
+        }
+    }
+}
+
+/// Copy & type promises the whole transcript on the clipboard, and writing into
+/// the document during the utterance does not put it there. Copy-only live
+/// typing already left it there segment by segment.
+fn copy_whole_transcript(
+    output: &crate::output::OutputManager,
+    text: &str,
+    report: &delivery::DeliveryReport,
+    mode: output::OutputMode,
+) {
+    let on_clipboard = mode == output::OutputMode::CopyAndType
+        || (mode == output::OutputMode::CopyToClipboard && report.copies_instead_of_typing);
+    if on_clipboard {
+        let _ = output.copy_to_clipboard(text);
+    }
+}
+
+/// Record one utterance's outcome — statistics, output, history, UI — the same
+/// way for batch and live providers.
+///
+/// `live_delivery` is present when live typing ran during the utterance. Its
+/// report decides what the stop path still has to write, so nothing that already
+/// reached the document is typed twice.
+fn emit_transcription_result(
+    shared: &Arc<SharedAppState>,
+    result: Result<String, anyhow::Error>,
+    audio_duration: f64,
+    transcription_time: f64,
+    live_delivery: Option<delivery::DeliveryReport>,
+) {
+    let whisper_mode = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_whisper_mode()
+    };
+
+    match result {
+        Ok(text) => {
+            shared.state.statistics.record_transcription_result(
+                true,
+                &whisper_mode,
+                audio_duration,
+                transcription_time,
+                &text,
+                1.0,
+            );
+            shared.state.sound.play_stop_sound();
+            report_transcribed(shared, &text, live_delivery.as_ref());
+        }
+        Err(e) => {
+            shared.state.statistics.record_transcription_result(
+                false,
+                &whisper_mode,
+                audio_duration,
+                transcription_time,
+                "",
+                0.0,
+            );
+            let err_msg = format!("Error: {}", e);
+            show_on_ui_thread(shared, move |app, shared| {
+                app.set_is_transcribing(false);
+                app.set_status_message(err_msg.clone().into());
+                refresh_history_ui(app, &shared.state, HISTORY_DAYS);
+            });
+        }
+    }
+}
+
+/// Deliver the transcript and show it, from the Slint event loop thread.
+///
+/// Words live typing already wrote are not written again, and whatever it could
+/// not write goes to the clipboard rather than into whichever window happens to
+/// hold focus now.
+fn report_transcribed(
+    shared: &Arc<SharedAppState>,
+    text: &str,
+    live_delivery: Option<&delivery::DeliveryReport>,
+) {
+    let stop_note = write_stop_output(shared, text, live_delivery);
+    let status = stop_note.unwrap_or_else(|| "Transcription complete".to_string());
+    let text_for_ui = text.to_string();
+    show_on_ui_thread(shared, move |app, shared| {
+        app.set_is_transcribing(false);
+        app.set_transcription_text(text_for_ui.clone().into());
+        app.set_status_message(status.clone().into());
+        refresh_history_ui(app, &shared.state, HISTORY_DAYS);
+        show_completion_burst(app);
+    });
+}
+
+/// Run `show` on the Slint event loop thread, if the loop is still there.
+fn show_on_ui_thread(
+    shared: &Arc<SharedAppState>,
+    show: impl Fn(&App, &Arc<SharedAppState>) + Send + 'static,
+) {
+    let s_invoke = Arc::clone(shared);
+    let _ = slint::invoke_from_event_loop(move || {
+        s_invoke.with_ui(|app| show(&app, &s_invoke));
+    });
+}
+
+/// The short animation that marks a finished transcript.
+fn show_completion_burst(app: &App) {
+    app.set_show_burst(true);
+    let weak = app.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(800), move || {
+        if let Some(app) = weak.upgrade() {
+            app.set_show_burst(false);
+        }
+    });
+}
+
+/// Rebuild the language dropdown for `provider` and show `current` as selected.
+///
+/// The list has to come from Rust: the `.slint` default offered display labels
+/// the manager could never accept, and nothing ever pushed the real one, so the
+/// saved language was silently ignored.
+fn apply_language_options(app: &App, provider: &str, current: &str) {
+    let labels = whisper::WhisperManager::language_labels_for_provider(provider);
+    let label_strings: Vec<slint::SharedString> =
+        labels.iter().map(|l| l.as_str().into()).collect();
+    let label_rc = std::rc::Rc::new(slint::VecModel::from(label_strings));
+    app.set_settings_languages(slint::ModelRc::from(label_rc));
+    app.set_settings_api_language(
+        whisper::WhisperManager::language_label_for(provider, current).into(),
+    );
+}
+
+/// Push the derived live typing answer to the settings screen.
+///
+/// The screen only displays what [`live_typing::live_typing_capability`]
+/// decides, so its switch, its enabled state and the reason under it cannot
+/// drift from what a recording would actually do. Called on startup and after
+/// every setting that feeds the answer.
+fn apply_live_typing_screen(shared: &SharedAppState) {
+    let settings = {
+        let config = shared.state.config.lock().unwrap();
+        config.get_settings()
+    };
+    let capability = live_typing::live_typing_capability(&settings);
+    let screen = capability.screen();
+    shared.with_ui(|app| {
+        app.set_settings_live_typing_available(screen.visible);
+        app.set_settings_live_typing_enabled(screen.enabled);
+        app.set_settings_live_typing(screen.switch_checked);
+        app.set_settings_live_typing_reason(screen.reason.unwrap_or_default().into());
+        app.set_settings_live_typing_description(screen.description.into());
+    });
+}
+
 /// Helper: refresh the blocklist model and audio device list in the UI.
 /// Also checks if the currently configured device is still visible (not blocklisted)
 /// and falls back to default if it isn't.
@@ -576,8 +1175,35 @@ pub fn run() {
     app.set_settings_groq_api_key(s.whisper.groq_api_key.clone().into());
     app.set_settings_gemini_api_key(s.whisper.gemini_api_key.clone().into());
     app.set_settings_api_model(s.whisper.api_model.clone().into());
-    app.set_settings_api_language(s.whisper.api_language.clone().into());
     app.set_settings_local_model(s.whisper.local_model.clone().into());
+
+    // The language dropdown is driven from Rust. Its .slint default offered
+    // display labels the manager could never accept, and the real list was
+    // never pushed, so every provider silently ran English. Resolve and, if
+    // needed, repair the stored value.
+    let resolved_language = whisper::WhisperManager::resolve_language_or_default(
+        &s.whisper.api_provider,
+        &s.whisper.api_language,
+    );
+    if resolved_language != s.whisper.api_language {
+        save_config_field(&shared, |settings| {
+            settings.whisper.api_language = resolved_language.clone();
+        });
+    }
+    apply_language_options(&app, &s.whisper.api_provider, &resolved_language);
+
+    // Deepgram live-session options
+    app.set_settings_deepgram_api_key(s.deepgram.api_key.clone().into());
+    app.set_settings_deepgram_mode(s.deepgram.mode.clone().into());
+    if s.whisper.api_provider == "deepgram" {
+        // The model dropdown is shared with the other providers; when Deepgram
+        // is active, show the model Deepgram will actually use.
+        app.set_settings_api_model(s.deepgram.model.clone().into());
+    }
+    app.set_settings_deepgram_smart_format(s.deepgram.smart_format);
+    app.set_settings_deepgram_punctuate(s.deepgram.punctuate);
+    app.set_settings_deepgram_dictation(s.deepgram.dictation);
+    app.set_settings_deepgram_interim_results(s.deepgram.interim_results);
 
     // Initialize local model categories and models
     let categories = whisper::WhisperManager::get_local_model_categories();
@@ -618,6 +1244,7 @@ pub fn run() {
     window::apply_custom_titlebar(&app, s.ui.custom_titlebar);
     window::apply_always_on_top(&app, s.ui.always_on_top);
     refresh_history_ui(&app, &shared.state, HISTORY_DAYS);
+    apply_live_typing_screen(&shared);
 
     // ── Wire core Slint callbacks ────────────────────────────────────────
 
@@ -652,6 +1279,25 @@ pub fn run() {
         let is_recording = s.with_ui_ret(|app| app.get_is_recording()).unwrap_or(false);
 
         if !is_recording {
+            // The window that owns this utterance is the one focused now, at
+            // hotkey time, not whichever window is focused when the socket
+            // finally opens a second later. What the platform says about that
+            // window is read at the same moment.
+            let (bound_window, target) = if live_typing_applies(&s) {
+                let window = delivery::focused_window();
+                let target = if window.is_some() {
+                    delivery::target_window(&delivery::named_key_fields())
+                } else {
+                    verdict::TargetWindow::default()
+                };
+                (window, target)
+            } else {
+                (None, verdict::TargetWindow::default())
+            };
+            // Read before recording starts, because a missing key undoes it
+            // rather than leaving the microphone hot with nothing consuming it.
+            let live_utterance = LiveUtterance::begin(&s, &overlay_toggle, bound_window, target);
+
             // Start recording synchronously on the UI thread before presenting it as active.
             let start_result = s
                 .state
@@ -677,6 +1323,11 @@ pub fn run() {
             if let Some(overlay) = overlay_toggle.upgrade() {
                 show_recording_overlay(&overlay, &s, 0);
             }
+
+            // The live session opens after the recorder is running, so every
+            // sample it hears reaches the socket.
+            let live_session = live_utterance.and_then(|utterance| utterance.open(&s, &rt_handle));
+            *s.state.live.lock().unwrap() = live_session;
         } else {
             // Stop recording — synchronous UI update on UI thread
             s.with_ui(|app| {
@@ -688,25 +1339,39 @@ pub fn run() {
                 hide_recording_overlay(&overlay);
             }
 
-            let (audio_data, sample_rate) = {
+            // Detach the live session before the recorder stops, so no further
+            // audio is teed to a session that is about to be flushed.
+            let live_session = { s.state.live.lock().unwrap().take() };
+            let delivery = { s.state.delivery.lock().unwrap().take() };
+            {
                 let mut audio = s.state.audio.lock().unwrap();
-                match audio.stop_recording() {
-                    Ok(Some((data, sr))) => (data, sr),
-                    Ok(None) => {
-                        s.with_ui(|app| {
-                            app.set_is_transcribing(false);
-                            app.set_status_message("No speech detected".into());
-                        });
-                        return;
-                    }
-                    Err(e) => {
-                        log::error!("Failed to stop recording: {}", e);
-                        s.with_ui(|app| {
-                            app.set_is_transcribing(false);
-                            app.set_status_message(format!("Error: {}", e).into());
-                        });
-                        return;
-                    }
+                audio.set_tap(None);
+            }
+
+            let captured = {
+                let mut audio = s.state.audio.lock().unwrap();
+                audio.stop_recording()
+            };
+
+            let (audio_data, sample_rate) = match captured {
+                Ok(Some((data, sr))) => (data, sr),
+                // A live session may legitimately have heard nothing while the
+                // recorder's own buffer looks empty; let the service decide.
+                Ok(None) if live_session.is_some() => (Vec::new(), SAMPLE_RATE_FALLBACK),
+                Ok(None) => {
+                    s.with_ui(|app| {
+                        app.set_is_transcribing(false);
+                        app.set_status_message("No speech detected".into());
+                    });
+                    return;
+                }
+                Err(e) => {
+                    log::error!("Failed to stop recording: {}", e);
+                    s.with_ui(|app| {
+                        app.set_is_transcribing(false);
+                        app.set_status_message(format!("Error: {}", e).into());
+                    });
+                    return;
                 }
             };
 
@@ -714,6 +1379,10 @@ pub fn run() {
             let whisper_cfg = {
                 let config = s.state.config.lock().unwrap();
                 config.get_whisper()
+            };
+            let deepgram_cfg = {
+                let config = s.state.config.lock().unwrap();
+                config.get_deepgram()
             };
 
             {
@@ -724,18 +1393,43 @@ pub fn run() {
                 whisper.set_groq_api_key(&whisper_cfg.groq_api_key);
                 whisper.set_gemini_api_key(&whisper_cfg.gemini_api_key);
                 let _ = whisper.set_api_model(&whisper_cfg.api_model);
-                let _ = whisper.set_api_language(&whisper_cfg.api_language);
+                // The stored value may be a display label ("English") or a
+                // legacy one ("Auto-detect"); resolve it instead of discarding
+                // the error and silently keeping a stale language.
+                let language = whisper::WhisperManager::resolve_language_or_default(
+                    &whisper_cfg.api_provider,
+                    &whisper_cfg.api_language,
+                );
+                let _ = whisper.set_api_language(&language);
                 let _ = whisper.set_local_model(&whisper_cfg.local_model);
                 whisper.set_local_model_path(&whisper_cfg.local_model_path);
+                whisper.set_deepgram(deepgram_cfg.clone());
+            }
+
+            let audio_duration = audio_data.len() as f64 / sample_rate as f64;
+            let start_time = std::time::Instant::now();
+
+            if let Some(session) = live_session {
+                let s_async = Arc::clone(&s);
+                rt_handle.spawn(async move {
+                    let result = session.finish().await;
+                    let transcription_time = start_time.elapsed().as_secs_f64();
+                    let report = finish_live_delivery(delivery, &result);
+                    emit_transcription_result(
+                        &s_async,
+                        result,
+                        audio_duration,
+                        transcription_time,
+                        report,
+                    );
+                });
+                return;
             }
 
             let whisper_clone = {
                 let whisper = s.state.whisper.lock().unwrap();
                 whisper.clone()
             };
-
-            let audio_duration = audio_data.len() as f64 / sample_rate as f64;
-            let start_time = std::time::Instant::now();
 
             // Spawn async transcription on Tokio runtime
             let s_async = Arc::clone(&s);
@@ -744,79 +1438,13 @@ pub fn run() {
                     .transcribe_audio(audio_data, sample_rate)
                     .await;
                 let transcription_time = start_time.elapsed().as_secs_f64();
-                let whisper_mode = {
-                    let config = s_async.state.config.lock().unwrap();
-                    config.get_whisper_mode()
-                };
-
-                match result {
-                    Ok(text) => {
-                        s_async.state.statistics.record_transcription_result(
-                            true,
-                            &whisper_mode,
-                            audio_duration,
-                            transcription_time,
-                            &text,
-                            1.0,
-                        );
-
-                        s_async.state.sound.play_stop_sound();
-
-                        // Process output
-                        {
-                            let config = s_async.state.config.lock().unwrap();
-                            let output_cfg = config.get_output();
-                            let output = s_async.state.output.lock().unwrap();
-                            let _ = output.process_transcription(
-                                &text,
-                                output::OutputMode::from(output_cfg.mode),
-                            );
-                        }
-
-                        // Update UI from the Slint event loop thread
-                        let text_for_ui = text.clone();
-                        let s_invoke = Arc::clone(&s_async);
-                        let _ = slint::invoke_from_event_loop(move || {
-                            s_invoke.with_ui(|app| {
-                                app.set_is_transcribing(false);
-                                app.set_transcription_text(text_for_ui.into());
-                                app.set_status_message("Transcription complete".into());
-                                refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
-
-                                // Trigger completion burst animation
-                                app.set_show_burst(true);
-                                let weak = app.as_weak();
-                                slint::Timer::single_shot(
-                                    std::time::Duration::from_millis(800),
-                                    move || {
-                                        if let Some(app) = weak.upgrade() {
-                                            app.set_show_burst(false);
-                                        }
-                                    },
-                                );
-                            });
-                        });
-                    }
-                    Err(e) => {
-                        s_async.state.statistics.record_transcription_result(
-                            false,
-                            &whisper_mode,
-                            audio_duration,
-                            transcription_time,
-                            "",
-                            0.0,
-                        );
-                        let err_msg = format!("Error: {}", e);
-                        let s_invoke = Arc::clone(&s_async);
-                        let _ = slint::invoke_from_event_loop(move || {
-                            s_invoke.with_ui(|app| {
-                                app.set_is_transcribing(false);
-                                app.set_status_message(err_msg.into());
-                                refresh_history_ui(&app, &s_invoke.state, HISTORY_DAYS);
-                            });
-                        });
-                    }
-                }
+                emit_transcription_result(
+                    &s_async,
+                    result,
+                    audio_duration,
+                    transcription_time,
+                    None,
+                );
             });
         }
     });
@@ -1109,6 +1737,7 @@ pub fn run() {
         save_config_field(&shared_cb, |s| {
             s.whisper.mode = mode_str;
         });
+        apply_live_typing_screen(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -1121,15 +1750,30 @@ pub fn run() {
             .map(|m| slint::SharedString::from(m.as_str()))
             .collect();
         let model_rc = std::rc::Rc::new(slint::VecModel::from(model_strings));
-        let first_model = models.first().cloned().unwrap_or_default();
+
+        // Deepgram keeps its own model setting; prefer it when it is still in
+        // the catalogue.
+        let stored_deepgram_model = {
+            let config = shared_cb.state.config.lock().unwrap();
+            config.get_deepgram().model
+        };
+        let chosen_model = if provider_str == "deepgram" && models.contains(&stored_deepgram_model)
+        {
+            stored_deepgram_model
+        } else {
+            models.first().cloned().unwrap_or_default()
+        };
+
         shared_cb.with_ui(|app| {
             app.set_settings_api_models(slint::ModelRc::from(model_rc));
-            app.set_settings_api_model(first_model.clone().into());
+            app.set_settings_api_model(chosen_model.clone().into());
+            apply_language_options(&app, &provider_str, "");
         });
         save_config_field(&shared_cb, |s| {
             s.whisper.api_provider = provider_str;
-            s.whisper.api_model = first_model;
+            s.whisper.api_model = chosen_model;
         });
+        apply_live_typing_screen(&shared_cb);
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -1159,17 +1803,94 @@ pub fn run() {
     let shared_cb = Arc::clone(&shared);
     app.on_settings_api_model_changed(move |model: slint::SharedString| {
         let model_str = model.to_string();
+        let provider = {
+            let config = shared_cb.state.config.lock().unwrap();
+            config.get_whisper().api_provider
+        };
         save_config_field(&shared_cb, |s| {
-            s.whisper.api_model = model_str;
+            s.whisper.api_model = model_str.clone();
+            if provider == "deepgram" {
+                s.deepgram.model = model_str.clone();
+            }
         });
     });
 
     let shared_cb = Arc::clone(&shared);
     app.on_settings_language_changed(move |lang: slint::SharedString| {
-        let lang_str = lang.to_string();
+        let provider = {
+            let config = shared_cb.state.config.lock().unwrap();
+            config.get_whisper().api_provider
+        };
+        // Store the code, not the label, so the manager never has to guess.
+        let code = whisper::WhisperManager::resolve_language_or_default(&provider, &lang);
         save_config_field(&shared_cb, |s| {
-            s.whisper.api_language = lang_str;
+            s.whisper.api_language = code.clone();
+            if provider == "deepgram" {
+                s.deepgram.language = code.clone();
+            }
         });
+    });
+
+    // ── Deepgram live-session options ────────────────────────────────────
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_api_key_changed(move |key: slint::SharedString| {
+        let key_str = key.to_string();
+        save_config_field(&shared_cb, |s| {
+            s.deepgram.api_key = key_str;
+        });
+        apply_live_typing_screen(&shared_cb);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_mode_changed(move |mode: slint::SharedString| {
+        let mode_str = mode.to_string();
+        save_config_field(&shared_cb, |s| {
+            // Recorded mode turns live typing off, because a recorded utterance
+            // has nothing to type from.
+            s.deepgram.set_mode(&mode_str);
+        });
+        let deepgram = shared_cb.state.config.lock().unwrap().get_deepgram();
+        shared_cb.with_ui(|app| {
+            app.set_settings_deepgram_mode(deepgram.mode.clone().into());
+            app.set_settings_live_typing(deepgram.live_typing);
+        });
+        apply_live_typing_screen(&shared_cb);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_live_typing_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| {
+            // One control instead of two: asking for live typing moves the mode
+            // to live, so the two settings can never be left disagreeing.
+            s.deepgram.set_live_typing(enabled);
+        });
+        let deepgram = shared_cb.state.config.lock().unwrap().get_deepgram();
+        shared_cb.with_ui(|app| {
+            app.set_settings_deepgram_mode(deepgram.mode.clone().into());
+            app.set_settings_live_typing(deepgram.live_typing);
+        });
+        apply_live_typing_screen(&shared_cb);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_smart_format_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.smart_format = enabled);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_punctuate_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.punctuate = enabled);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_dictation_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.dictation = enabled);
+    });
+
+    let shared_cb = Arc::clone(&shared);
+    app.on_settings_deepgram_interim_results_changed(move |enabled: bool| {
+        save_config_field(&shared_cb, |s| s.deepgram.interim_results = enabled);
     });
 
     let shared_cb = Arc::clone(&shared);
@@ -1397,6 +2118,7 @@ pub fn run() {
         save_config_field(&shared_cb, |s| {
             s.output.mode = mode as u8;
         });
+        apply_live_typing_screen(&shared_cb);
     });
 
     // Shortcut
@@ -1548,4 +2270,197 @@ pub fn run() {
 
     // Clean up tray
     tray::cleanup_tray();
+}
+
+#[cfg(test)]
+mod stop_route_tests {
+    use super::*;
+    use crate::config::Settings;
+    use crate::delivery::DeliveryReport;
+
+    fn report(delivered: &str, undelivered: &[&str]) -> DeliveryReport {
+        DeliveryReport {
+            delivered: delivered.to_string(),
+            undelivered: undelivered.iter().map(|s| s.to_string()).collect(),
+            refused: None,
+            copies_instead_of_typing: false,
+        }
+    }
+
+    #[test]
+    fn a_clean_stop_puts_nothing_on_the_clipboard() {
+        let route = StopRoute::decide(
+            "one two",
+            &report("one two", &[]),
+            output::OutputMode::TypeToApp,
+        );
+
+        assert_eq!(route, StopRoute::Nothing);
+    }
+
+    #[test]
+    fn the_text_the_window_never_took_goes_to_the_clipboard_with_a_count() {
+        let route = StopRoute::decide(
+            "one two three",
+            &report("one", &[]),
+            output::OutputMode::TypeToApp,
+        );
+
+        assert_eq!(
+            route,
+            StopRoute::Clipboard {
+                text: "two three".to_string(),
+                words: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn a_refused_middle_fragment_is_what_the_clipboard_receives() {
+        let route = StopRoute::decide(
+            "one two three",
+            &report("one three", &["two"]),
+            output::OutputMode::TypeToApp,
+        );
+
+        assert_eq!(
+            route,
+            StopRoute::Clipboard {
+                text: "two".to_string(),
+                words: 1,
+            },
+            "text already in the document is never copied as if it were missing"
+        );
+    }
+
+    #[test]
+    fn copy_and_type_reports_the_count_without_a_second_copy() {
+        let route = StopRoute::decide(
+            "one two three",
+            &report("one", &[]),
+            output::OutputMode::CopyAndType,
+        );
+
+        assert_eq!(
+            route,
+            StopRoute::Reported { words: 2 },
+            "the whole transcript is already on the clipboard for this mode"
+        );
+    }
+
+    #[test]
+    fn a_copy_only_utterance_reports_its_missing_words_without_a_second_copy() {
+        let report = DeliveryReport {
+            delivered: "one".to_string(),
+            undelivered: Vec::new(),
+            refused: None,
+            copies_instead_of_typing: true,
+        };
+
+        assert_eq!(
+            StopRoute::decide("one two three", &report, output::OutputMode::CopyToClipboard),
+            StopRoute::Reported { words: 2 },
+            "the clipboard already holds the transcript so far, and stop replaces it with all of it"
+        );
+    }
+
+    #[test]
+    fn a_session_that_started_keeps_acting_when_the_settings_change() {
+        use crate::delivery::{DeliveryLedger, DeliverySession, DeliverySurface, WindowId};
+        use crate::verdict::TargetWindow;
+        use std::sync::{Arc, Mutex};
+
+        // A surface that records what would land in the bound window.
+        #[derive(Clone)]
+        struct Window {
+            headed: Arc<Mutex<Vec<String>>>,
+        }
+        impl DeliverySurface for Window {
+            fn paste(&mut self, text: &str) -> anyhow::Result<()> {
+                self.headed.lock().unwrap().push(text.to_string());
+                Ok(())
+            }
+            fn focused_window(&self) -> Option<WindowId> {
+                Some(WindowId::new("win:1"))
+            }
+            fn focused_window_exists(&self) -> bool {
+                true
+            }
+        }
+
+        // The session is installed when the hotkey is pressed, from the answer
+        // read then.
+        let mut settings = Settings::default();
+        settings.whisper.api_provider = "deepgram".to_string();
+        assert_eq!(
+            live_typing::live_typing_capability(&settings).delivery,
+            live_typing::LiveDelivery::Type
+        );
+
+        let surface = Window {
+            headed: Arc::new(Mutex::new(Vec::new())),
+        };
+        let mut session = DeliverySession::new(
+            WindowId::new("win:1"),
+            TargetWindow::text_field(),
+            surface.clone(),
+            DeliveryLedger::shared(),
+        );
+
+        // Mid-utterance the user turns live typing off and switches to display
+        // only. Nothing re-reads the settings, so the running session still
+        // delivers, and only the next utterance changes.
+        settings.deepgram.set_live_typing(false);
+        settings.output.mode = 3;
+        assert!(!live_typing::live_typing_applies(&settings));
+
+        let _ = session.deliver("first");
+        let _ = session.deliver("second");
+        let _ = session.finish("third");
+
+        assert_eq!(
+            surface.headed.lock().unwrap().as_slice(),
+            ["first", " second", " third"],
+            "the utterance that started finishes with the rules it started with"
+        );
+    }
+
+    #[test]
+    fn a_fallback_utterance_reaches_the_document_only_once_at_stop() {
+        // Wayland: the settings say live typing is on, but the machine has no
+        // window to bind, so no session exists and nothing is written during
+        // the utterance. With no report, the stop path is the plain one the
+        // batch providers use: one delivery of the whole transcript.
+        let mut settings = Settings::default();
+        settings.whisper.api_provider = "deepgram".to_string();
+        settings.deepgram.api_key = "not-a-real-deepgram-key".to_string();
+        settings.output.mode = 2;
+        let capability =
+            live_typing::live_typing_capability_on(&settings, Some("Wayland has no focus read"));
+        assert!(!capability.active, "a disabled switch creates no session");
+        assert_eq!(
+            capability.reason,
+            Some("Wayland has no focus read"),
+            "the status line the user sees during the utterance"
+        );
+    }
+
+    #[test]
+    fn a_refused_secret_utterance_goes_to_the_clipboard_in_full() {
+        let report = DeliveryReport {
+            delivered: String::new(),
+            undelivered: vec!["my password".to_string()],
+            refused: Some(crate::verdict::Refusal::SecretInput),
+            copies_instead_of_typing: false,
+        };
+
+        assert_eq!(
+            StopRoute::decide("my password", &report, output::OutputMode::TypeToApp),
+            StopRoute::Clipboard {
+                text: "my password".to_string(),
+                words: 2,
+            },
+            "refused text follows the undelivered route, never the bin"
+        );
+    }
 }
