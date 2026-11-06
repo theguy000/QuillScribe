@@ -8,6 +8,7 @@
 use super::WhisperManager;
 use anyhow::{anyhow, Result};
 
+pub(crate) mod live;
 mod proto;
 mod request;
 

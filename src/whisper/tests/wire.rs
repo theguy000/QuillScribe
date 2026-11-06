@@ -128,9 +128,14 @@ fn test_set_api_provider_accepts_valid_providers() {
 #[test]
 fn test_deepgram_is_the_only_live_provider() {
     assert!(WhisperManager::is_live_provider("deepgram"));
+    assert!(WhisperManager::is_live_provider("gemini"));
     assert!(!WhisperManager::is_live_provider("openai"));
     assert!(!WhisperManager::is_live_provider("groq"));
-    assert!(!WhisperManager::is_live_provider("gemini"));
+
+    // Only Deepgram commits segments mid-utterance, so only it can type while
+    // the user is still speaking.
+    assert!(WhisperManager::supports_live_typing("deepgram"));
+    assert!(!WhisperManager::supports_live_typing("gemini"));
 }
 
 #[test]
@@ -379,4 +384,64 @@ fn test_get_available_languages_contains_common_codes() {
     assert!(languages.iter().any(|(c, _)| c == "en"));
     assert!(languages.iter().any(|(c, _)| c == "es"));
     assert!(languages.iter().any(|(c, _)| c == "fr"));
+}
+
+// -- The live session's container writer -----------------------------------
+
+/// One cluster per second, and the container header rides on the first one: the
+/// recognizer needs the header before the audio it describes.
+#[test]
+fn test_webm_stream_emits_one_cluster_per_second() {
+    use crate::whisper::gemini::live::WebmOpusStream;
+
+    let mut stream = WebmOpusStream::new().unwrap();
+    let mut out = Vec::new();
+    stream.push(&vec![0.0; 16_000], 16_000, &mut out).unwrap();
+    stream.push(&vec![0.0; 16_000], 16_000, &mut out).unwrap();
+    stream.finish(&mut out).unwrap();
+
+    assert_eq!(out.len(), 2, "two seconds must be two clusters");
+    assert!(
+        out[0].starts_with(&[0x1A, 0x45, 0xDF, 0xA3]),
+        "the first cluster carries the EBML header"
+    );
+    assert!(
+        !out[1].starts_with(&[0x1A, 0x45, 0xDF, 0xA3]),
+        "the header must not be written twice"
+    );
+    assert!(
+        out[1].starts_with(&[0x1F, 0x43, 0xB6, 0x75]),
+        "later elements are bare clusters"
+    );
+}
+
+/// A short utterance still has to be postable: the leftover lands in a final
+/// cluster even though no whole second was recorded.
+#[test]
+fn test_webm_stream_flushes_a_partial_second() {
+    use crate::whisper::gemini::live::WebmOpusStream;
+
+    let mut stream = WebmOpusStream::new().unwrap();
+    let mut out = Vec::new();
+    stream.push(&vec![0.0; 6_400], 16_000, &mut out).unwrap();
+    assert!(out.is_empty(), "nothing whole enough to post yet");
+
+    stream.finish(&mut out).unwrap();
+    assert_eq!(out.len(), 1);
+    assert!(out[0].starts_with(&[0x1A, 0x45, 0xDF, 0xA3]));
+}
+
+/// The recorder's rate is not always 16 kHz; a 44.1 kHz device must still
+/// produce whole clusters rather than drifting.
+#[test]
+fn test_webm_stream_accepts_the_device_rate() {
+    use crate::whisper::gemini::live::WebmOpusStream;
+
+    let mut stream = WebmOpusStream::new().unwrap();
+    let mut out = Vec::new();
+    stream
+        .push(&vec![0.0; 44_100 * 3], 44_100, &mut out)
+        .unwrap();
+    stream.finish(&mut out).unwrap();
+    assert_eq!(out.len(), 3);
 }

@@ -112,8 +112,11 @@ pub fn live_typing_capability_on(
     settings: &Settings,
     machine: Option<&'static str>,
 ) -> LiveTypingCapability {
+    // Only a provider whose live session commits segments while the user speaks
+    // can type as they speak. Gemini streams audio but produces its transcript at
+    // the end, so it has no switch here.
     let control_available = settings.whisper.mode == "api"
-        && crate::whisper::WhisperManager::is_live_provider(&settings.whisper.api_provider);
+        && crate::whisper::WhisperManager::supports_live_typing(&settings.whisper.api_provider);
     let delivery = delivery_for(OutputMode::from(settings.output.mode));
     let live = settings.deepgram.is_live() && settings.deepgram.live_typing;
 
@@ -138,14 +141,15 @@ pub fn live_typing_capability_on(
 
 /// Why the settings alone rule live typing out, or `None` when they allow it.
 ///
-/// Each answer matches what a recording would do. Only Deepgram has a Live
-/// session to type from. Display only writes nothing outside the app. With no
-/// key the recording path stops the utterance before it starts, and a recorded
-/// session sends its text at stop.
+/// Each answer matches what a recording would do. Only Deepgram's live session
+/// commits segments while the user speaks, so only it has something to type.
+/// Display only writes nothing outside the app. With no key the recording path
+/// stops the utterance before it starts, and a recorded session sends its text
+/// at stop.
 fn settings_reason(settings: &Settings) -> Option<&'static str> {
-    let on_deepgram = settings.whisper.mode == "api"
-        && crate::whisper::WhisperManager::is_live_provider(&settings.whisper.api_provider);
-    if !on_deepgram {
+    let commits_segments = settings.whisper.mode == "api"
+        && crate::whisper::WhisperManager::supports_live_typing(&settings.whisper.api_provider);
+    if !commits_segments {
         Some("Live typing is only available with Deepgram")
     } else if OutputMode::from(settings.output.mode) == OutputMode::DisplayOnly {
         Some("Display only mode keeps text inside QuillScribe")

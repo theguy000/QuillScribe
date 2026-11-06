@@ -38,7 +38,7 @@ impl WhisperManager {
 
     /// Step 1: the opening request, which yields the session id and the SID
     /// every later request carries.
-    async fn open_session(&self) -> Result<Session> {
+    pub(super) async fn open_session(&self) -> Result<Session> {
         let hdrs = Self::gemini_headers(&self.gemini_active_key());
         let zx = format!("{:012x}", rand::random::<u64>());
         let url = format!(
@@ -102,7 +102,7 @@ impl WhisperManager {
     }
 
     /// Step 3: the recognizer init (encoding 11 = Opus).
-    async fn send_init(session: &Session, language: &str) -> Result<()> {
+    pub(super) async fn send_init(session: &Session, language: &str) -> Result<()> {
         let init = Self::base64_encode(&Self::build_recognizer_init_payload(language));
         let response = post_data(session, 10001, 0, 0, &init).send().await?;
         if !response.status().is_success() {
@@ -150,7 +150,7 @@ impl WhisperManager {
     }
 
     /// The newest transcript in the collected response lines.
-    fn transcript_from(body: &[u8]) -> Result<String> {
+    pub(super) fn transcript_from(body: &[u8]) -> Result<String> {
         let text = String::from_utf8_lossy(body);
         let transcript = text
             .lines()
@@ -163,15 +163,15 @@ impl WhisperManager {
 
 /// The ids a Gemini session threads through every request, with the headers it
 /// was opened with.
-struct Session {
-    gsid: String,
-    sid: String,
-    zx: String,
-    hdrs: Vec<(&'static str, String)>,
+pub(super) struct Session {
+    pub(super) gsid: String,
+    pub(super) sid: String,
+    pub(super) zx: String,
+    pub(super) hdrs: Vec<(&'static str, String)>,
 }
 
 /// Apply the Gemini request headers to a request.
-fn decorate(
+pub(super) fn decorate(
     mut rb: reqwest::RequestBuilder,
     hdrs: &[(&'static str, String)],
 ) -> reqwest::RequestBuilder {
@@ -182,7 +182,7 @@ fn decorate(
 }
 
 /// One `req0___data__` POST, addressed to the session.
-fn post_data(
+pub(super) fn post_data(
     session: &Session,
     rid: u64,
     ofs: u64,

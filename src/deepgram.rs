@@ -21,7 +21,6 @@
 
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::DeepgramConfig;
@@ -54,21 +53,7 @@ pub(super) const MAX_REPLAY_SAMPLES: usize = TARGET_SAMPLE_RATE as usize * 60 * 
 
 pub use stream::LiveSession;
 
-/// Callback used to push progress onto the UI thread.
-pub type ProgressSink = Arc<dyn Fn(Progress) + Send + Sync>;
-
 // â”€â”€ Progress reported to the UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-/// What the session tells the rest of the app while it runs.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Progress {
-    /// Text that may still change; replaces the in-progress line.
-    Interim(String),
-    /// Text the provider committed to.
-    Final(String),
-    /// Human-readable status for the status line.
-    Status(String),
-}
 
 // â”€â”€ Server messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

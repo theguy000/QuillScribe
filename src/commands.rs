@@ -16,9 +16,9 @@ pub struct AppState {
     pub output: Mutex<OutputManager>,
     pub sound: SoundManager,
     pub statistics: StatisticsManager,
-    /// The in-flight Deepgram live session, if the active provider uses one.
-    /// Batch providers never populate this.
-    pub live: Mutex<Option<crate::deepgram::LiveSession>>,
+    /// The in-flight live session, if the active provider uses one. Batch
+    /// providers never populate this.
+    pub live: Mutex<Option<crate::live_provider::LiveSession>>,
     /// What the app has typed into which window. Kept for the life of the
     /// process, because the joining rule spans utterances and window identity
     /// does not survive a restart.

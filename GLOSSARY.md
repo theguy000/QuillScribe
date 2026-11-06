@@ -23,12 +23,12 @@ _Avoid_: engine (except as the tab's display label), backend, API
 ## Execution shapes
 
 **Batch transcription**:
-Every provider's current shape. The whole utterance is recorded first, then sent to the provider as a single request after the user stops.
+The shape in which the whole utterance is recorded first and sent to the provider once the user stops. OpenAI, Groq, and Deepgram in its recorded mode.
 _Avoid_: file mode, upload mode, one-shot
 
 **Live session**:
-An execution shape where audio is sent to the provider while the user is still speaking, and text arrives during the utterance. Opt-in for Deepgram; every other provider is batch-only.
-_Avoid_: streaming (too broad — Gemini's chunked upload also "streams" yet remains batch), realtime mode
+An execution shape where audio is sent to the provider while the user is still speaking. Gemini and Deepgram both run as one; what differs is when text becomes usable. Gemini answers at the end of the utterance, so a live session there buys latency and nothing else. Deepgram commits Final segments as it goes, so a live session there also makes Live typing possible.
+_Avoid_: streaming (too broad — a batch upload "streams" bytes too, which says nothing about when the user gets text), realtime mode
 
 **Recorded mode**:
 Deepgram's default execution shape: the finished utterance is uploaded to the prerecorded endpoint when recording stops. Chosen as the default because QuillScribe only delivers text at that moment anyway.

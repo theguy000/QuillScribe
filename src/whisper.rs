@@ -96,8 +96,21 @@ impl WhisperManager {
     }
 
     /// True when this provider is driven by a live session rather than a batch
-    /// transcription. Deepgram is the only one.
+    /// transcription.
+    ///
+    /// Both live providers send audio while the user speaks; what differs is
+    /// when their text is usable. Deepgram commits segments as it goes, Gemini
+    /// has one transcript once the utterance ends.
     pub fn is_live_provider(provider: &str) -> bool {
+        matches!(provider, "deepgram" | "gemini")
+    }
+
+    /// True when this provider's live session commits Final segments, which is
+    /// what live typing delivers while the user speaks.
+    ///
+    /// Deepgram is the only one: Gemini's session produces the transcript at the
+    /// end of the utterance, so there is nothing to type early.
+    pub fn supports_live_typing(provider: &str) -> bool {
         provider == "deepgram"
     }
 
@@ -235,7 +248,7 @@ mod api;
 mod audio;
 mod catalog;
 mod encoding;
-mod gemini;
+pub(crate) mod gemini;
 mod local;
 mod models;
 

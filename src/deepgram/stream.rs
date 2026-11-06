@@ -17,12 +17,13 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
-    build_listen_url, parse_server_message, Progress, ProgressSink, ServerMessage, CLOSE_TIMEOUT,
-    FINALIZE_TIMEOUT, FINISH_TIMEOUT, KEEPALIVE_MIN_IDLE, KEEPALIVE_PERIOD, MAX_RECONNECT_ATTEMPTS,
+    build_listen_url, parse_server_message, ServerMessage, CLOSE_TIMEOUT, FINALIZE_TIMEOUT,
+    FINISH_TIMEOUT, KEEPALIVE_MIN_IDLE, KEEPALIVE_PERIOD, MAX_RECONNECT_ATTEMPTS,
     MAX_REPLAY_SAMPLES, TARGET_SAMPLE_RATE,
 };
 use crate::audio::AudioChunk;
 use crate::config::DeepgramConfig;
+use crate::live_provider::{Progress, ProgressSink};
 use crate::whisper::WhisperManager;
 
 /// How much audio to accumulate before sending a frame. Deepgram recommends

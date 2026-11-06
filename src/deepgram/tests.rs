@@ -3,6 +3,8 @@
 use super::stream::{apply_message, SessionState};
 use super::*;
 use crate::audio::AudioChunk;
+use crate::live_provider::{Progress, ProgressSink};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 fn cfg() -> DeepgramConfig {

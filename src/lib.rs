@@ -4,6 +4,7 @@ mod config;
 mod deepgram;
 mod delivery;
 mod hotkey;
+mod live_provider;
 mod live_typing;
 mod output;
 mod sound;
@@ -421,33 +422,74 @@ fn flush_pending_max_history_entries(
 /// anything, and the recorder's own buffer is empty.
 const SAMPLE_RATE_FALLBACK: u32 = 16_000;
 
-/// The Deepgram settings when this utterance would run over a live socket.
-///
-/// Batch providers and recorded mode both return `None`: their audio reaches the
-/// provider from `stop_recording`, exactly as before, so no socket opens and the
-/// microphone tap stays off.
-fn live_provider(shared: &SharedAppState) -> Option<config::DeepgramConfig> {
-    let config = shared.state.config.lock().unwrap();
-    let whisper_cfg = config.get_whisper();
-    let deepgram_available = whisper_cfg.mode == "api"
-        && whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider);
-    let cfg = config.get_deepgram();
-    (deepgram_available && cfg.is_live()).then_some(cfg)
+/// What a live utterance needs to open its session.
+enum LiveProvider {
+    /// Deepgram's socket, with the settings its handshake needs.
+    Deepgram(config::DeepgramConfig),
+    /// Gemini's WebChannel recognizer, driven by a manager that already holds
+    /// the key and the language the recognizer is built with. Boxed because the
+    /// two variants are otherwise very different sizes and this one only moves
+    /// once, into the session.
+    Gemini(Box<whisper::WhisperManager>),
 }
 
-/// The Deepgram settings when the key is present, or `None` after undoing the
-/// recording when it is missing.
+/// The provider settings when this utterance would run over a live session.
 ///
-/// Recording has already started by the time this runs, so a missing key undoes
-/// it rather than leaving the microphone hot with nothing consuming it. `None`
-/// means the utterance ended here.
-fn start_live_deepgram_with_key(
+/// Batch providers and Deepgram's recorded mode both return `None`: their audio
+/// reaches the provider from `stop_recording`, exactly as before, so no session
+/// opens and the microphone tap stays off.
+fn live_provider(shared: &SharedAppState) -> Option<LiveProvider> {
+    let (whisper_cfg, deepgram_cfg) = {
+        let config = shared.state.config.lock().unwrap();
+        (config.get_whisper(), config.get_deepgram())
+    };
+    if whisper_cfg.mode != "api"
+        || !whisper::WhisperManager::is_live_provider(&whisper_cfg.api_provider)
+    {
+        return None;
+    }
+
+    match whisper_cfg.api_provider.as_str() {
+        "gemini" => {
+            // The session needs the key and the language, not the app's manager:
+            // a manager of its own keeps the utterance from depending on when the
+            // shared one was last configured.
+            let mut manager = whisper::WhisperManager::new();
+            let _ = manager.set_api_provider("gemini");
+            manager.set_gemini_api_key(&whisper_cfg.gemini_api_key);
+            let language = whisper::WhisperManager::resolve_language_or_default(
+                "gemini",
+                &whisper_cfg.api_language,
+            );
+            let _ = manager.set_api_language(&language);
+            Some(LiveProvider::Gemini(Box::new(manager)))
+        }
+        "deepgram" => deepgram_cfg
+            .is_live()
+            .then_some(LiveProvider::Deepgram(deepgram_cfg)),
+        _ => None,
+    }
+}
+
+/// The live settings when the provider can open its session, or `None` after
+/// undoing the recording when it cannot.
+///
+/// Recording has already started by the time this runs, so a missing Deepgram key
+/// undoes it rather than leaving the microphone hot with nothing consuming it.
+/// Gemini needs no check here: an empty key falls back to the one the Gemini web
+/// app ships, exactly as the batch path does. `None` means the utterance ended
+/// here.
+fn live_provider_with_key(
     shared: &Arc<SharedAppState>,
     overlay: &slint::Weak<RecordingOverlay>,
-) -> Option<config::DeepgramConfig> {
-    let cfg = live_provider(shared)?;
-    if !cfg.api_key.trim().is_empty() {
-        return Some(cfg);
+) -> Option<LiveProvider> {
+    let provider = live_provider(shared)?;
+    let missing_key = match &provider {
+        LiveProvider::Deepgram(cfg) => cfg.api_key.trim().is_empty(),
+        LiveProvider::Gemini(_) => false,
+    };
+    if !missing_key {
+        return Some(provider);
     }
 
     {
@@ -471,7 +513,7 @@ fn start_live_deepgram_with_key(
 /// The key and the target are read together, so the recording start and the
 /// session start cannot disagree about whether this utterance is going live.
 struct LiveUtterance {
-    cfg: config::DeepgramConfig,
+    cfg: LiveProvider,
     bound_window: Option<delivery::WindowId>,
     target: verdict::TargetWindow,
 }
@@ -488,9 +530,8 @@ impl LiveUtterance {
         window: Option<delivery::WindowId>,
         target: verdict::TargetWindow,
     ) -> Option<Self> {
-        live_provider(shared)?;
         Some(Self {
-            cfg: start_live_deepgram_with_key(shared, overlay)?,
+            cfg: live_provider_with_key(shared, overlay)?,
             bound_window: window,
             target,
         })
@@ -587,7 +628,7 @@ impl LiveUtterance {
         self,
         shared: &Arc<SharedAppState>,
         rt: &tokio::runtime::Handle,
-    ) -> Option<deepgram::LiveSession> {
+    ) -> Option<live_provider::LiveSession> {
         let (tap_tx, tap_rx) = tokio::sync::mpsc::unbounded_channel();
         {
             let mut audio = shared.state.audio.lock().unwrap();
@@ -595,30 +636,42 @@ impl LiveUtterance {
         }
 
         // Live typing: every committed segment is written into the bound window
-        // as it arrives. Interim segments never leave our own panel.
-        let delivery = start_live_typing(shared, self.bound_window, self.target);
+        // as it arrives. Only Deepgram commits segments while the user speaks;
+        // Gemini's transcript exists when the utterance ends, so it has nothing
+        // to type early and keeps the panel's in-progress line instead.
+        let delivery = match &self.cfg {
+            LiveProvider::Deepgram(_) => start_live_typing(shared, self.bound_window, self.target),
+            LiveProvider::Gemini(_) => None,
+        };
         let progress = Arc::new(LiveProgress::new(shared, delivery));
 
-        let on_progress: deepgram::ProgressSink = {
+        let on_progress: live_provider::ProgressSink = {
             let progress = Arc::clone(&progress);
             Arc::new(move |event| match event {
-                deepgram::Progress::Interim(text) => {
+                live_provider::Progress::Interim(text) => {
                     let live = progress.live_text(&text);
                     progress.show(move |app| app.set_transcription_text(live.clone().into()));
                 }
-                deepgram::Progress::Final(text) => progress.commit(&text),
-                deepgram::Progress::Status(message) => {
+                live_provider::Progress::Final(text) => progress.commit(&text),
+                live_provider::Progress::Status(message) => {
                     progress.show(move |app| app.set_status_message(message.clone().into()));
                 }
             })
         };
 
-        Some(deepgram::LiveSession::start(
-            rt.clone(),
-            self.cfg,
-            tap_rx,
-            on_progress,
-        ))
+        Some(match self.cfg {
+            LiveProvider::Deepgram(cfg) => live_provider::LiveSession::Deepgram(
+                deepgram::LiveSession::start(rt.clone(), cfg, tap_rx, on_progress),
+            ),
+            LiveProvider::Gemini(manager) => {
+                live_provider::LiveSession::Gemini(whisper::gemini::live::LiveSession::start(
+                    rt.clone(),
+                    *manager,
+                    tap_rx,
+                    on_progress,
+                ))
+            }
+        })
     }
 }
 
@@ -1409,10 +1462,30 @@ pub fn run() {
             let audio_duration = audio_data.len() as f64 / sample_rate as f64;
             let start_time = std::time::Instant::now();
 
+            let whisper_clone = {
+                let whisper = s.state.whisper.lock().unwrap();
+                whisper.clone()
+            };
+
             if let Some(session) = live_session {
                 let s_async = Arc::clone(&s);
+                let batch = whisper_clone.clone();
                 rt_handle.spawn(async move {
-                    let result = session.finish().await;
+                    let result = match session.finish().await {
+                        Ok(text) => Ok(text),
+                        // A live session that died mid-utterance must not cost
+                        // the user their words. The recorder still holds the whole
+                        // recording, so the utterance falls back to the batch
+                        // request it would have made before the session opened -
+                        // slower, but never empty.
+                        Err(live_error) => {
+                            warn!(
+                                "Live session failed ({}); transcribing the recording instead",
+                                live_error
+                            );
+                            batch.transcribe_audio(audio_data, sample_rate).await
+                        }
+                    };
                     let transcription_time = start_time.elapsed().as_secs_f64();
                     let report = finish_live_delivery(delivery, &result);
                     emit_transcription_result(
@@ -1425,11 +1498,6 @@ pub fn run() {
                 });
                 return;
             }
-
-            let whisper_clone = {
-                let whisper = s.state.whisper.lock().unwrap();
-                whisper.clone()
-            };
 
             // Spawn async transcription on Tokio runtime
             let s_async = Arc::clone(&s);
